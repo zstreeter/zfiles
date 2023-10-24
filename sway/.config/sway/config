@@ -1,0 +1,18 @@
+# include catppuccin-mocha
+# Config for sway
+#
+# Read `man 5 sway` for a complete reference.
+
+# user config directory
+include $HOME/.config/sway/config.d/*
+
+# only enable this if every app you use is compatible with wayland
+# xwayland disable
+
+# Set the background image
+output * bg /home/zstreet/.config/sway/backgrounds/under_the_night_sky_by_bisbiswas_ddfk819-fullview.jpg fill
+
+# Monitor home setup, use the command `wdisplays` for an easier life
+output HDMI-A-1 position 0,0
+output DP-3 position 640,1440
+output DP-1 position 2560,720 transform 270

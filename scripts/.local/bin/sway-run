@@ -1,0 +1,42 @@
+#!/bin/sh
+
+# This script is ran when using the
+# gnome-display manager to login under
+# sway
+
+# Be sure to change /usr/share/wayland-sessions/sway.desktop
+# to point to this file, like the following
+# [Desktop Entry]
+# Comment=An i3-compatible Wayland compositor
+# Name=Sway
+# Exec=/home/zstreet/.local/bin/sway-run
+# Type=Application
+
+
+# Exporting some programs here
+# so sway-exec programs knows about
+# them. Unfortunatley, .local/bin isn't
+# known here so have to do full path.
+export EDITOR=~/.local/bin/lvim
+export TERMINAL=alacritty
+export TERMINAL_PROG=alacritty
+export BROWSER=qutebrowser
+export FILE_MANAGER=lf
+
+# Session
+export XDG_SESSION_TYPE=wayland
+export XDG_SESSION_DESKTOP=sway
+export XDG_CURRENT_DESKTOP=sway
+
+# Wayland stuff
+export MOZ_ENABLE_WAYLAND=1
+export QT_QPA_PLATFORM=wayland
+export SDL_VIDEODRIVER=wayland
+export _JAVA_AWT_WM_NONREPARENTING=1
+
+# Bemenu
+export LD_LIBRARY_PATH=~/.local/lib/bemenu
+export BEMENU_RENDERERS=~/.local/lib/bemenu
+export BEMENU_OPTS='-i -l 5 -p Doomguy --binding vim --vim-esc-exits -P "➜" -H 41 --fn "FircaCode Nerd Font 12" -B 1 --tf "#8aadf4" --bdr "#b7bdf8" --fb "#24273a" --ff "#cad3f5" --nb "#24273a" --nf "#cad3f5" --tb "#24273a" --hb "#24273a" --hf "#eed49f" --nf "#cad3f5" --af "#cad3f5" --ab "#24273a"'
+
+exec sway $@
