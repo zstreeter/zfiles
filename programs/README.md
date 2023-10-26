@@ -1,13 +1,8 @@
 # Programs
 
-This directory will contain a running list of programs I get from the *apt* package manager. I'll create/update that list the next time I bring up a machine.
+This directory has a list of programs and a simple bash script that will install all of them. Note: this assumes root privileges.
 
 The rest of this README is dedicated to a few notes on setup for some of the programs I have to install from source.
-
-List of Programs (`sudo apt install -y program`)
-
-* fzf
-* bat
 
 ## Cool Icons
 
@@ -31,7 +26,8 @@ The only caveat is I couldn't get their wrapper script to work so I did a small 
 
 ```bash
 cat /usr/local/bin/qutebrowser
-pushd $HOME/zfiles/software/qutebrowser
+#!/usr/bin/env bash
+pushd $HOME/.local/qutebrowser
 .venv/bin/python3 -m qutebrowser "$@"
 ```
 I may have symlinked it with `ln -s /home/zstreet/zfiles/software/qutebrowser/.venv/bin/qutebrowser /usr/local/bin/qutebrowser`

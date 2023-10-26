@@ -4,15 +4,6 @@
 # gnome-display manager to login under
 # sway
 
-# Be sure to change /usr/share/wayland-sessions/sway.desktop
-# to point to this file, like the following
-# [Desktop Entry]
-# Comment=An i3-compatible Wayland compositor
-# Name=Sway
-# Exec=/home/zstreet/.local/bin/sway-run
-# Type=Application
-
-
 # Exporting some programs here
 # so sway-exec programs knows about
 # them. Unfortunatley, .local/bin isn't
