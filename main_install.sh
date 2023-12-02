@@ -51,7 +51,7 @@ sudo curl https://sh.rustup.rs -sSf | sh
 QUTEBROWSER_SCRIPT=/usr/bin/local/qutebrowser
 cat <<EOL >"$QUTEBROWSER_SCRIPT"
 #!/usr/bin/env bash
-pushd $HOME/zfiles/programs/qutebrowser/
+pushd $HOME/.software/qutebrowser/
 .venv/bin/python3 -m qutebrowser "$@"
 EOL
 chmod +x "$QUTEBROWSER_SCRIPT"
