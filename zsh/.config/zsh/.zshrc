@@ -6,9 +6,9 @@
 # rust env
 . "$HOME/.local/share/cargo/env"
 
-# Hopefully fast-syntax-highlighting will be in the Marketplace one day
-plug "$HOME/.local/share/zap/plugins/fast-syntax-highlighting/fast-syntax-highlighting.plugin.zsh"
-fast-theme catppuccin-macchiato >/dev/null
+# Hopefully fast-syntax-highlighting will be in the ZAP marketplace one day
+plug "$HOME/.local/share/zap/plugins/f-sy-h/F-Sy-H.plugin.zsh"
+f-sy-h $HOME/.config/zsh/f-sy-h-catppuccin-macchiato >/dev/null
 
 plug "$HOME/.config/zsh/my-prompt.sh"
 plug "$HOME/.config/zsh/exports.zsh" # Exports must be before aliases

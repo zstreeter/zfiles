@@ -1,5 +1,5 @@
 # Startup Kmonad
-exec /usr/bin/kmonad ~/.config/kmonad/config.kbd
+exec sudo /usr/bin/kmonad ~/.config/kmonad/config.kbd
 
 # obs
 exec systemctl --user import-environment WAYLAND_DISPLAY XDG_CURRENT_DESKTOP

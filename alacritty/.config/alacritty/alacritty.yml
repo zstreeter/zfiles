@@ -90,7 +90,7 @@ colors:
         - { index: 16, color: "#F5A97F" }
         - { index: 17, color: "#F4DBD6" }
 window:
-  opacity: 0.9
+  opacity: 0.95
   padding:
     x: 20
     y: 20

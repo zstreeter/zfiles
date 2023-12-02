@@ -2,12 +2,21 @@
 
 set -ex
 
+mkdir -p $HOME/.software
+SOFTWARE_DIR=$HOME/.software
+
 PREFIX="$HOME/.local"
 MESON_INSTALL_DIR="-Dprefix=$HOME/.local"
 
 # A "nice to have"
 # Great collection of dmeneu scripts to build off of
 # git clone https://gitlab.com/dwt1/dmscripts.git
+
+# zsh ZAP
+zsh <(curl -s https://raw.githubusercontent.com/zap-zsh/zap/master/install.zsh) --branch release-v1
+
+# F-Sy-H (ZAP doesn't have this yet. Setup is done in script's install.sh)
+git clone https://github.com/z-shell/F-Sy-H /f-sy-h $HOME/.local/share/zap/plugins/f-sy-h
 
 # Conda
 mkdir -p $HOME/.local/miniconda
@@ -52,8 +61,8 @@ pushd getnf
 popd
 
 # kmonad
-git clone https://github.com/kmonad/kmonad.git
-pushd kmonad
+git clone https://github.com/kmonad/kmonad.git $SOFTWARE_DIR/kmonad
+pushd $SOFTWARE_DIR/kmonad
 stack install
 popd
 
@@ -95,36 +104,36 @@ meson install
 popd
 
 # pandoc
-git clone https://github.com/jgm/pandoc.git
-pushd pandoc
+git clone https://github.com/jgm/pandoc.git $SOFTWARE_DIR/pandoc
+pushd $SOFTWARE_DIR/pandoc
 stack setup
 stack install pandoc-cli
 popd
 
 # qutebrowser
-git clone https://github.com/qutebrowser/qutebrowser.git
-pushd qutebrowser
+git clone https://github.com/qutebrowser/qutebrowser.git $SOFTWARE_DIR/qutebrowser
+pushd $SOFTWARE_DIR/qutebrowser
 python3 scripts/mkvenv.py
 popd
 
 # # cava
-git clone https://github.com/karlstav/cava.git
-pushd cava
+git clone https://github.com/karlstav/cava.git $SOFTWARE_DIR/cava
+pushd $SOFTWARE_DIR/cava
 ./autogen.sh
 ./configure --prefix=$PREFIX
 make install
 popd
 
 # # Waybar
-git clone https://github.com/Alexays/Waybar.git
-pushd Waybar
+git clone https://github.com/Alexays/Waybar.git $SOFTWARE_DIR/Waybar
+pushd $SOFTWARE_DIR/Waybar
 meson "$MESON_INSTALL_DIR" build
 ninja -C build install
 popd
 
 # wlsunset
-git clone https://github.com/kennylevinsen/wlsunset.git
-pushd wlsunset
+git clone https://github.com/kennylevinsen/wlsunset.git $SOFTWARE_DIR/wlsunset
+pushd $SOFTWARE_DIR/wlsunset
 meson "$MESON_INSTALL_DIR" build
 ninja -C build install
 popd

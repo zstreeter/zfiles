@@ -1,6 +1,6 @@
 #!/bin/sh
 
-file_path="./program_list.txt"
+file_path="./programs/program_list.txt"
 
 if [ -f "$file_path" ]; then
   while IFS= read -r program; do

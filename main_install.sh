@@ -6,9 +6,15 @@ sudo apt update
 sudo add-apt-repository ppa:mmstick76/alacritty
 sudo apt install alacritty
 
-sudo apt install stow
-
 bash ./programs/install_programs.sh
+
+# eza
+sudo mkdir -p /etc/apt/keyrings
+wget -qO- https://raw.githubusercontent.com/eza-community/eza/main/deb.asc | sudo gpg --dearmor -o /etc/apt/keyrings/gierens.gpg
+echo "deb [signed-by=/etc/apt/keyrings/gierens.gpg] http://deb.gierens.de stable main" | sudo tee /etc/apt/sources.list.d/gierens.list
+sudo chmod 644 /etc/apt/keyrings/gierens.gpg /etc/apt/sources.list.d/gierens.list
+sudo apt update
+sudo apt install -y eza
 
 stow scripts
 bash $HOME/.local/bin/install.sh
@@ -40,3 +46,12 @@ stow zsh
 
 # rust
 sudo curl https://sh.rustup.rs -sSf | sh
+
+# create sudo qutebrowser script
+QUTEBROWSER_SCRIPT=/usr/bin/local/qutebrowser
+cat <<EOL >"$QUTEBROWSER_SCRIPT"
+#!/usr/bin/env bash
+pushd $HOME/zfiles/programs/qutebrowser/
+.venv/bin/python3 -m qutebrowser "$@"
+EOL
+chmod +x "$QUTEBROWSER_SCRIPT"
