@@ -1,3 +1,12 @@
+ffmpegthumbnailer
+wkhtmltopdf
+imagemagick
+epub-utils
+unzip
+catdoc
+docx2txt
+odt2txt
+gnumeric
 gobject-introspection
 clang-tidy
 upower

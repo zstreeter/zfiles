@@ -141,5 +141,11 @@ popd
 # lf
 env CGO_ENABLED=0 go install -ldflags="-s -w" github.com/gokcehan/lf@latest # not exactly sure where this puts the lf binary
 
+# epub-thumbnailer
+git clone https://github.com/marianosimone/epub-thumbnailer.git $SOFTWARE_DIR/epub-thumbnailer
+pushd $SOFTWARE_DIR/epub-thumbnailer
+sudo python3 install.py install
+popd
+
 # bat colors
 bat cache --build
