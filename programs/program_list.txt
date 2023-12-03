@@ -1,3 +1,4 @@
+yad
 ffmpegthumbnailer
 wkhtmltopdf
 imagemagick
