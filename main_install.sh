@@ -29,11 +29,11 @@ stow mako
 stow neofetch
 stow newsboat
 stow npm
-stow nwg-bar
 stow nwg-drawer
+
 stow nwg-launchers
-stow nwg-look
-stow nwgbar-icons
+sudo $HOME/.config/nwg-launchers/nwgbar/icons/install.sh
+
 stow qutebrowser
 stow sway
 stow swaylock
