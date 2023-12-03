@@ -55,3 +55,16 @@ pushd $HOME/.software/qutebrowser/
 .venv/bin/python3 -m qutebrowser "$@"
 EOL
 chmod +x "$QUTEBROWSER_SCRIPT"
+
+# Theme
+mkdir $HOME/.local/share/themes
+curl -O https://github.com/catppuccin/gtk/releases/Catppuccin-Frappe-Standard-Blue-Dark.zip $HOME/.local/share/themes/catppuccin.zip
+pushd $HOME/.local/share/themes/catppuccin.zip && unzip catppuccin.zip
+gsettings set org.gnome.desktop.interface gtk-theme "Catppuccin-Frappe-Standard-Blue-Dark"
+
+# Icons
+mkdir $HOME/.local/share/icons
+tar -xvf ./icons/candy-icons.tar.xz && mv candy-icons $HOME/.local/share/icons
+tar -xvf ./icons/Sweet-Rainbow.tar.xz && mv Sweet-Rainbow $HOME/.local/share/icons
+gsettings set org.gnome.desktop.interface icon theme "Sweet-Rainbow"
+
