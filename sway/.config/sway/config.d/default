@@ -277,6 +277,7 @@ bindsym XF86AudioMute exec pamixer --toggle-mute && ( pamixer --get-mute && echo
 #
     bindsym $mod+n exec thunar
     bindsym $mod+w exec qutebrowser
+    bindsym $mod+z exec zotero
 #
 # Screenshots
 #
