@@ -24,7 +24,7 @@
            b           *split horizontally* (on next open)
            v           *split vertically*   (on next open)
            s           *layout stacked*
-           w           *layout tabbed*
+           o           *layout tabbed*
            e           *toggle split* (?)
            f           *toggle fullscreen*
    Shift   Space       *toggle tiling/floating mode*
