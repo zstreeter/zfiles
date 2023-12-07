@@ -44,9 +44,6 @@ stow wget
 stow zathura
 stow zsh
 
-# rust
-sudo curl https://sh.rustup.rs -sSf | sh
-
 # create sudo qutebrowser script
 QUTEBROWSER_SCRIPT=/usr/bin/local/qutebrowser
 cat <<EOL >"$QUTEBROWSER_SCRIPT"
@@ -55,17 +52,6 @@ pushd $HOME/.software/qutebrowser/
 .venv/bin/python3 -m qutebrowser "$@"
 EOL
 chmod +x "$QUTEBROWSER_SCRIPT"
-
-# Nodejs
-sudo apt-get update && sudo apt-get install -y ca-certificates curl gnupg
-curl -fsSL https://deb.nodesource.com/gpgkey/nodesource-repo.gpg.key | sudo gpg --dearmor -o /etc/apt/keyrings/nodesource.gpg
-NODE_MAJOR=20
-echo "deb [signed-by=/etc/apt/keyrings/nodesource.gpg] https://deb.nodesource.com/node_$NODE_MAJOR.x nodistro main" | sudo tee /etc/apt/sources.list.d/nodesource.list
-sudo apt-get update && sudo apt-get install nodejs -y
-
-# LunarVim
-git clone https://github.com/LunarVim/LunarVim $HOME/.software/LunarVim
-$HOME/.software/.LunarVim/utils/installer/install.sh -y
 
 # Theme
 mkdir $HOME/.local/share/themes
