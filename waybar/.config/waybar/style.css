@@ -118,6 +118,7 @@ window#waybar {
 #memory,
 #idle_inhibitor,
 #temperature,
+#custom-library,
 #custom-keyboard-layout,
 #backlight,
 #network,
@@ -326,6 +327,12 @@ window#waybar {
     margin-right: 10px;
 }
 
+#custom-library {
+    color: @sky;
+    /* border-bottom: 2px solid @peach; */
+    border-radius: 0 10px 10px 0;
+    margin-right: 10px;
+}
 
 
 /* window#waybar {

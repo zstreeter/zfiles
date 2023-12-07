@@ -7,7 +7,7 @@
     // Choose the order of the modules idle_inhibitor
     "modules-left": ["custom/launcher", "sway/workspaces", "custom/swap", "tray", "sway/mode", "custom/cava-internal", "mpd#2", "mpd#3", "mpd#4", "mpd"],
     "modules-center": ["clock"],
-    "modules-right": ["backlight", "pulseaudio", "custom/keyboard-layout", "temperature", "memory", "battery", "network", "custom/power"], 
+    "modules-right": ["backlight", "pulseaudio", "custom/keyboard-layout", "custom/library", "temperature", "memory", "network", "custom/power"],
     
  // Modules configuration
  
@@ -115,17 +115,21 @@
         //"max-length": 200
         "interval": 1
     },
+    "custom/library": {
+        "format": " 󰺯 Library",
+        "on-click": "zotero"
+    },
     "cpu": {
         "format": "﬙ {usage: >3}%",
         "on-click": "alacritty -e btop"
     },
     "memory": {
-        "format": " {: >3}%",
+        "format": " {: >3}%",
         "on-click": "alacritty -e btop"
     },
     "temperature": {
         // "thermal-zone": 2,
-        "hwmon-path": "/sys/class/hwmon/hwmon1/temp1_input",
+        "hwmon-path": "/sys/class/hwmon/hwmon0/temp1_input",
         "critical-threshold": 80,
         // "format-critical": "{temperatureC}°C ",
         "format": "  {temperatureC}°C"
