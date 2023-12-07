@@ -63,6 +63,10 @@ NODE_MAJOR=20
 echo "deb [signed-by=/etc/apt/keyrings/nodesource.gpg] https://deb.nodesource.com/node_$NODE_MAJOR.x nodistro main" | sudo tee /etc/apt/sources.list.d/nodesource.list
 sudo apt-get update && sudo apt-get install nodejs -y
 
+# LunarVim
+git clone https://github.com/LunarVim/LunarVim $HOME/.software/LunarVim
+$HOME/.software/.LunarVim/utils/installer/install.sh -y
+
 # Theme
 mkdir $HOME/.local/share/themes
 unzip ./icons_themes/Catppuccin-Macchiato-Standard-Lavender-Dark.zip && mv ./icons_themes/Catppuccin-Macchiato-Standard-Lavender-Dark $HOME/.local/share/themes
