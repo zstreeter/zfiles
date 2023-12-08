@@ -1,4 +1,4 @@
-# Garuda Sway-WM CheatSheet LightCrimson #
+# Zfiles Sway-WM CheatSheet LightCrimson #
 
    = Super Key
 
@@ -18,7 +18,8 @@
 
 # application shortcuts
            n           *file manager* (`thunar`)
-           o           *browser* (`I use google chrome, pick your own`)
+           w           *browser* (`I use google chrome, pick your own`)
+    Shift  f           *firefox*
 
 # container layout
            b           *split horizontally* (on next open)
