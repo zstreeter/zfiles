@@ -162,8 +162,12 @@ echo "deb [signed-by=/etc/apt/keyrings/nodesource.gpg] https://deb.nodesource.co
 sudo apt-get update && sudo apt-get install nodejs -y
 
 # LunarVim
-git clone https://github.com/LunarVim/LunarVim $HOME/.software/LunarVim
+git clone https://github.com/LunarVim/LunarVim $SOFTWARE_DIR/LunarVim
 $HOME/.software/.LunarVim/utils/installer/install.sh -y
+
+# xdg-ninja
+git clone https://github.com/b3nj5m1n/xdg-ninja.git $SOFTWARE_DIR/xdg-ninja.git
+echo "Can use xdg-ninja.sh to check how clean $HOME folder is"
 
 # bat colors
 bat cache --build
