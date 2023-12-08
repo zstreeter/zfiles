@@ -30,7 +30,7 @@ plug "$HOME/.config/zsh/commands.sh"
 # Load and initialise completion system
 fpath=($HOME/.config/lf/_lf $fpath)
 autoload -Uz compinit
-compinit
+compinit -d "$XDG_CACHE_HOME"/zsh/zcompdump="$ZSH_VERSION"
 
 # >>> conda initialize >>>
 # !! Contents within this block are managed by 'conda init' !!

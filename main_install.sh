@@ -64,4 +64,12 @@ tar -xvf ./icons_themes/candy-icons.tar.xz && mv ./icons_themes/candy-icons $HOM
 tar -xvf ./icons_themes/Sweet-Rainbow.tar.xz && mv ./icons_themes/Sweet-Rainbow $HOME/.local/share/icons
 gsettings set org.gnome.desktop.interface icon theme "Sweet-Rainbow"
 
+zshenv_clean_up=$(
+	cat <<EOF
+# zsh cleanup
+ZDOTDIR=$HOME/.config/zsh" >> /etc/zsh/zshenv
+EOF
+)
+echo "$zshenv_clean_up" | sudo tee -a /etc/zsh/zshenv >/dev/null
+
 echo "Run xdg-ninja to check how clean $HOME is after everything is setup"
