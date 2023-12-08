@@ -63,3 +63,5 @@ mkdir $HOME/.local/share/icons
 tar -xvf ./icons_themes/candy-icons.tar.xz && mv ./icons_themes/candy-icons $HOME/.local/share/icons
 tar -xvf ./icons_themes/Sweet-Rainbow.tar.xz && mv ./icons_themes/Sweet-Rainbow $HOME/.local/share/icons
 gsettings set org.gnome.desktop.interface icon theme "Sweet-Rainbow"
+
+echo "Run xdg-ninja to check how clean $HOME is after everything is setup"
