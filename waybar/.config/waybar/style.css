@@ -118,8 +118,9 @@ window#waybar {
 #memory,
 #idle_inhibitor,
 #temperature,
-#custom-library,
 #custom-keyboard-layout,
+#custom-library,
+#custom-gpu,
 #backlight,
 #network,
 #pulseaudio,
@@ -233,6 +234,9 @@ window#waybar {
 #cpu #cpu-icon {
     color: @sky;
 }
+#custom-gpu {
+    color: @sky;
+}
 
 #memory {
     color: @sky;
@@ -333,6 +337,7 @@ window#waybar {
     border-radius: 0 10px 10px 0;
     margin-right: 10px;
 }
+
 
 
 /* window#waybar {

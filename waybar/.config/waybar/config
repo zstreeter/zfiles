@@ -5,9 +5,9 @@
     "margin": "0 0 0 0",
     //"width": 1350, // Waybar width
     // Choose the order of the modules idle_inhibitor
-    "modules-left": ["custom/launcher", "sway/workspaces", "custom/swap", "tray", "sway/mode", "custom/cava-internal", "mpd#2", "mpd#3", "mpd#4", "mpd"],
+    "modules-left": ["custom/launcher", "sway/workspaces", "custom/swap", "sway/mode", "custom/cava-internal", "mpd#2", "mpd#3", "mpd#4", "mpd"],
     "modules-center": ["clock"],
-    "modules-right": ["backlight", "pulseaudio", "custom/keyboard-layout", "custom/library", "temperature", "memory", "network", "custom/power"],
+    "modules-right": ["backlight", "pulseaudio", "custom/keyboard-layout", "custom/library", "temperature", "memory", "custom/gpu", "network", "custom/power"], 
     
  // Modules configuration
  
@@ -20,14 +20,14 @@
         "format-icons": {
         "1": "",
         "2": "",
-		"3": "",
-		"4": "",
-		"5": "",
-		"6": "",
-		"7": "",
-		"8": "",
-		"9": "",
-		"10": "",
+        "3": "",
+        "4": "",
+        "5": "",
+        "6": "",
+        "7": "",
+        "8": "",
+        "9": "",
+        "10": "",
         }
     },
     "mpd": {
@@ -119,12 +119,8 @@
         "format": " 󰺯 Library",
         "on-click": "zotero"
     },
-    "cpu": {
-        "format": "﬙ {usage: >3}%",
-        "on-click": "alacritty -e btop"
-    },
     "memory": {
-        "format": " {: >3}%",
+        "format": "  CPU",
         "on-click": "alacritty -e btop"
     },
     "temperature": {
@@ -133,6 +129,10 @@
         "critical-threshold": 80,
         // "format-critical": "{temperatureC}°C ",
         "format": "  {temperatureC}°C"
+    },
+    "custom/gpu": {
+        "format": "󰢮 GPU",
+        "on-click": "alacritty -e nvtop"
     },
     "backlight": {
         // "device": "acpi_video1",
@@ -162,8 +162,8 @@
         // "format-ethernet": " {ifname}: {ipaddr}/{cidr}",
         "format-ethernet": "  Wired",
         "format-disconnected": "⚠  Disconnected",
-        // "on-click": "alacritty -e nmtui"
-        "on-click": "nm-connection-editor"
+        "on-click": "alacritty -e nmtui"
+        //"on-click": "nm-connection-editor"
     },
     "pulseaudio": {
         "scroll-step": 1,

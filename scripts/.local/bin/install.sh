@@ -147,6 +147,14 @@ pushd $SOFTWARE_DIR/epub-thumbnailer
 sudo python3 install.py install
 popd
 
+# nvtop
+git clone https://github.com/Syllo/nvtop %SOFTWARE_DIR/nvtop
+mkdir $SOFTWARE_DIR/nvtop/build
+pushd $SOFTWARE_DIR/nvtop/build
+cmake .. -DAMDGPU_SUPPORT=ON
+make DESTDIR="$HOME/.local/bin" install
+popd
+
 # Rust
 curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
 
