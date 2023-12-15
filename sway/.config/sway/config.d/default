@@ -283,6 +283,6 @@ bindsym XF86AudioMute exec pamixer --toggle-mute && ( pamixer --get-mute && echo
 #
 # Screenshots
 #
-    bindsym print exec /usr/share/sway/scripts/grimshot --notify save output
+    bindsym print exec /usr/bin/grimshot --notify save output
     bindsym Shift+print exec ~/.config/sway/scripts/screenshot.sh
-    bindsym Alt+print exec /usr/share/sway/scripts/grimshot --notify copy area
+    bindsym Alt+print exec /usr/bin/grimshot --notify copy area
