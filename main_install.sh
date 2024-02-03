@@ -48,7 +48,7 @@ stow zsh
 QUTEBROWSER_SCRIPT=/usr/bin/local/qutebrowser
 cat <<EOL >"$QUTEBROWSER_SCRIPT"
 #!/usr/bin/env bash
-pushd $HOME/.software/qutebrowser/
+pushd $HOME/.software/qutebrowser/ > /dev/null 2>&1
 .venv/bin/python3 -m qutebrowser "$@"
 EOL
 chmod +x "$QUTEBROWSER_SCRIPT"
