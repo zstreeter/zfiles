@@ -12,13 +12,13 @@ end)
 config.enable_wayland = true
 
 config.color_scheme = "Catppuccin Macchiato"
-config.font_size = 16
-config.font = wezterm.font("FiraCode Nerd Font Mono")
+config.font_size = 12
+config.font = wezterm.font("FiraCode Nerd Font")
 
 config.window_decorations = "RESIZE"
 config.hide_mouse_cursor_when_typing = true
 config.hide_tab_bar_if_only_one_tab = true
-config.window_background_opacity = 0.97
+config.window_background_opacity = 0.9
 config.audible_bell = "Disabled"
 config.cursor_blink_rate = 0
 
