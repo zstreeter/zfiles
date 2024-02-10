@@ -20,8 +20,8 @@ prepend_keymap = [
 	{ on = [ "<C-e>" ], exec = "seek 5" },
 
 	# Operation
-	{ on = [ "s" ], exec = "link" },
-	{ on = [ "S" ], exec = "link --relative" },
+	# { on = [ "s" ], exec = "link" },
+	# { on = [ "S" ], exec = "link --relative" },
 
 	# Find
 	{ on = [ "-" ], exec = "find_arrow" },
