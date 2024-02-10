@@ -13,9 +13,11 @@ MESON_INSTALL_DIR="-Dprefix=$HOME/.local"
 # git clone https://gitlab.com/dwt1/dmscripts.git
 
 # Wezterm
-git clone https://github.com/wez/wezterm.gi $SOFTWARE_DIR/wezterm
-pushd $SOFTWARE_DIR/wezterm
-sudo cp target/release/wezterm /usr/local/bin/
+WEZ_VERSION=$(curl -s https://api.github.com/repos/wez/wezterm/releases/latest|grep tag_name|cut -d '"' -f 4)
+wget https://github.com/wez/wezterm/releases/download/$WEZ_VERSION/wezterm-$VERSION.Ubuntu22.04.deb $SOFTWARE_DIR/wezterm-$WEZ_VERSION.Ubuntu22.04.deb
+pushd $SOFTWARE_DIR
+sudo apt install -y ./wezterm-$WEZ_VERSION.Ubuntu22.04.deb
+popd
 
 # zsh ZAP
 zsh <(curl -s https://raw.githubusercontent.com/zap-zsh/zap/master/install.zsh) --branch release-v1
