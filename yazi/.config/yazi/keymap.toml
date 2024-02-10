@@ -26,6 +26,10 @@ prepend_keymap = [
 	# Find
 	{ on = [ "-" ], exec = "find_arrow" },
 	{ on = [ "=" ], exec = "find_arrow --previous" },
+
+  { on = [ "q" ], exec = 'shell "$SHELL" --block --confirm', desc = "Open shell here"},
+
+  { on = [ "y" ], exec = [ "yank", '''shell --confirm 'for path in "$@"; do echo "file://$path"; done | wl-copy -t text/uri-list'''' ]},
 ]
 
 [tasks]
@@ -67,6 +71,8 @@ prepend_keymap = [
 	# Undo/Redo
 	{ on = [ "l" ], exec = "undo" },
 	{ on = [ "L" ], exec = "redo" },
+
+  { on = [ "<Esc>" ], exec = "close", desc = "Cancel input"},
 ]
 
 [completion]
