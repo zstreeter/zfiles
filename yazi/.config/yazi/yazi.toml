@@ -14,7 +14,7 @@ max_height = 1000
 [opener]
 edit = [
 	{ exec = '$EDITOR "$@"', block = true },
-	{ exec = 'code "$@"',    orphan = true },
+	{ exec = '$EDITOR "$@"',    orphan = true },
 ]
 play = [
 	{ exec = 'mpv "$@"' },
@@ -23,7 +23,6 @@ play = [
 ]
 archive = [
 	{ exec = 'unar "$1"', desc = "Extract here" },
-	{ exec = '/Applications/MacZip.app/Contents/MacOS/MacZip "$1"', orphan = true, desc = "MacZip" },
 ]
 
 [open]
