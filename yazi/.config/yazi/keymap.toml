@@ -1,0 +1,88 @@
+"$schema" = "https://yazi-rs.github.io/schemas/keymap.json"
+
+[manager]
+
+prepend_keymap = [
+	# Navigation
+	{ on = [ "u" ], exec = "arrow -1" },
+	{ on = [ "e" ], exec = "arrow 1" },
+
+	{ on = [ "U" ], exec = "arrow -5" },
+	{ on = [ "E" ], exec = "arrow 5" },
+
+	{ on = [ "n" ], exec = [ "leave", "escape --visual --select" ] },
+	{ on = [ "i" ], exec = [ "plugin --sync enter-or-open", "escape --visual --select" ] },
+
+	{ on = [ "N" ], exec = "back" },
+	{ on = [ "I" ], exec = "forward" },
+
+	{ on = [ "<C-u>" ], exec = "seek -5" },
+	{ on = [ "<C-e>" ], exec = "seek 5" },
+
+	# Operation
+	{ on = [ "l" ], exec = "link" },
+	{ on = [ "L" ], exec = "link --relative" },
+
+	# Find
+	{ on = [ "-" ], exec = "find_arrow" },
+	{ on = [ "=" ], exec = "find_arrow --previous" },
+]
+
+[tasks]
+
+prepend_keymap = [
+	{ on = [ "u" ], exec = "arrow -1" },
+	{ on = [ "e" ], exec = "arrow 1" },
+]
+
+[select]
+
+prepend_keymap = [
+	{ on = [ "u" ], exec = "arrow -1" },
+	{ on = [ "e" ], exec = "arrow 1" },
+
+	{ on = [ "U" ], exec = "arrow -5" },
+	{ on = [ "E" ], exec = "arrow 5" },
+]
+
+[input]
+
+prepend_keymap = [
+	# Mode
+	{ on = [ "k" ],     exec = "insert" },
+	{ on = [ "<C-n>" ], exec = [ "move -999", "insert" ] },
+	{ on = [ "<C-i>" ], exec = [ "move 999", "insert --append" ] },
+
+	# Character-wise movement
+	{ on = [ "n" ], exec = "move -1" },
+	{ on = [ "i" ], exec = "move 1" },
+
+	# Word-wise movement
+	{ on = [ "h" ], exec = "forward --end-of-word" },
+
+	# Line-wise movement
+	{ on = [ "N" ], exec = "move -999" },
+	{ on = [ "I" ], exec = "move 999" },
+
+	# Undo/Redo
+	{ on = [ "l" ], exec = "undo" },
+	{ on = [ "L" ], exec = "redo" },
+]
+
+[completion]
+
+prepend_keymap = [
+	{ on = [ "<C-u>" ], exec = "arrow -1" },
+	{ on = [ "<C-e>" ], exec = "arrow 1" },
+]
+
+[help]
+
+prepend_keymap = [
+	# Navigation
+	{ on = [ "u" ], exec = "arrow -1" },
+	{ on = [ "e" ], exec = "arrow 1" },
+
+	{ on = [ "U" ], exec = "arrow -5" },
+	{ on = [ "E" ], exec = "arrow 5" },
+]

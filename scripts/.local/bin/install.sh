@@ -12,6 +12,11 @@ MESON_INSTALL_DIR="-Dprefix=$HOME/.local"
 # Great collection of dmeneu scripts to build off of
 # git clone https://gitlab.com/dwt1/dmscripts.git
 
+# Wezterm
+git clone https://github.com/wez/wezterm.gi $SOFTWARE_DIR/wezterm
+pushd $SOFTWARE_DIR/wezterm
+sudo cp target/release/wezterm /usr/local/bin/
+
 # zsh ZAP
 zsh <(curl -s https://raw.githubusercontent.com/zap-zsh/zap/master/install.zsh) --branch release-v1
 
@@ -158,6 +163,9 @@ popd
 # Rust
 curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
 
+# Yazi
+cargo install --locked --git https://github.com/sxyazi/yazi.git
+
 # FZF
 git clone https://github.com/junegunn/fzf.git $SOFTWARE_DIR/.fzf
 $SOFTWARE_DIR/.fzf/install --no-bash --no-fish --all
@@ -168,10 +176,6 @@ curl -fsSL https://deb.nodesource.com/gpgkey/nodesource-repo.gpg.key | sudo gpg 
 NODE_MAJOR=20
 echo "deb [signed-by=/etc/apt/keyrings/nodesource.gpg] https://deb.nodesource.com/node_$NODE_MAJOR.x nodistro main" | sudo tee /etc/apt/sources.list.d/nodesource.list
 sudo apt-get update && sudo apt-get install nodejs -y
-
-# LunarVim
-git clone https://github.com/LunarVim/LunarVim $SOFTWARE_DIR/LunarVim
-$HOME/.software/.LunarVim/utils/installer/install.sh -y
 
 # xdg-ninja
 git clone https://github.com/b3nj5m1n/xdg-ninja.git $SOFTWARE_DIR/xdg-ninja.git

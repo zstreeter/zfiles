@@ -50,6 +50,8 @@ vimibsigc++-2.0-dev
 light
 brightnessctl
 build-essential 
+libfreetype6-dev
+libfontconfig1-dev
 libsigc++-2.0-dev
 libcyrpto++-dev
 libfftw3-dev 
