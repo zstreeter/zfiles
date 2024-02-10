@@ -1,12 +1,16 @@
 #!/bin/sh
 
+# TODO: Perhaps create another program list to clean this up
 sudo apt update
+bash ./programs/install_programs.sh
 
 # alacritty
 sudo add-apt-repository ppa:mmstick76/alacritty
 sudo apt install alacritty
 
-bash ./programs/install_programs.sh
+# TODO: Need to figure out how obsidian does configs
+# obsidian
+sudo snap install obsidian --classic
 
 # eza
 sudo mkdir -p /etc/apt/keyrings
