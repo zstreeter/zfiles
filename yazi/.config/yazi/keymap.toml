@@ -27,8 +27,6 @@ prepend_keymap = [
 	{ on = [ "-" ], exec = "find_arrow" },
 	{ on = [ "=" ], exec = "find_arrow --previous" },
 
-  { on = [ "q" ], exec = 'shell "$SHELL" --block --confirm', desc = "Open shell here"},
-
   { on = [ "y" ], exec = [ "yank", '''shell --confirm 'for path in "$@"; do echo "file://$path"; done | wl-copy -t text/uri-list'''' ]},
 ]
 
