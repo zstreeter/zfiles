@@ -20,6 +20,11 @@
            n           *file manager* (`thunar`)
            w           *browser* (`I use google chrome, pick your own`)
     Shift  f           *firefox*
+    Shift  o           *obsidian*
+    Shift  s           *slack*
+    Shift  d           *discord*
+    Shift  z           *zotero*
+    Shift  b           *blender*
 
 # container layout
            b           *split horizontally* (on next open)

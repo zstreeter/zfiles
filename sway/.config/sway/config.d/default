@@ -280,6 +280,8 @@ bindsym $mod+Shift+f exec firefox
 bindsym $mod+Shift+o exec obsidian
 bindsym $mod+Shift+s exec slack
 bindsym $mod+Shift+z exec zotero
+bindsym $mod+Shift+b exec blender
+bindsym $mod+Shift+d exec discord
 #
 # Screenshots
 #
