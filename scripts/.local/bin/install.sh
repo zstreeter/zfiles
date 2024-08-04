@@ -285,15 +285,14 @@ fi
 # Rust
 if ! command -v rustc &> /dev/null; then
     curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
+    rustup update
 else
     echo "Rust is already installed."
 fi
 
 # Yazi
 if ! command -v yazi &> /dev/null; then
-    source $HOME/.cargo/env
-    cargo install --locked --git https://github.com/sxyazi/yazi.git yazi-cli
-    cargo install --locked --git https://github.com/sxyazi/yazi.git yazi-fm
+    cargo install --locked yazi-fm yazi-cli
 else
     echo "Yazi is already installed."
 fi

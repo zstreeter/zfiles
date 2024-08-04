@@ -3,8 +3,8 @@
 # Created by Zap installer
 [ -f "${XDG_DATA_HOME:-$HOME/.local/share}/zap/zap.zsh" ] && source "${XDG_DATA_HOME:-$HOME/.local/share}/zap/zap.zsh"
 
-# rust env
-. "$HOME/.local/share/cargo/env"
+# rust
+PATH=$HOME/.local/share/cargo/bin:$PATH
 
 # Hopefully fast-syntax-highlighting will be in the ZAP marketplace one day
 plug "$HOME/.local/share/zap/plugins/f-sy-h/F-Sy-H.plugin.zsh"
