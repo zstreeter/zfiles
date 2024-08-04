@@ -9,8 +9,8 @@
 # them. Unfortunatley, .local/bin isn't
 # known here so have to do full path.
 export EDITOR=~/.local/bin/lvim
-export TERMINAL=alacritty
-export TERMINAL_PROG=alacritty
+export TERMINAL=wezterm
+export TERMINAL_PROG=wezterm
 export BROWSER=qutebrowser
 export FILE_MANAGER=lf
 
