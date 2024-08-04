@@ -9,11 +9,19 @@ sudo apt update
 # Install programs
 bash ./programs/install_programs.sh
 
+# Check if zsh is installed
+if command -v zsh >/dev/null 2>&1; then
+    echo "Switching to zsh..."
+    exec zsh
+else
+    echo "zsh is not installed."
+fi
+
+stow wezterm bat btop cava kmonad yazi mako neofetch newsboat npm nwg-drawer nwg-launchers qutebrowser sway swaylock swayr tmux waybar wget zathura zsh
+
 # Stow installs
 stow scripts
 bash $HOME/.local/bin/install.sh
-
-stow wezterm bat btop cava kmonad yazi mako neofetch newsboat npm nwg-drawer nwg-launchers qutebrowser sway swaylock swayr tmux waybar wget zathura zsh
 
 # Run the nwg-launchers installation script
 sudo bash "$HOME/.config/nwg-launchers/nwgbar/icons/install.sh"
