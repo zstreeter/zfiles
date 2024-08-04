@@ -1,13 +1,17 @@
 #!/bin/sh
 
-export XDG_CONFIG_HOME="${HOME}/.config"
-export XDG_DATA_HOME="${HOME}/.local/share"
-export XDG_CACHE_HOME="${HOME}/.cache"
-
 sudo apt update
 
 # Install programs
 bash ./programs/install_programs.sh
+
+stow wezterm bat btop cava kmonad yazi mako neofetch newsboat npm nwg-drawer nwg-launchers qutebrowser sway swaylock swayr tmux waybar wget zathura zsh
+
+# Zsh environment cleanup
+sudo tee -a /etc/zsh/zshenv > /dev/null <<EOF
+# zsh cleanup
+ZDOTDIR=$HOME/.config/zsh
+EOF
 
 # Check if zsh is installed
 if command -v zsh >/dev/null 2>&1; then
@@ -16,8 +20,6 @@ if command -v zsh >/dev/null 2>&1; then
 else
     echo "zsh is not installed."
 fi
-
-stow wezterm bat btop cava kmonad yazi mako neofetch newsboat npm nwg-drawer nwg-launchers qutebrowser sway swaylock swayr tmux waybar wget zathura zsh
 
 # Stow installs
 stow scripts
@@ -46,12 +48,6 @@ mkdir -p $HOME/.local/share/icons
 tar -xvf ./icons_themes/candy-icons.tar.xz -C $HOME/.local/share/icons --strip-components=1
 tar -xvf ./icons_themes/Sweet-Rainbow.tar.xz -C $HOME/.local/share/icons --strip-components=1
 gsettings set org.gnome.desktop.interface icon-theme "Sweet-Rainbow"
-
-# Zsh environment cleanup
-sudo tee -a /etc/zsh/zshenv > /dev/null <<EOF
-# zsh cleanup
-ZDOTDIR=$HOME/.config/zsh
-EOF
 
 # Final message
 echo "=============================================================="
