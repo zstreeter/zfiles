@@ -1,9 +1,9 @@
 # Default programs:
-export EDITOR="lvim"
-export TERMINAL="alacritty"
-export TERMINAL_PROG="alacritty"
+export EDITOR="nvim"
+export TERMINAL="wezterm"
+export TERMINAL_PROG="wezterm"
 export BROWSER="qutebrowser"
-export FILE_MANAGER="lf"
+export FILE_MANAGER="yazi"
 
 export XDG_CONFIG_HOME="$HOME/.config"
 export XDG_DATA_HOME="$HOME/.local/share"

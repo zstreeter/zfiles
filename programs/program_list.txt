@@ -48,6 +48,7 @@ git
 zsh
 vimibsigc++-2.0-dev
 light
+python3.10-venv
 brightnessctl
 build-essential 
 gimp
@@ -98,3 +99,8 @@ libinput-dev
 libmpdclient-dev
 libnl-3-dev
 libnl-genl-3-dev
+libgtkmm-3.0-dev
+libgdk-pixbuf2.0-dev
+libpulse-dev
+libfftw3-dev
+sudo apt-get update
