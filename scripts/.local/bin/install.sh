@@ -294,6 +294,7 @@ fi
 if ! command -v yazi &> /dev/null; then
     cargo install --locked yazi-fm yazi-cli
     ya pack -a yazi-rs/plugins:full-border
+    ya pack -a yazi-rs/plugins:smart-enter
     ya pack -a yazi-rs/flavors:catppuccin-macchiato
 else
     echo "Yazi is already installed."
