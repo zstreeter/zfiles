@@ -3,25 +3,26 @@
 # Disable header/window decoration
 window-decoration = false
 
+# Start in fullscreen mode
+fullscreen = true
+
 # Font settings
 font-family = "FiraCode Nerd Font"
 font-size = 12
 
 # Window opacity
-background-opacity = 0.9
+background-opacity = 0.8
 
 # Window settings
 window-height = 30
 window-width = 120
 
-# Hide mouse cursor when typing
-hide-mouse-cursor-when-typing = true
-
-# Disable bell
-bell = none
+# Mouse settings
+mouse-hide-while-typing = true
 
 # Cursor settings
 cursor-style-blink = false
+cursor-style = block
 
 # Catppuccin Macchiato Theme
 palette = 0=#494d64
@@ -48,7 +49,7 @@ selection-background = 3a3e53
 selection-foreground = cad3f5
 
 # Optional: Background blur (if supported by your system)
-background-blur = true
+# background-blur = true
 
-# If you want single-tab mode like your wezterm config
-tab-bar-show = auto
+# Shell integration options
+shell-integration-features = no-cursor
