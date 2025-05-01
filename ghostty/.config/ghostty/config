@@ -3,8 +3,9 @@
 # Disable header/window decoration
 window-decoration = false
 
+# This disables opacity so would be best to allow window manager handle it.
 # Start in fullscreen mode
-fullscreen = true
+# fullscreen = true
 
 # Font settings
 font-family = "FiraCode Nerd Font"
