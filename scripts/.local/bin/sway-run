@@ -9,8 +9,8 @@
 # them. Unfortunatley, .local/bin isn't
 # known here so have to do full path.
 export EDITOR=~/.local/bin/nvim
-export TERMINAL=wezterm
-export TERMINAL_PROG=wezterm
+export TERMINAL=ghostty
+export TERMINAL_PROG=ghostty
 export BROWSER=qutebrowser
 export FILE_MANAGER=lf
 

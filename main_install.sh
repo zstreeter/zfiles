@@ -5,7 +5,7 @@ sudo apt update
 # Install programs
 bash ./programs/install_programs.sh
 
-stow wezterm bat btop cava kmonad yazi mako neofetch newsboat npm nwg-drawer nwg-launchers qutebrowser sway swaylock swayr tmux waybar wget zathura zsh
+stow ghostty bat btop cava kmonad yazi mako neofetch newsboat npm nwg-drawer nwg-launchers qutebrowser sway swaylock swayr tmux waybar wget zathura zsh
 
 # Zsh environment cleanup
 sudo tee -a /etc/zsh/zshenv > /dev/null <<EOF

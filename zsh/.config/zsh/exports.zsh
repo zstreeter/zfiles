@@ -1,7 +1,7 @@
 # Default programs:
 export EDITOR="nvim"
-export TERMINAL="wezterm"
-export TERMINAL_PROG="wezterm"
+export TERMINAL="ghostty"
+export TERMINAL_PROG="ghostty"
 export BROWSER="qutebrowser"
 export FILE_MANAGER="yazi"
 
