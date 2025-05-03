@@ -9,7 +9,7 @@ set $right l
 
 # Your preferred terminal emulators
 #set $term-float foot
-set $term-float alacritty
+set $term-float ghostty
 set $foot ~/.config/hypr/scripts/terminal
 
 # Your preferred application launcher
