@@ -50,7 +50,9 @@ selection-background = 3a3e53
 selection-foreground = cad3f5
 
 # Optional: Background blur (if supported by your system)
-# background-blur = true
+background-blur = true
 
 # Shell integration options
 shell-integration-features = no-cursor
+
+confirm-close-surface = false
