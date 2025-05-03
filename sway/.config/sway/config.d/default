@@ -283,7 +283,7 @@ bindsym $mod+Shift+z exec zotero
 bindsym $mod+Shift+b exec blender
 bindsym $mod+Shift+f exec freecad
 bindsym $mod+Shift+d exec discord
-bindsym $mod+Shift+d exec gimp 
+bindsym $mod+Shift+g exec gimp 
 #
 # Screenshots
 #
