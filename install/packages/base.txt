@@ -1,0 +1,18 @@
+# Base packages required for zfiles
+git
+stow
+curl
+wget
+make
+coreutils
+procps
+findutils
+grep
+gawk
+sudo
+bash
+zsh
+python3
+python3-pip
+vim
+tmux
