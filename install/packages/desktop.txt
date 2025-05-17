@@ -1,0 +1,80 @@
+# Desktop environment packages
+# Common packages for any desktop
+xdg-utils
+xdg-user-dirs
+inotify-tools
+polkit
+dbus
+libnotify
+fontconfig
+pavucontrol
+brightnessctl
+light
+gdm
+pulseaudio
+grim
+swappy
+libinput
+pipewire
+wireplumber
+wl-clipboard
+slurp
+mako
+wofi
+waybar
+
+# Specific to Sway
+sway
+swaybg
+swayidle
+swaylock
+swayr
+wdisplays
+python3-i3ipc
+
+# Specific to Hyprland
+hyprland
+
+# Terminal utilities
+bat
+btop
+noto-fonts
+nerd-fonts
+neofetch
+newsboat
+zathura
+
+# Development
+cmake
+gcc
+g++
+pkg-config
+ninja-build
+meson
+go
+nodejs
+npm
+
+# Text processing
+texlive-latex-base
+texlive-latex-recommended
+texlive-latex-extra
+pandoc
+
+# Media
+mpv
+mpd
+cava
+ffmpeg
+imagemagick
+ffmpegthumbnailer
+
+# Additional utilities
+gnupg
+openssh
+yad
+catdoc
+docx2txt
+odt2txt
+gnumeric
+wkhtmltopdf

@@ -1,0 +1,5 @@
+# KMonad Dependencies List
+stack
+libx11-dev
+libxrandr-dev
+libxss-dev

@@ -1,0 +1,14 @@
+[Unit]
+Description=KMonad keyboard configurator
+Documentation=https://github.com/kmonad/kmonad
+After=graphical-session.target
+
+[Service]
+Type=simple
+ExecStart=/home/%u/.local/bin/kmonad /home/%u/.config/kmonad/config.kbd
+Restart=always
+RestartSec=3
+Environment=DISPLAY=:0
+
+[Install]
+WantedBy=default.target
