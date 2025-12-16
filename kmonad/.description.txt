@@ -1,1 +1,0 @@
-Keyboard configuration with KMonad, allowing the Caps Lock key to act as Escape when tapped and Super when held.
