@@ -63,6 +63,16 @@ else
     git clone https://github.com/zstreeter/nvim.git "$NVIM_DIR"
 fi
 
+# Symlink Omarchy theme to neovim plugins
+OMARCHY_THEME="$HOME/.config/omarchy/current/theme/neovim.lua"
+NVIM_THEME_LINK="$NVIM_DIR/lua/plugins/omarchy-theme.lua"
+if [[ -f "$OMARCHY_THEME" ]]; then
+    ln -sf "$OMARCHY_THEME" "$NVIM_THEME_LINK"
+    info "Symlinked Omarchy theme to neovim"
+else
+    warn "Omarchy theme not found, skipping neovim symlink"
+fi
+
 # 5. Stow dotfiles
 info "Stowing dotfiles..."
 command -v stow &>/dev/null || sudo pacman -S --needed --noconfirm stow
