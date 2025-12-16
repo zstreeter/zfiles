@@ -1,0 +1,19 @@
+# Core Tools
+keyd
+neovim
+tmux
+zsh
+eza
+bat
+ripgrep
+fd
+fzf
+
+# GUI Apps
+zathura
+zathura-pdf-mupdf
+cura
+yazi
+
+# Password Management
+pass

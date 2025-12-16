@@ -1,198 +1,118 @@
-# ZFiles - Modular Dotfiles Manager
+# ZFiles - Omarchy Overlay
 
-I finally have a dotfiles repo like a real chad 👨
+Personal dotfiles overlay for [Omarchy](https://github.com/basecamp/omarchy), adding zsh, custom keybindings, and additional tools.
 
-A robust, modular dotfiles management system optimized for Sway, Hyprland, and other Linux environments.
+## What This Does
 
-![ZFiles Banner](https://raw.githubusercontent.com/zstreeter/zfiles/assets/banner.png)
+This overlay extends Omarchy with:
 
-## Overview
+- **Zsh** - Shell configuration (Omarchy uses bash by default)
+- **Keyd** - Caps Lock → Escape (tap) / Super (hold)
+- **Hyprland bindings** - Custom keybindings layered on top of Omarchy's defaults
+- **Theme integration** - Zathura and Yazi follow Omarchy's theme automatically
+- **Neovim** - Personal config synced with Omarchy themes
+- **Additional tools** - tmux, yazi, zathura, cura
 
-ZFiles is a comprehensive dotfiles management system that uses GNU Stow to handle symlinks, providing a clean, modular approach to managing your configuration files. It includes:
-
-- **Configuration Management**: Easily manage and deploy your dotfiles
-- **Package Management**: Install required system packages automatically
-- **Source Building**: Build and install programs from source
-- **Desktop Environment Setup**: Quickly configure Sway or Hyprland
-- **KMonad Integration**: Custom keyboard remapping including Caps Lock as Escape/Super
-
-## Quick Start
-
-### First-time Installation
-
-Clone the repository and run the bootstrap script:
+## Installation
 
 ```bash
-git clone https://github.com/zstreeter/zfiles.git ~/.zfiles
-cd ~/.zfiles
+git clone https://github.com/zstreeter/zfiles.git ~/zfiles
+cd ~/zfiles
+chmod +x bootstrap.sh
 ./bootstrap.sh
 ```
 
-For a more customized installation, use the main installer:
+Reboot after installation for keyd to take effect.
 
-```bash
-./install.sh
-```
-
-### Using Make Commands
-
-The Makefile provides easy access to common operations:
-
-```bash
-# Show help
-make help
-
-# Install everything
-make install
-
-# Install specific packages
-make stow PACKAGES="zsh tmux"
-
-# Set up desktop environment
-make desktop ENV=sway
-
-# Build programs from source
-make build
-
-# List available packages
-make packages
-
-# Show status
-make status
-```
-
-## Directory Structure
+## Structure
 
 ```
 zfiles/
-├── bash/            # Bash configuration files (stowable)
-├── zsh/             # Zsh configuration files (stowable)
-├── sway/            # Sway configuration files (stowable)
-├── ... (other stowable packages)
-├── install/         # Installation framework
-├── sources/         # Source building scripts
-├── programs/        # Program installation scripts
-├── install.sh       # Main installation script
-├── bootstrap.sh     # Quick start script
-└── Makefile         # Simple command interface
-```
-
-## Configuration Packages
-
-Each directory at the root level (except for special directories like `install`, `sources`, etc.) is a configuration package that can be stowed independently.
-
-### Available Packages
-
-- **bash**: Bash shell configuration
-- **zsh**: Z shell configuration
-- **sway**: Sway window manager configuration
-- **waybar**: Waybar status bar configuration
-- **tmux**: Terminal multiplexer configuration
-- **kmonad**: Keyboard configuration with KMonad (Caps as Esc/Super)
-- _...and more_
-
-### Installing Packages
-
-```bash
-# Using make
-make stow PACKAGES="zsh sway waybar"
-
-# Using stow directly
-stow zsh sway waybar
-```
-
-## Building Programs from Source
-
-ZFiles can build and install various programs from source:
-
-```bash
-# Build all programs
-make build
-
-# Build specific programs
-./sources/build_from_source.sh neovim tmux
-```
-
-Available programs include:
-
-- neovim
-- qutebrowser
-- waybar
-- cava
-- mako
-- kmonad (for custom keyboard mapping)
-- ...and many more
-
-## Special Features
-
-### KMonad Configuration
-
-The KMonad configuration is set up to make Caps Lock act as Escape when tapped and Super/Meta when held, using the `tap-next-release` functionality:
-
-```
-# Located in kmonad/.config/kmonad/config.kbd
-(defalias
-  cesc (tap-next-release esc lmet)
-)
-```
-
-### Desktop Environment Integration
-
-ZFiles includes special setup for Sway and Hyprland:
-
-```bash
-# Set up Sway
-make desktop ENV=sway
-
-# Set up Hyprland
-make desktop ENV=hyprland
+├── bootstrap.sh          # Main installer
+├── pkglist.txt           # Packages to install
+├── hooks/
+│   └── theme-set         # Generates theme configs when Omarchy theme changes
+├── root_etc/
+│   └── keyd/
+│       └── default.conf  # Caps Lock remapping
+├── hypr/                 # Hyprland custom bindings
+├── tmux/                 # Tmux config
+├── yazi/                 # File manager config
+├── zathura/              # PDF viewer config
+├── zsh/                  # Shell config
+└── cura/                 # 3D printing slicer config
 ```
 
 ## Customization
 
-### Modifying Existing Configurations
+### Hyprland Keybindings
 
-Simply edit the files in the corresponding package directory. For example, to modify your zsh configuration:
+Edit `hypr/.config/hypr/zfilesbindings.conf` to add your own bindings:
 
-1. Edit files in the `zsh/` directory
-2. Run `make restow PACKAGES="zsh"` to update the symlinks
+```bash
+# Example: Vim-style window focus
+bindd = SUPER, H, Focus left, movefocus, l
+bindd = SUPER, J, Focus down, movefocus, d
+bindd = SUPER, K, Focus up, movefocus, u
+bindd = SUPER, L, Focus right, movefocus, r
+```
 
-### Adding New Programs
+These are loaded after Omarchy's defaults, so you can override or extend them.
 
-To add a new program to build from source:
+### Caps Lock Behavior
 
-1. Add a build function to `sources/build_from_source.sh`
-2. Call your function from the main function
+The keyd config (`root_etc/keyd/default.conf`) maps Caps Lock to:
+- **Tap** → Escape
+- **Hold** → Super (for Hyprland bindings)
 
-To add a new program to install from package manager:
+### Theme Integration
 
-1. Add the package name to `programs/program_list.txt`
+When you change Omarchy's theme, the `theme-set` hook automatically generates configs for:
+- Zathura (`~/.config/zathura/omarchy-theme`)
+- Yazi (`~/.config/yazi/omarchy-theme.toml`)
 
-## Troubleshooting
+Make sure your configs include these:
 
-### Common Issues
+**zathura/zathurarc:**
+```bash
+include omarchy-theme
+```
 
-- **Stow Conflicts**: Use `./install/core/stow.sh force-stow PACKAGE` to resolve conflicts automatically
-- **Missing Dependencies**: Run `make install` to install core dependencies
-- **KMonad Issues**: Ensure your user is in the `input` group, usually requires a logout/login
+**yazi/theme.toml:**
+```toml
+"$include" = "./omarchy-theme.toml"
+```
 
-### Logs
+### Neovim
 
-Installation logs can be found in:
+The bootstrap script clones [my neovim config](https://github.com/zstreeter/nvim) and symlinks Omarchy's theme, so colorschemes stay in sync.
 
-- Main installation: `install.log`
-- Source builds: `logs/build_*.log`
+## Omarchy Resources
 
-## Icons
+- [Omarchy GitHub](https://github.com/basecamp/omarchy)
+- [Omarchy Wiki](https://github.com/basecamp/omarchy/wiki)
+- [Hyprland Wiki](https://wiki.hyprland.org/)
+- [Keyd Documentation](https://github.com/rvaiya/keyd)
 
-After running the `getnf` program and selecting the Nerd Font you'd like, you have many icons to choose from. Say you want to add an icon for something, you can go [here](https://www.nerdfonts.com/cheat-sheet) and type in the font you'd like. Then click the "icon" button, this will copy to your system clipboard and then you can copy to your terminal. For example all the cool icons in waybar are done this way.
+## What Bootstrap Does
 
-## License
+1. Installs packages from `pkglist.txt`
+2. Configures keyd and enables the service
+3. Sets up zsh with XDG directories
+4. Clones neovim config and symlinks Omarchy theme
+5. Stows all dotfile packages
+6. Adds `zfilesbindings.conf` source to Hyprland config
+7. Installs the theme-set hook for zathura/yazi
 
-This project is licensed under the MIT License - see the LICENSE file for details.
+## Adding More Packages
 
-## Acknowledgments
+To stow additional configs, add a directory with the proper structure:
 
-- [GNU Stow](https://www.gnu.org/software/stow/) for symlink management
-- [KMonad](https://github.com/kmonad/kmonad) for keyboard configuration
-- Various dotfiles communities for inspiration
+```
+newpkg/
+└── .config/
+    └── newpkg/
+        └── config.toml
+```
+
+Then add `newpkg` to `STOW_PACKAGES` in `bootstrap.sh`.

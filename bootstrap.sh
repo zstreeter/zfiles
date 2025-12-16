@@ -1,257 +1,126 @@
 #!/usr/bin/env bash
-# Bootstrap script for zfiles dotfiles
-# Sets up the bare minimum needed to get started with zfiles
-
-# Exit on error, undefined variables, and propagate pipe errors
 set -euo pipefail
 
-# Color definitions
-RED='\033[0;31m'
-GREEN='\033[0;32m'
-YELLOW='\033[0;33m'
-BLUE='\033[0;34m'
-CYAN='\033[0;36m'
-BOLD='\033[1m'
-NC='\033[0m' # No Color
+REPO_DIR="$(cd "$(dirname "$0")" && pwd)"
+cd "$REPO_DIR"
 
-# Script location
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# Packages to stow (directories with dotfiles)
+STOW_PACKAGES=(cura hypr tmux yazi zathura zsh)
 
-# Print header
-print_header() {
-	echo -e "${BOLD}${CYAN}"
-	echo "═════════════════════════════════════════════════"
-	echo "           ZFILES BOOTSTRAP SCRIPT               "
-	echo "═════════════════════════════════════════════════"
-	echo -e "${NC}"
-	echo "This script will set up the minimum requirements"
-	echo "needed to use zfiles dotfiles."
-	echo ""
-}
+info() { echo -e "\033[1;34m>>>\033[0m $1"; }
+warn() { echo -e "\033[1;33m!!!\033[0m $1"; }
+error() { echo -e "\033[1;31mERR\033[0m $1" >&2; exit 1; }
 
-# Detect OS
-detect_os() {
-	if [ -f /etc/os-release ]; then
-		# freedesktop.org and systemd
-		. /etc/os-release
-		OS=$ID
-	elif type lsb_release >/dev/null 2>&1; then
-		# linuxbase.org
-		OS=$(lsb_release -si | tr '[:upper:]' '[:lower:]')
-	elif [ -f /etc/lsb-release ]; then
-		# For some versions of Debian/Ubuntu without lsb_release command
-		. /etc/lsb-release
-		OS=$DISTRIB_ID
-	elif [ -f /etc/debian_version ]; then
-		# Older Debian/Ubuntu/etc.
-		OS="debian"
-	elif [ -f /etc/SuSe-release ]; then
-		# Older SuSE/etc.
-		OS="suse"
-	elif [ -f /etc/redhat-release ]; then
-		# Older Red Hat, CentOS, etc.
-		OS="redhat"
-	else
-		# Fall back to uname, e.g. "Linux <version>", also works for BSD, etc.
-		OS=$(uname -s | tr '[:upper:]' '[:lower:]')
-	fi
-	echo "${OS,,}" # Convert to lowercase
-}
+# 1. Install packages
+info "Installing packages..."
 
-# Check if command exists
-command_exists() {
-	command -v "$1" >/dev/null 2>&1
-}
+AUR_HELPER=$(command -v paru || command -v yay || true)
+if [[ -z "$AUR_HELPER" ]]; then
+    warn "No AUR helper found. Installing paru..."
+    sudo pacman -S --needed --noconfirm base-devel git
+    tmpdir=$(mktemp -d)
+    git clone https://aur.archlinux.org/paru.git "$tmpdir/paru"
+    (cd "$tmpdir/paru" && makepkg -si --noconfirm)
+    rm -rf "$tmpdir"
+    AUR_HELPER="paru"
+fi
 
-# Install basic dependencies based on detected OS
-install_dependencies() {
-	echo -e "${BLUE}Installing basic dependencies...${NC}"
+# Strip comments and blank lines from pkglist
+grep -v '^#' pkglist.txt | grep -v '^$' | $AUR_HELPER -S --needed --noconfirm -
 
-	local os=$(detect_os)
+# 2. Configure keyd
+info "Configuring keyd (Caps → Esc/Super)..."
+sudo mkdir -p /etc/keyd
+sudo cp root_etc/keyd/default.conf /etc/keyd/default.conf
+sudo systemctl enable --now keyd
 
-	case "$os" in
-	ubuntu | debian | linuxmint | pop | elementary)
-		sudo apt-get update
-		sudo apt-get install -y git make stow curl wget
-		;;
-	fedora)
-		sudo dnf install -y git make stow curl wget
-		;;
-	arch | manjaro | endeavouros)
-		sudo pacman -Sy --noconfirm git make stow curl wget
-		;;
-	opensuse | suse)
-		sudo zypper install -y git make stow curl wget
-		;;
-	*)
-		echo -e "${YELLOW}Unsupported OS: $os${NC}"
-		echo "Please install git, make, stow, curl, and wget manually."
-		;;
-	esac
+# 3. Configure zsh with XDG
+info "Configuring zsh..."
 
-	echo -e "${GREEN}Dependencies installed successfully.${NC}"
-}
+# Create ~/.zshenv to set ZDOTDIR (must be in $HOME, can't be stowed)
+cat > "$HOME/.zshenv" << 'EOF'
+export ZDOTDIR="${XDG_CONFIG_HOME:-$HOME/.config}/zsh"
+[[ -f "$ZDOTDIR/.zshenv" ]] && source "$ZDOTDIR/.zshenv"
+EOF
 
-# Check requirements
-check_requirements() {
-	local missing_deps=()
+# Change default shell to zsh if not already
+if [[ "$SHELL" != */zsh ]]; then
+    info "Changing default shell to zsh..."
+    chsh -s "$(command -v zsh)"
+fi
 
-	for cmd in git make stow curl; do
-		if ! command_exists "$cmd"; then
-			missing_deps+=("$cmd")
-		fi
-	done
+# 4. Clone neovim config
+info "Setting up neovim config..."
+NVIM_DIR="$HOME/.config/nvim"
+if [[ -d "$NVIM_DIR/.git" ]]; then
+    info "Neovim config exists, pulling latest..."
+    git -C "$NVIM_DIR" pull
+else
+    if [[ -d "$NVIM_DIR" ]]; then
+        warn "Existing nvim config found, backing up to nvim.bak"
+        mv "$NVIM_DIR" "$HOME/.config/nvim.bak"
+    fi
+    git clone https://github.com/zstreeter/nvim.git "$NVIM_DIR"
+fi
 
-	if [ ${#missing_deps[@]} -gt 0 ]; then
-		echo -e "${YELLOW}Missing required dependencies: ${missing_deps[*]}${NC}"
+# Symlink Omarchy theme to neovim plugins
+OMARCHY_THEME="$HOME/.config/omarchy/current/theme/neovim.lua"
+NVIM_THEME_LINK="$NVIM_DIR/lua/plugins/omarchy-theme.lua"
+if [[ -f "$OMARCHY_THEME" ]]; then
+    ln -sf "$OMARCHY_THEME" "$NVIM_THEME_LINK"
+    info "Symlinked Omarchy theme to neovim"
+else
+    warn "Omarchy theme not found, skipping neovim symlink"
+fi
 
-		read -p "Do you want to install the missing dependencies? [Y/n] " -n 1 -r
-		echo
-		if [[ $REPLY =~ ^[Yy]$ ]] || [[ -z $REPLY ]]; then
-			install_dependencies
-		else
-			echo -e "${RED}Please install the missing dependencies manually and run this script again.${NC}"
-			exit 1
-		fi
-	fi
-}
+# 5. Stow dotfiles
+info "Stowing dotfiles..."
+command -v stow &>/dev/null || sudo pacman -S --needed --noconfirm stow
 
-# Check for existing installation
-check_existing() {
-	if [ -d "$HOME/.zfiles" ] && [ "$HOME/.zfiles" != "$SCRIPT_DIR" ]; then
-		echo -e "${YELLOW}Existing zfiles installation found at $HOME/.zfiles${NC}"
-		echo "This bootstrap script is being run from: $SCRIPT_DIR"
+for pkg in "${STOW_PACKAGES[@]}"; do
+    if [[ -d "$pkg" ]]; then
+        stow --adopt --target="$HOME" "$pkg"
+    else
+        warn "Package '$pkg' not found, skipping"
+    fi
+done
 
-		read -p "Do you want to overwrite the existing installation? [y/N] " -n 1 -r
-		echo
-		if [[ $REPLY =~ ^[Yy]$ ]]; then
-			echo -e "${BLUE}Backing up existing installation...${NC}"
-			mv "$HOME/.zfiles" "$HOME/.zfiles.bak.$(date +%Y%m%d%H%M%S)"
-		else
-			echo -e "${RED}Bootstrap aborted.${NC}"
-			exit 1
-		fi
-	fi
-}
+# Restore repo state (adopt pulls in local changes)
+git checkout -- .
 
-# Clone or update repository
-setup_repository() {
-	# If running from a cloned repo already, just make sure it's up to date
-	if [ -d "$SCRIPT_DIR/.git" ]; then
-		echo -e "${BLUE}Updating repository...${NC}"
-		git -C "$SCRIPT_DIR" pull
+# 6. Configure Hyprland to source zfiles bindings
+info "Configuring Hyprland..."
+HYPR_CONF="$HOME/.config/hypr/hyprland.conf"
+ZFILES_SOURCE='source = ~/.config/hypr/zfilesbindings.conf'
 
-		# Create symlink if not running from ~/.zfiles
-		if [ "$SCRIPT_DIR" != "$HOME/.zfiles" ]; then
-			echo -e "${BLUE}Creating symlink to $HOME/.zfiles...${NC}"
-			ln -sf "$SCRIPT_DIR" "$HOME/.zfiles"
-		fi
-	else
-		# Clone the repository
-		echo -e "${BLUE}Cloning zfiles repository...${NC}"
-		git clone https://github.com/zstreeter/zfiles.git "$HOME/.zfiles"
+if [[ -f "$HYPR_CONF" ]]; then
+    if ! grep -qF "$ZFILES_SOURCE" "$HYPR_CONF"; then
+        echo -e "\n# zfiles overlay\n$ZFILES_SOURCE" >> "$HYPR_CONF"
+        info "Added zfilesbindings.conf to hyprland.conf"
+    else
+        info "zfilesbindings.conf already sourced in hyprland.conf"
+    fi
+else
+    warn "hyprland.conf not found, skipping"
+fi
 
-		# If running from a different location, create a message
-		if [ "$SCRIPT_DIR" != "$HOME/.zfiles" ]; then
-			echo -e "${YELLOW}Repository cloned to $HOME/.zfiles${NC}"
-			echo -e "${YELLOW}This bootstrap script is running from $SCRIPT_DIR${NC}"
-			echo -e "${YELLOW}Further operations will use the cloned repository.${NC}"
+# 7. Install Omarchy theme hook
+info "Installing Omarchy theme hook..."
+HOOKS_DIR="$HOME/.config/omarchy/hooks"
+mkdir -p "$HOOKS_DIR"
+cp "$REPO_DIR/hooks/theme-set" "$HOOKS_DIR/theme-set"
+chmod +x "$HOOKS_DIR/theme-set"
 
-			# Use the cloned repository for the rest of the script
-			SCRIPT_DIR="$HOME/.zfiles"
-		fi
-	fi
+# Run hook for current theme to generate initial configs
+if [[ -d "$HOME/.config/omarchy/current/theme" ]]; then
+    CURRENT_THEME=$(basename "$(readlink -f "$HOME/.config/omarchy/current")" 2>/dev/null || echo "unknown")
+    info "Generating theme configs for: $CURRENT_THEME"
+    "$HOOKS_DIR/theme-set" "$CURRENT_THEME"
+fi
 
-	echo -e "${GREEN}Repository setup complete.${NC}"
-}
+# 8. Enable optional services
+info "Enabling services..."
+sudo systemctl enable --now docker 2>/dev/null || true
+systemctl --user enable --now email-sync.timer 2>/dev/null || true
 
-# Run minimal installation
-run_minimal_install() {
-	echo -e "${BLUE}Running minimal installation...${NC}"
-
-	# Change to the repository directory
-	cd "$SCRIPT_DIR"
-
-	# Run the installer with minimal flag
-	./install.sh --minimal
-
-	echo -e "${GREEN}Minimal installation complete.${NC}"
-}
-
-# Ask for full installation
-ask_full_install() {
-	echo
-	echo -e "${BOLD}Would you like to continue with the full installation?${NC}"
-	echo "This will install:"
-	echo "  - Programs from your package manager"
-	echo "  - Additional configurations"
-	echo "  - Setup your preferred desktop environment"
-	echo
-
-	read -p "Continue with full installation? [y/N] " -n 1 -r
-	echo
-	if [[ $REPLY =~ ^[Yy]$ ]]; then
-		echo -e "${BLUE}Running full installation...${NC}"
-
-		# Change to the repository directory
-		cd "$SCRIPT_DIR"
-
-		# Run the interactive installer
-		./install.sh
-
-		echo -e "${GREEN}Full installation complete.${NC}"
-	else
-		echo -e "${YELLOW}Skipping full installation.${NC}"
-		echo "You can run the full installation later with:"
-		echo "  cd ~/.zfiles && ./install.sh"
-	fi
-}
-
-# Print post-installation message
-print_success() {
-	echo
-	echo -e "${BOLD}${GREEN}══════════════════════════════════════════════════════${NC}"
-	echo -e "${BOLD}${GREEN}       ******** ******** ** **      ********  ********       ${NC}"
-	echo -e "${BOLD}${GREEN}      //////** /**///// /**/**      /**/////  **//////        ${NC}"
-	echo -e "${BOLD}${GREEN}           **  /**      /**/**      /**      /**              ${NC}"
-	echo -e "${BOLD}${GREEN}          **   /******* /**/**      /******* /*********       ${NC}"
-	echo -e "${BOLD}${GREEN}         **    /**////  /**/**      /**////  ////////**       ${NC}"
-	echo -e "${BOLD}${GREEN}        **     /**      /**/**      /**             /**       ${NC}"
-	echo -e "${BOLD}${GREEN}       ********/**      /**/********/******** ********        ${NC}"
-	echo -e "${BOLD}${GREEN}      //////// //       // //////// //////// ////////         ${NC}"
-	echo -e "${BOLD}${GREEN}                                                              ${NC}"
-	echo -e "${BOLD}${GREEN}        ZFiles bootstrap complete!                            ${NC}"
-	echo -e "${BOLD}${GREEN}                                                              ${NC}"
-	echo -e "${BOLD}${GREEN}══════════════════════════════════════════════════════${NC}"
-	echo
-	echo -e "${BOLD}What's next?${NC}"
-	echo
-	echo "  1. Explore available packages:"
-	echo "     cd ~/.zfiles && make packages"
-	echo
-	echo "  2. Install specific configurations:"
-	echo "     cd ~/.zfiles && make stow PACKAGES=\"zsh tmux\""
-	echo
-	echo "  3. Set up your desktop environment:"
-	echo "     cd ~/.zfiles && make desktop ENV=sway"
-	echo
-	echo "  4. Build programs from source:"
-	echo "     cd ~/.zfiles && make build"
-	echo
-	echo "For more options, run: cd ~/.zfiles && make help"
-	echo
-}
-
-# Main function
-main() {
-	print_header
-	check_requirements
-	check_existing
-	setup_repository
-	run_minimal_install
-	ask_full_install
-	print_success
-}
-
-# Run main function
-main
+info "Done! Log out and back in for shell change, reboot for keyd."
