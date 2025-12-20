@@ -2,7 +2,6 @@
 export EDITOR="nvim"
 export TERMINAL="ghostty"
 export TERMINAL_PROG="ghostty"
-export BROWSER="qutebrowser"
 export FILE_MANAGER="yazi"
 
 export XDG_CONFIG_HOME="$HOME/.config"
@@ -38,14 +37,6 @@ export STACK_XDG=1
 
 export CONDA_ROOT="$HOME/.local/miniconda"
 
-# obs
-export QT_QPA_PLATFORM=wayland
-export XDG_CURRENT_DESKTOP=sway
-export XDG_SESSION_DESKTOP=sway
-export XDG_CURRENT_SESSION_TYPE=wayland
-export GDK_BACKEND="wayland"
-export MOZ_ENABLE_WAYLAND=1
-
 # Other program settings:
 export FZF_DEFAULT_OPTS="--layout=reverse --height 40%"
 export LESS=-R
@@ -59,7 +50,7 @@ export LESS_TERMCAP_ue="$(printf '%b' '[0m')"
 export LESSOPEN="| /usr/bin/highlight -O ansi %s 2>/dev/null"
 
 # catppucio-macchiato theme
-export FZF_DEFAULT_OPTS=" \
---color=bg+:#363a4f,bg:#24273a,spinner:#f4dbd6,hl:#ed8796 \
---color=fg:#cad3f5,header:#ed8796,info:#c6a0f6,pointer:#f4dbd6 \
---color=marker:#f4dbd6,fg+:#cad3f5,prompt:#c6a0f6,hl+:#ed8796"
+# export FZF_DEFAULT_OPTS=" \
+# --color=bg+:#363a4f,bg:#24273a,spinner:#f4dbd6,hl:#ed8796 \
+# --color=fg:#cad3f5,header:#ed8796,info:#c6a0f6,pointer:#f4dbd6 \
+# --color=marker:#f4dbd6,fg+:#cad3f5,prompt:#c6a0f6,hl+:#ed8796"

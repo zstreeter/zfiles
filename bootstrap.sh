@@ -34,7 +34,7 @@ sudo mkdir -p /etc/keyd
 sudo cp root_etc/keyd/default.conf /etc/keyd/default.conf
 sudo systemctl enable --now keyd
 
-# 3. Configure zsh with XDG
+# 3. Configure zsh with XDG and Zap
 info "Configuring zsh..."
 
 # Create ~/.zshenv to set ZDOTDIR (must be in $HOME, can't be stowed)
@@ -42,6 +42,18 @@ cat > "$HOME/.zshenv" << 'EOF'
 export ZDOTDIR="${XDG_CONFIG_HOME:-$HOME/.config}/zsh"
 [[ -f "$ZDOTDIR/.zshenv" ]] && source "$ZDOTDIR/.zshenv"
 EOF
+
+# Install Zap Zsh Plugin Manager
+ZAP_DIR="$HOME/.local/share/zap"
+if [[ -d "$ZAP_DIR" ]]; then
+    info "Zap is already installed."
+else
+    info "Installing Zap zsh plugin manager..."
+    # The --keep flag prevents it from modifying your .zshrc automatically since you use stow
+    zsh <(curl -s https://raw.githubusercontent.com/zap-zsh/zap/master/install.zsh) \
+        --branch release-v1 \
+        --keep
+fi
 
 # Change default shell to zsh if not already
 if [[ "$SHELL" != */zsh ]]; then

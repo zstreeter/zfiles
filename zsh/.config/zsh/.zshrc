@@ -6,12 +6,8 @@
 # rust
 PATH=$HOME/.local/share/cargo/bin:$PATH
 
-# Hopefully fast-syntax-highlighting will be in the ZAP marketplace one day
-plug "$HOME/.local/share/zap/plugins/f-sy-h/F-Sy-H.plugin.zsh"
-f-sy-h $HOME/.config/zsh/f-sy-h-catppuccin-macchiato >/dev/null
-
 plug "$HOME/.config/zsh/my-prompt.sh"
-plug "$HOME/.config/zsh/exports.zsh" # Exports must be before aliases
+# plug "$HOME/.config/zsh/exports.zsh" # Exports must be before aliases
 plug "$HOME/.config/zsh/aliases.zsh"
 
 # From Marketplace
@@ -31,18 +27,3 @@ plug "$HOME/.config/zsh/commands.sh"
 fpath=($HOME/.config/lf/_lf $fpath)
 autoload -Uz compinit
 compinit -d "$XDG_CACHE_HOME"/zsh/zcompdump="$ZSH_VERSION"
-
-# >>> conda initialize >>>
-# !! Contents within this block are managed by 'conda init' !!
-__conda_setup="$('/home/zstreet/.local/miniconda/bin/conda' 'shell.zsh' 'hook' 2> /dev/null)"
-if [ $? -eq 0 ]; then
-    eval "$__conda_setup"
-else
-    if [ -f "/home/zstreet/.local/miniconda/etc/profile.d/conda.sh" ]; then
-        . "/home/zstreet/.local/miniconda/etc/profile.d/conda.sh"
-    else
-        export PATH="/home/zstreet/.local/miniconda/bin:$PATH"
-    fi
-fi
-unset __conda_setup
-# <<< conda initialize <<<
