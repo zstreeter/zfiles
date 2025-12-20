@@ -49,7 +49,7 @@ if [[ -d "$ZAP_DIR" ]]; then
     info "Zap is already installed."
 else
     info "Installing Zap zsh plugin manager..."
-    # The --keep flag prevents it from modifying your .zshrc automatically since you use stow
+    # The --keep flag ensures it doesn't overwrite your stowed .zshrc
     zsh <(curl -s https://raw.githubusercontent.com/zap-zsh/zap/master/install.zsh) \
         --branch release-v1 \
         --keep
@@ -61,26 +61,60 @@ if [[ "$SHELL" != */zsh ]]; then
     chsh -s "$(command -v zsh)"
 fi
 
-# 4. Clone neovim config
+# 4. Clone neovim config (SMART INSTALL)
 info "Setting up neovim config..."
 NVIM_DIR="$HOME/.config/nvim"
-if [[ -d "$NVIM_DIR/.git" ]]; then
-    info "Neovim config exists, pulling latest..."
-    git -C "$NVIM_DIR" pull
-else
-    if [[ -d "$NVIM_DIR" ]]; then
-        warn "Existing nvim config found, backing up to nvim.bak"
-        mv "$NVIM_DIR" "$HOME/.config/nvim.bak"
+MY_REPO_URL="https://github.com/zstreeter/nvim.git"
+
+install_my_nvim() {
+    git clone "$MY_REPO_URL" "$NVIM_DIR"
+}
+
+if [[ -d "$NVIM_DIR" ]]; then
+    # Check if it is a git repo
+    if [[ -d "$NVIM_DIR/.git" ]]; then
+        # Check if it's MY repo
+        REMOTE_URL=$(git -C "$NVIM_DIR" remote get-url origin 2>/dev/null || true)
+        if [[ "$REMOTE_URL" == *zstreeter/nvim* ]]; then
+            info "Correct Neovim config found, pulling latest..."
+            git -C "$NVIM_DIR" pull
+        else
+            warn "Unknown Neovim git repo found. Backing up to nvim.omarchy.bak..."
+            rm -rf "$HOME/.config/nvim.omarchy.bak"
+            mv "$NVIM_DIR" "$HOME/.config/nvim.omarchy.bak"
+
+            # CRITICAL: Clean up plugin data to avoid "Zombie" distro errors
+            warn "Cleaning old plugin data (~/.local/share/nvim)..."
+            rm -rf "$HOME/.local/share/nvim"
+
+            install_my_nvim
+        fi
+    else
+        # It's a directory but not a git repo (likely default Omarchy config)
+        warn "Default Omarchy config found. Backing up to nvim.omarchy.bak..."
+        rm -rf "$HOME/.config/nvim.omarchy.bak"
+        mv "$NVIM_DIR" "$HOME/.config/nvim.omarchy.bak"
+
+        # CRITICAL: Clean up plugin data
+        warn "Cleaning old plugin data (~/.local/share/nvim)..."
+        rm -rf "$HOME/.local/share/nvim"
+
+        install_my_nvim
     fi
-    git clone https://github.com/zstreeter/nvim.git "$NVIM_DIR"
+else
+    # Nothing there, just install
+    install_my_nvim
 fi
 
 # Symlink Omarchy theme to neovim plugins
 OMARCHY_THEME="$HOME/.config/omarchy/current/theme/neovim.lua"
 NVIM_THEME_LINK="$NVIM_DIR/lua/plugins/omarchy-theme.lua"
+
 if [[ -f "$OMARCHY_THEME" ]]; then
+    # Ensure plugins directory exists (in case clone failed or structure changed)
+    mkdir -p "$(dirname "$NVIM_THEME_LINK")"
     ln -sf "$OMARCHY_THEME" "$NVIM_THEME_LINK"
-    info "Symlinked Omarchy theme to neovim"
+    info "Symlinked Omarchy theme to neovim plugins"
 else
     warn "Omarchy theme not found, skipping neovim symlink"
 fi

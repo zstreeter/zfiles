@@ -9,6 +9,9 @@ ripgrep
 fd
 fzf
 
+# Development
+go
+
 # GUI Apps
 zathura
 zathura-pdf-mupdf
