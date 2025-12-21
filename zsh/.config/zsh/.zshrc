@@ -12,6 +12,7 @@ plug "$HOME/.config/zsh/aliases.zsh"
 
 # From Marketplace
 plug "zsh-users/zsh-autosuggestions"
+plug "zsh-users/zsh-syntax-highlighting"
 plug "zap-zsh/supercharge"
 plug "zap-zsh/exa"
 plug "zap-zsh/vim"

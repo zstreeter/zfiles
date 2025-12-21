@@ -25,7 +25,7 @@ if [[ -z "$AUR_HELPER" ]]; then
     AUR_HELPER="paru"
 fi
 
-# Strip comments and blank lines from pkglist
+# Strip comments and blank lines from pkglist.txt
 grep -v '^#' pkglist.txt | grep -v '^$' | $AUR_HELPER -S --needed --noconfirm -
 
 # 2. Configure keyd
@@ -119,7 +119,18 @@ else
     warn "Omarchy theme not found, skipping neovim symlink"
 fi
 
-# 5. Stow dotfiles
+# 5. Install Tmux Plugin Manager (TPM)
+info "Setting up Tmux Plugin Manager..."
+TPM_DIR="$HOME/.config/tmux/plugins/tpm"
+if [[ ! -d "$TPM_DIR" ]]; then
+    info "Cloning TPM..."
+    mkdir -p "$TPM_DIR"
+    git clone https://github.com/tmux-plugins/tpm "$TPM_DIR"
+else
+    info "TPM already installed."
+fi
+
+# 6. Stow dotfiles
 info "Stowing dotfiles..."
 command -v stow &>/dev/null || sudo pacman -S --needed --noconfirm stow
 
@@ -134,7 +145,7 @@ done
 # Restore repo state (adopt pulls in local changes)
 git checkout -- .
 
-# 6. Install Yazi Plugins
+# 7. Install Yazi Plugins
 info "Setting up Yazi plugins..."
 if command -v ya &>/dev/null; then
     # Ensure specific plugins are tracked in package.toml
@@ -153,7 +164,7 @@ else
     warn "Yazi (ya) binary not found, skipping plugin setup."
 fi
 
-# 7. Configure Hyprland to source zfiles bindings
+# 8. Configure Hyprland to source zfiles bindings
 info "Configuring Hyprland..."
 HYPR_CONF="$HOME/.config/hypr/hyprland.conf"
 ZFILES_SOURCE='source = ~/.config/hypr/zfilesbindings.conf'
@@ -169,7 +180,7 @@ else
     warn "hyprland.conf not found, skipping"
 fi
 
-# 8. Install Omarchy theme hook
+# 9. Install Omarchy theme hook
 info "Installing Omarchy theme hook..."
 HOOKS_DIR="$HOME/.config/omarchy/hooks"
 mkdir -p "$HOOKS_DIR"
@@ -183,7 +194,7 @@ if [[ -d "$HOME/.config/omarchy/current/theme" ]]; then
     "$HOOKS_DIR/theme-set" "$CURRENT_THEME"
 fi
 
-# 9. Enable optional services
+# 10. Enable optional services
 info "Enabling services..."
 sudo systemctl enable --now docker 2>/dev/null || true
 systemctl --user enable --now email-sync.timer 2>/dev/null || true
