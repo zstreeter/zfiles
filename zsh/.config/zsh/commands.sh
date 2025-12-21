@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 
-function ya() {
+function run_yazi() {
 	local tmp="$(mktemp -t "yazi-cwd.XXXXX")"
 	yazi "$@" --cwd-file="$tmp"
 	if cwd="$(cat -- "$tmp")" && [ -n "$cwd" ] && [ "$cwd" != "$PWD" ]; then
@@ -8,4 +8,4 @@ function ya() {
 	fi
 	rm -f -- "$tmp"
 }
-bindkey -s '^o' 'ya\n'
+bindkey -s '^o' 'run_yazi\n'

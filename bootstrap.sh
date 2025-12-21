@@ -134,7 +134,26 @@ done
 # Restore repo state (adopt pulls in local changes)
 git checkout -- .
 
-# 6. Configure Hyprland to source zfiles bindings
+# 6. Install Yazi Plugins
+info "Setting up Yazi plugins..."
+if command -v ya &>/dev/null; then
+    # Ensure specific plugins are tracked in package.toml
+    # (Using || true to suppress "already exists" errors)
+    ya pkg add yazi-rs/plugins:full-border || true
+    ya pkg add yazi-rs/plugins:smart-enter || true
+
+    # Hydrate/Install dependencies from package.toml
+    ya pkg install
+
+    # Update to ensure compatibility with latest Yazi version
+    ya pkg upgrade
+
+    info "Yazi plugins installed and upgraded."
+else
+    warn "Yazi (ya) binary not found, skipping plugin setup."
+fi
+
+# 7. Configure Hyprland to source zfiles bindings
 info "Configuring Hyprland..."
 HYPR_CONF="$HOME/.config/hypr/hyprland.conf"
 ZFILES_SOURCE='source = ~/.config/hypr/zfilesbindings.conf'
@@ -150,7 +169,7 @@ else
     warn "hyprland.conf not found, skipping"
 fi
 
-# 7. Install Omarchy theme hook
+# 8. Install Omarchy theme hook
 info "Installing Omarchy theme hook..."
 HOOKS_DIR="$HOME/.config/omarchy/hooks"
 mkdir -p "$HOOKS_DIR"
@@ -164,7 +183,7 @@ if [[ -d "$HOME/.config/omarchy/current/theme" ]]; then
     "$HOOKS_DIR/theme-set" "$CURRENT_THEME"
 fi
 
-# 8. Enable optional services
+# 9. Enable optional services
 info "Enabling services..."
 sudo systemctl enable --now docker 2>/dev/null || true
 systemctl --user enable --now email-sync.timer 2>/dev/null || true
