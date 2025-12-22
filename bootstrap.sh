@@ -25,6 +25,10 @@ if [[ -z "$AUR_HELPER" ]]; then
     AUR_HELPER="paru"
 fi
 
+# Install essential base tools explicitly to ensure they exist
+# (pinentry is needed for the GPG config step below)
+sudo pacman -S --needed --noconfirm pinentry stow
+
 # Strip comments and blank lines from pkglist.txt
 grep -v '^#' pkglist.txt | grep -v '^$' | $AUR_HELPER -S --needed --noconfirm -
 
@@ -34,34 +38,44 @@ sudo mkdir -p /etc/keyd
 sudo cp root_etc/keyd/default.conf /etc/keyd/default.conf
 sudo systemctl enable --now keyd
 
-# 3. Configure zsh with XDG and Zap
+# 3. Configure GPG Agent (Pinentry GTK)
+info "Configuring GPG Agent..."
+mkdir -p ~/.gnupg
+chmod 700 ~/.gnupg
+
+# Ensure pinentry-gtk is set (idempotent)
+if ! grep -q "pinentry-program /usr/bin/pinentry-gtk" ~/.gnupg/gpg-agent.conf 2>/dev/null; then
+    echo "pinentry-program /usr/bin/pinentry-gtk" >> ~/.gnupg/gpg-agent.conf
+    echo "    Added pinentry-gtk to gpg-agent.conf"
+fi
+
+# Reload agent to apply changes
+gpg-connect-agent reloadagent /bye || true
+
+# 4. Configure zsh with XDG and Zap
 info "Configuring zsh..."
 
-# Create ~/.zshenv to set ZDOTDIR (must be in $HOME, can't be stowed)
 cat > "$HOME/.zshenv" << 'EOF'
 export ZDOTDIR="${XDG_CONFIG_HOME:-$HOME/.config}/zsh"
 [[ -f "$ZDOTDIR/.zshenv" ]] && source "$ZDOTDIR/.zshenv"
 EOF
 
-# Install Zap Zsh Plugin Manager
 ZAP_DIR="$HOME/.local/share/zap"
 if [[ -d "$ZAP_DIR" ]]; then
     info "Zap is already installed."
 else
     info "Installing Zap zsh plugin manager..."
-    # The --keep flag ensures it doesn't overwrite your stowed .zshrc
     zsh <(curl -s https://raw.githubusercontent.com/zap-zsh/zap/master/install.zsh) \
         --branch release-v1 \
         --keep
 fi
 
-# Change default shell to zsh if not already
 if [[ "$SHELL" != */zsh ]]; then
     info "Changing default shell to zsh..."
     chsh -s "$(command -v zsh)"
 fi
 
-# 4. Clone neovim config (SMART INSTALL)
+# 5. Clone neovim config (SMART INSTALL)
 info "Setting up neovim config..."
 NVIM_DIR="$HOME/.config/nvim"
 MY_REPO_URL="https://github.com/zstreeter/nvim.git"
@@ -106,7 +120,7 @@ else
     warn "Omarchy theme not found, skipping neovim symlink"
 fi
 
-# 5. Install Tmux Plugin Manager (TPM)
+# 6. Install Tmux Plugin Manager (TPM)
 info "Setting up Tmux Plugin Manager..."
 TPM_DIR="$HOME/.config/tmux/plugins/tpm"
 if [[ ! -d "$TPM_DIR" ]]; then
@@ -116,36 +130,37 @@ else
     info "TPM already installed."
 fi
 
-# 6. Install Pimalaya Tools (Himalaya & Mirador)
+# 7. Install Pimalaya Tools (Himalaya & Mirador)
 info "Checking Pimalaya tools..."
 
+# Himalaya via Cargo
 if command -v cargo &>/dev/null; then
-    # Install Himalaya
     if ! command -v himalaya &>/dev/null; then
         info "Himalaya not found. Installing via cargo..."
         cargo install himalaya
     else
         info "Himalaya is already installed."
     fi
-
-    # Install Mirador
-    if ! command -v mirador &>/dev/null; then
-        info "Mirador not found. Installing via cargo..."
-        cargo install --locked --force --git https://github.com/pimalaya/mirador.git
-    else
-        info "Mirador is already installed."
-    fi
 else
-    warn "Cargo not found! Skipping Himalaya/Mirador installation."
-    warn "Please ensure 'rust' or 'rustup' is installed."
+    warn "Cargo not found! Skipping Himalaya installation."
 fi
 
-# 7. Stow dotfiles
+# Mirador via AUR (Moved from Cargo to AUR as requested)
+if ! command -v mirador &>/dev/null; then
+    info "Mirador not found. Installing via AUR..."
+    $AUR_HELPER -S --needed --noconfirm mirador-git
+else
+    info "Mirador is already installed."
+fi
+
+# 8. Stow dotfiles
 info "Stowing dotfiles..."
+# Ensure stow is installed
 command -v stow &>/dev/null || sudo pacman -S --needed --noconfirm stow
 
 for pkg in "${STOW_PACKAGES[@]}"; do
     if [[ -d "$pkg" ]]; then
+        # This links mirador service files to ~/.config/systemd/user/
         stow --adopt --target="$HOME" "$pkg"
     else
         warn "Package '$pkg' not found, skipping"
@@ -155,7 +170,15 @@ done
 # Restore repo state (adopt pulls in local changes)
 git checkout -- .
 
-# 8. Install Yazi Plugins
+# 9. Configure Mirador Services
+# Must happen AFTER stowing so the service files exist
+info "Configuring Mirador services..."
+systemctl --user daemon-reload
+# Enable specific instances defined in your config
+systemctl --user enable --now mirador@gmail 2>/dev/null || true
+systemctl --user enable --now mirador@work 2>/dev/null || true
+
+# 10. Install Yazi Plugins
 info "Setting up Yazi plugins..."
 if command -v ya &>/dev/null; then
     ya pkg add yazi-rs/plugins:full-border || true
@@ -167,7 +190,7 @@ else
     warn "Yazi (ya) binary not found, skipping plugin setup."
 fi
 
-# 9. Configure Hyprland to source zfiles bindings
+# 11. Configure Hyprland to source zfiles bindings
 info "Configuring Hyprland..."
 HYPR_CONF="$HOME/.config/hypr/hyprland.conf"
 ZFILES_SOURCE='source = ~/.config/hypr/zfilesbindings.conf'
@@ -183,7 +206,7 @@ else
     warn "hyprland.conf not found, skipping"
 fi
 
-# 10. Install Omarchy theme hook
+# 12. Install Omarchy theme hook
 info "Installing Omarchy theme hook..."
 HOOKS_DIR="$HOME/.config/omarchy/hooks"
 mkdir -p "$HOOKS_DIR"
@@ -196,7 +219,7 @@ if [[ -d "$HOME/.config/omarchy/current/theme" ]]; then
     "$HOOKS_DIR/theme-set" "$CURRENT_THEME"
 fi
 
-# 11. Enable optional services
+# 13. Enable optional services
 info "Enabling services..."
 sudo systemctl enable --now docker 2>/dev/null || true
 
