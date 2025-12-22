@@ -1,0 +1,40 @@
+# =============================================================================
+# Gmail (Personal)
+# =============================================================================
+[accounts.gmail]
+email = "zacharylouis42@gmail.com"
+default = true
+
+# Folder aliases allow Mirador to know which folder to watch if not specified
+folder.aliases.inbox = "INBOX"
+
+backend.type = "imap"
+backend.host = "imap.gmail.com"
+backend.port = 993
+backend.login = "zacharylouis42@gmail.com"
+backend.auth.type = "password"
+backend.auth.cmd = "pass show email/gmail-himalaya"
+
+[accounts.gmail.watch]
+# Standard notification (disappears automatically)
+cmd = "notify-send 'Personal Email' 'You have new mail.' -i mail-message-new"
+
+
+# =============================================================================
+# Work (JBI Tools)
+# =============================================================================
+[accounts.work]
+email = "zach@jbi.tools"
+
+folder.aliases.inbox = "INBOX"
+
+backend.type = "imap"
+backend.host = "imap.hostinger.com"
+backend.port = 993
+backend.login = "zach@jbi.tools"
+backend.auth.type = "password"
+backend.auth.cmd = "pass show email/work-himalaya"
+
+[accounts.work.watch]
+# Sticky notification (-t 0) so you don't miss work emails
+cmd = "notify-send 'Work Email' 'You have new mail.' -i mail-message-new -t 0"

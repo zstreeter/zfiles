@@ -1,0 +1,51 @@
+# =============================================================================
+# Gmail (Personal)
+# =============================================================================
+[accounts.gmail]
+email = "zacharylouis42@gmail.com"
+default = true
+
+folder.aliases.inbox = "INBOX"
+folder.aliases.sent = "[Gmail]/Sent Mail"
+folder.aliases.drafts = "[Gmail]/Drafts"
+folder.aliases.trash = "[Gmail]/Trash"
+
+backend.type = "imap"
+backend.host = "imap.gmail.com"
+backend.port = 993
+backend.login = "zacharylouis42@gmail.com"
+backend.auth.type = "password"
+backend.auth.cmd = "pass show email/gmail-himalaya"
+
+message.send.backend.type = "smtp"
+message.send.backend.host = "smtp.gmail.com"
+message.send.backend.port = 465
+message.send.backend.login = "zacharylouis42@gmail.com"
+message.send.backend.auth.type = "password"
+message.send.backend.auth.cmd = "pass show email/gmail-himalaya"
+
+# =============================================================================
+# Work (JBI Tools)
+# =============================================================================
+[accounts.work]
+email = "zach@jbi.tools"
+
+folder.aliases.inbox = "INBOX"
+folder.aliases.sent = "INBOX.Sent"
+folder.aliases.drafts = "INBOX.Drafts"
+folder.aliases.trash = "INBOX.Trash"
+
+backend.type = "imap"
+backend.host = "imap.hostinger.com"
+backend.port = 993
+backend.login = "zach@jbi.tools"
+backend.auth.type = "password"
+backend.auth.cmd = "pass show email/work-himalaya"
+
+message.send.backend.type = "smtp"
+message.send.backend.host = "smtp.hostinger.com"
+message.send.backend.port = 465
+message.send.backend.login = "zach@jbi.tools"
+message.send.backend.auth.type = "password"
+message.send.backend.auth.cmd = "pass show email/work-himalaya"
+message.send.backend.timeout = 120

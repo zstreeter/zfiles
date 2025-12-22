@@ -5,7 +5,8 @@ REPO_DIR="$(cd "$(dirname "$0")" && pwd)"
 cd "$REPO_DIR"
 
 # Packages to stow (directories with dotfiles)
-STOW_PACKAGES=(cura hypr tmux yazi zathura zsh)
+# "himalaya" and "mirador" are included here so stow links your config files
+STOW_PACKAGES=(cura hypr tmux yazi zathura zsh himalaya mirador)
 
 info() { echo -e "\033[1;34m>>>\033[0m $1"; }
 warn() { echo -e "\033[1;33m!!!\033[0m $1"; }
@@ -71,38 +72,26 @@ install_my_nvim() {
 }
 
 if [[ -d "$NVIM_DIR" ]]; then
-    # Check if it is a git repo
     if [[ -d "$NVIM_DIR/.git" ]]; then
-        # Check if it's MY repo
         REMOTE_URL=$(git -C "$NVIM_DIR" remote get-url origin 2>/dev/null || true)
         if [[ "$REMOTE_URL" == *zstreeter/nvim* ]]; then
             info "Correct Neovim config found, pulling latest..."
             git -C "$NVIM_DIR" pull
         else
-            warn "Unknown Neovim git repo found. Backing up to nvim.omarchy.bak..."
+            warn "Unknown Neovim git repo found. Backing up..."
             rm -rf "$HOME/.config/nvim.omarchy.bak"
             mv "$NVIM_DIR" "$HOME/.config/nvim.omarchy.bak"
-
-            # CRITICAL: Clean up plugin data to avoid "Zombie" distro errors
-            warn "Cleaning old plugin data (~/.local/share/nvim)..."
             rm -rf "$HOME/.local/share/nvim"
-
             install_my_nvim
         fi
     else
-        # It's a directory but not a git repo (likely default Omarchy config)
-        warn "Default Omarchy config found. Backing up to nvim.omarchy.bak..."
+        warn "Default Omarchy config found. Backing up..."
         rm -rf "$HOME/.config/nvim.omarchy.bak"
         mv "$NVIM_DIR" "$HOME/.config/nvim.omarchy.bak"
-
-        # CRITICAL: Clean up plugin data
-        warn "Cleaning old plugin data (~/.local/share/nvim)..."
         rm -rf "$HOME/.local/share/nvim"
-
         install_my_nvim
     fi
 else
-    # Nothing there, just install
     install_my_nvim
 fi
 
@@ -111,7 +100,6 @@ OMARCHY_THEME="$HOME/.config/omarchy/current/theme/neovim.lua"
 NVIM_THEME_LINK="$NVIM_DIR/lua/plugins/omarchy-theme.lua"
 
 if [[ -f "$OMARCHY_THEME" ]]; then
-    # Ensure plugins directory exists (in case clone failed or structure changed)
     mkdir -p "$(dirname "$NVIM_THEME_LINK")"
     ln -sf "$OMARCHY_THEME" "$NVIM_THEME_LINK"
     info "Symlinked Omarchy theme to neovim plugins"
@@ -123,14 +111,37 @@ fi
 info "Setting up Tmux Plugin Manager..."
 TPM_DIR="$HOME/.config/tmux/plugins/tpm"
 if [[ ! -d "$TPM_DIR" ]]; then
-    info "Cloning TPM..."
     mkdir -p "$TPM_DIR"
     git clone https://github.com/tmux-plugins/tpm "$TPM_DIR"
 else
     info "TPM already installed."
 fi
 
-# 6. Stow dotfiles
+# 6. Install Pimalaya Tools (Himalaya & Mirador)
+info "Checking Pimalaya tools..."
+
+if command -v cargo &>/dev/null; then
+    # Install Himalaya
+    if ! command -v himalaya &>/dev/null; then
+        info "Himalaya not found. Installing via cargo..."
+        cargo install himalaya
+    else
+        info "Himalaya is already installed."
+    fi
+
+    # Install Mirador
+    if ! command -v mirador &>/dev/null; then
+        info "Mirador not found. Installing via cargo..."
+        cargo install --frozen --force --git https://github.com/pimalaya/mirador.git
+    else
+        info "Mirador is already installed."
+    fi
+else
+    warn "Cargo not found! Skipping Himalaya/Mirador installation."
+    warn "Please ensure 'rust' or 'rustup' is installed."
+fi
+
+# 7. Stow dotfiles
 info "Stowing dotfiles..."
 command -v stow &>/dev/null || sudo pacman -S --needed --noconfirm stow
 
@@ -145,26 +156,19 @@ done
 # Restore repo state (adopt pulls in local changes)
 git checkout -- .
 
-# 7. Install Yazi Plugins
+# 8. Install Yazi Plugins
 info "Setting up Yazi plugins..."
 if command -v ya &>/dev/null; then
-    # Ensure specific plugins are tracked in package.toml
-    # (Using || true to suppress "already exists" errors)
     ya pkg add yazi-rs/plugins:full-border || true
     ya pkg add yazi-rs/plugins:smart-enter || true
-
-    # Hydrate/Install dependencies from package.toml
     ya pkg install
-
-    # Update to ensure compatibility with latest Yazi version
     ya pkg upgrade
-
     info "Yazi plugins installed and upgraded."
 else
     warn "Yazi (ya) binary not found, skipping plugin setup."
 fi
 
-# 8. Configure Hyprland to source zfiles bindings
+# 9. Configure Hyprland to source zfiles bindings
 info "Configuring Hyprland..."
 HYPR_CONF="$HOME/.config/hypr/hyprland.conf"
 ZFILES_SOURCE='source = ~/.config/hypr/zfilesbindings.conf'
@@ -180,23 +184,21 @@ else
     warn "hyprland.conf not found, skipping"
 fi
 
-# 9. Install Omarchy theme hook
+# 10. Install Omarchy theme hook
 info "Installing Omarchy theme hook..."
 HOOKS_DIR="$HOME/.config/omarchy/hooks"
 mkdir -p "$HOOKS_DIR"
 cp "$REPO_DIR/hooks/theme-set" "$HOOKS_DIR/theme-set"
 chmod +x "$HOOKS_DIR/theme-set"
 
-# Run hook for current theme to generate initial configs
 if [[ -d "$HOME/.config/omarchy/current/theme" ]]; then
     CURRENT_THEME=$(basename "$(readlink -f "$HOME/.config/omarchy/current")" 2>/dev/null || echo "unknown")
     info "Generating theme configs for: $CURRENT_THEME"
     "$HOOKS_DIR/theme-set" "$CURRENT_THEME"
 fi
 
-# 10. Enable optional services
+# 11. Enable optional services
 info "Enabling services..."
 sudo systemctl enable --now docker 2>/dev/null || true
-systemctl --user enable --now email-sync.timer 2>/dev/null || true
 
 info "Done! Log out and back in for shell change, reboot for keyd."
