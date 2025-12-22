@@ -1,0 +1,17 @@
+[Unit]
+Description=Mirador Email Watcher for %i
+# UWSM ensures this starts after the graphical session is ready
+After=graphical-session.target
+PartOf=graphical-session.target
+
+[Service]
+# %i is replaced by the account name (e.g., "work")
+ExecStart=%h/.cargo/bin/mirador watch %i
+Restart=on-failure
+RestartSec=60
+
+# Ensure we have access to the Wayland socket for notifications
+Environment=RUST_LOG=info
+
+[Install]
+WantedBy=graphical-session.target

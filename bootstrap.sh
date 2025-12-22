@@ -5,7 +5,6 @@ REPO_DIR="$(cd "$(dirname "$0")" && pwd)"
 cd "$REPO_DIR"
 
 # Packages to stow (directories with dotfiles)
-# "himalaya" and "mirador" are included here so stow links your config files
 STOW_PACKAGES=(cura hypr tmux yazi zathura zsh himalaya mirador)
 
 info() { echo -e "\033[1;34m>>>\033[0m $1"; }
@@ -132,7 +131,7 @@ if command -v cargo &>/dev/null; then
     # Install Mirador
     if ! command -v mirador &>/dev/null; then
         info "Mirador not found. Installing via cargo..."
-        cargo install --frozen --force --git https://github.com/pimalaya/mirador.git
+        cargo install --locked --force --git https://github.com/pimalaya/mirador.git
     else
         info "Mirador is already installed."
     fi

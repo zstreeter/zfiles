@@ -2,39 +2,35 @@
 # Gmail (Personal)
 # =============================================================================
 [accounts.gmail]
-email = "zacharylouis42@gmail.com"
 default = true
-
-# Folder aliases allow Mirador to know which folder to watch if not specified
-folder.aliases.inbox = "INBOX"
+folder = "INBOX"
 
 backend.type = "imap"
 backend.host = "imap.gmail.com"
 backend.port = 993
 backend.login = "zacharylouis42@gmail.com"
-backend.auth.type = "password"
+# Changed type to 'command' to support 'pass'
+backend.auth.type = "command"
 backend.auth.cmd = "pass show email/gmail-himalaya"
 
-[accounts.gmail.watch]
-# Standard notification (disappears automatically)
+[accounts.gmail.on-message-added]
+# Using 'sh -c' is sometimes safer for complex args, but direct cmd usually works
 cmd = "notify-send 'Personal Email' 'You have new mail.' -i mail-message-new"
-
 
 # =============================================================================
 # Work (JBI Tools)
 # =============================================================================
 [accounts.work]
-email = "zach@jbi.tools"
-
-folder.aliases.inbox = "INBOX"
+folder = "INBOX"
 
 backend.type = "imap"
 backend.host = "imap.hostinger.com"
 backend.port = 993
 backend.login = "zach@jbi.tools"
-backend.auth.type = "password"
+# Changed type to 'command'
+backend.auth.type = "command"
 backend.auth.cmd = "pass show email/work-himalaya"
 
-[accounts.work.watch]
-# Sticky notification (-t 0) so you don't miss work emails
+[accounts.work.on-message-added]
+# Sticky (-t 0) is great for work
 cmd = "notify-send 'Work Email' 'You have new mail.' -i mail-message-new -t 0"
