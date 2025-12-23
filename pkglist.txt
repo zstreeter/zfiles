@@ -17,6 +17,7 @@ zathura
 zathura-pdf-mupdf
 cura
 yazi
+zotero-bin
 
 # Password Management
 pass

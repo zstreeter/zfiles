@@ -27,18 +27,28 @@ fi
 
 # Install essential base tools explicitly to ensure they exist
 # (pinentry is needed for the GPG config step below)
-sudo pacman -S --needed --noconfirm pinentry stow
+# (xdg-utils is needed for xdg-mime)
+sudo pacman -S --needed --noconfirm pinentry stow xdg-utils
 
 # Strip comments and blank lines from pkglist.txt
 grep -v '^#' pkglist.txt | grep -v '^$' | $AUR_HELPER -S --needed --noconfirm -
 
-# 2. Configure keyd
+# 2. Configure Default Applications
+info "Setting default applications (Zathura for PDF)..."
+if command -v zathura &>/dev/null; then
+    xdg-mime default org.pwmt.zathura.desktop application/pdf
+    info "Default PDF reader set to Zathura."
+else
+    warn "Zathura not found, skipping default application setup."
+fi
+
+# 3. Configure keyd
 info "Configuring keyd (Caps → Esc/Super)..."
 sudo mkdir -p /etc/keyd
 sudo cp root_etc/keyd/default.conf /etc/keyd/default.conf
 sudo systemctl enable --now keyd
 
-# 3. Configure GPG Agent (Pinentry GTK)
+# 4. Configure GPG Agent (Pinentry GTK)
 info "Configuring GPG Agent..."
 mkdir -p ~/.gnupg
 chmod 700 ~/.gnupg
@@ -52,7 +62,7 @@ fi
 # Reload agent to apply changes
 gpg-connect-agent reloadagent /bye || true
 
-# 4. Configure zsh with XDG and Zap
+# 5. Configure zsh with XDG and Zap
 info "Configuring zsh..."
 
 cat > "$HOME/.zshenv" << 'EOF'
@@ -75,7 +85,7 @@ if [[ "$SHELL" != */zsh ]]; then
     chsh -s "$(command -v zsh)"
 fi
 
-# 5. Clone neovim config (SMART INSTALL)
+# 6. Clone neovim config (SMART INSTALL)
 info "Setting up neovim config..."
 NVIM_DIR="$HOME/.config/nvim"
 MY_REPO_URL="https://github.com/zstreeter/nvim.git"
@@ -120,7 +130,7 @@ else
     warn "Omarchy theme not found, skipping neovim symlink"
 fi
 
-# 6. Install Tmux Plugin Manager (TPM)
+# 7. Install Tmux Plugin Manager (TPM)
 info "Setting up Tmux Plugin Manager..."
 TPM_DIR="$HOME/.config/tmux/plugins/tpm"
 if [[ ! -d "$TPM_DIR" ]]; then
@@ -130,7 +140,7 @@ else
     info "TPM already installed."
 fi
 
-# 7. Install Pimalaya Tools (Himalaya & Mirador)
+# 8. Install Pimalaya Tools (Himalaya & Mirador)
 info "Checking Pimalaya tools..."
 
 # Himalaya via Cargo
@@ -153,7 +163,7 @@ else
     info "Mirador is already installed."
 fi
 
-# 8. Stow dotfiles
+# 9. Stow dotfiles
 info "Stowing dotfiles..."
 # Ensure stow is installed
 command -v stow &>/dev/null || sudo pacman -S --needed --noconfirm stow
@@ -170,7 +180,7 @@ done
 # Restore repo state (adopt pulls in local changes)
 git checkout -- .
 
-# 9. Configure Mirador Services
+# 10. Configure Mirador Services
 # Must happen AFTER stowing so the service files exist
 info "Configuring Mirador services..."
 systemctl --user daemon-reload
@@ -178,7 +188,7 @@ systemctl --user daemon-reload
 systemctl --user enable --now mirador@gmail 2>/dev/null || true
 systemctl --user enable --now mirador@work 2>/dev/null || true
 
-# 10. Install Yazi Plugins
+# 11. Install Yazi Plugins
 info "Setting up Yazi plugins..."
 if command -v ya &>/dev/null; then
     ya pkg add yazi-rs/plugins:full-border || true
@@ -190,7 +200,7 @@ else
     warn "Yazi (ya) binary not found, skipping plugin setup."
 fi
 
-# 11. Configure Hyprland to source zfiles bindings
+# 12. Configure Hyprland to source zfiles bindings
 info "Configuring Hyprland..."
 HYPR_CONF="$HOME/.config/hypr/hyprland.conf"
 ZFILES_SOURCE='source = ~/.config/hypr/zfilesbindings.conf'
@@ -206,7 +216,7 @@ else
     warn "hyprland.conf not found, skipping"
 fi
 
-# 12. Install Omarchy theme hook
+# 13. Install Omarchy theme hook
 info "Installing Omarchy theme hook..."
 HOOKS_DIR="$HOME/.config/omarchy/hooks"
 mkdir -p "$HOOKS_DIR"
@@ -219,7 +229,7 @@ if [[ -d "$HOME/.config/omarchy/current/theme" ]]; then
     "$HOOKS_DIR/theme-set" "$CURRENT_THEME"
 fi
 
-# 13. Enable optional services
+# 14. Enable optional services
 info "Enabling services..."
 sudo systemctl enable --now docker 2>/dev/null || true
 
