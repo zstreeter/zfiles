@@ -15,7 +15,7 @@ go
 # GUI Apps
 zathura
 zathura-pdf-mupdf
-cura
+cura-bin
 yazi
 zotero-bin
 

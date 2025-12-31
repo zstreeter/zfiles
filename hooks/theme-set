@@ -167,3 +167,19 @@ rules = [
 EOF
 
 echo "theme-set hook: Generated $YAZI_THEME"
+
+# === Append Email Rules to Mako ===
+MAKO_CONFIG="$HOME/.config/mako/config"
+if [[ -f "$MAKO_CONFIG" ]]; then
+    sed -i '/# zfiles-email-rules/,$d' "$MAKO_CONFIG"
+    cat >> "$MAKO_CONFIG" << 'EOF'
+# zfiles-email-rules
+[category=email.personal]
+border-color=#5599ff
+
+[category=email.work]
+border-color=#ff9900
+EOF
+    echo "theme-set hook: Appended email rules to mako"
+    pkill -USR2 mako 2>/dev/null || true
+fi
