@@ -5,17 +5,17 @@
 default = true
 folder = "INBOX"
 
+on-message-added.cmd = "notify-send 'Personal Email' 'New mail from {sender}' -c 'email.personal' -i 'mail-message-new'"
+on-message-added.notify.summary = "📫 {sender}"
+on-message-added.notify.body = "{subject}"
+
 backend.type = "imap"
 backend.host = "imap.gmail.com"
 backend.port = 993
+backend.encryption.type = "tls"
 backend.login = "zacharylouis42@gmail.com"
-# Changed type to 'command' to support 'pass'
-backend.auth.type = "command"
+backend.auth.type = "password"
 backend.auth.cmd = "pass show email/gmail-himalaya"
-
-[accounts.gmail.on-message-added]
-# Using 'sh -c' is sometimes safer for complex args, but direct cmd usually works
-cmd = "notify-send 'Personal Email' 'You have new mail.' -i mail-message-new"
 
 # =============================================================================
 # Work (JBI Tools)
@@ -23,14 +23,14 @@ cmd = "notify-send 'Personal Email' 'You have new mail.' -i mail-message-new"
 [accounts.work]
 folder = "INBOX"
 
+on-message-added.cmd = "notify-send 'Work Email' 'New mail from {sender}' -c 'email.work' -i 'mail-message-new' -u critical"
+on-message-added.notify.summary = "📫 {sender}"
+on-message-added.notify.body = "{subject}"
+
 backend.type = "imap"
 backend.host = "imap.hostinger.com"
 backend.port = 993
+backend.encryption.type = "tls"
 backend.login = "zach@jbi.tools"
-# Changed type to 'command'
-backend.auth.type = "command"
+backend.auth.type = "password"
 backend.auth.cmd = "pass show email/work-himalaya"
-
-[accounts.work.on-message-added]
-# Sticky (-t 0) is great for work
-cmd = "notify-send 'Work Email' 'You have new mail.' -i mail-message-new -t 0"
