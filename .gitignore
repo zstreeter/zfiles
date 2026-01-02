@@ -1,3 +1,4 @@
 .zsh_history
 tmux/.config/tmux/plugins/
 **/.zcompdump
+yazi/.config/yazi/package.toml
