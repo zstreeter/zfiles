@@ -5,7 +5,8 @@ REPO_DIR="$(cd "$(dirname "$0")" && pwd)"
 cd "$REPO_DIR"
 
 # Packages to stow (directories with dotfiles)
-STOW_PACKAGES=(cura hypr tmux yazi zathura zsh himalaya mirador)
+# Added gammastep to the list
+STOW_PACKAGES=(cura hypr tmux yazi zathura zsh himalaya mirador gammastep)
 
 info() { echo -e "\033[1;34m>>>\033[0m $1"; }
 warn() { echo -e "\033[1;33m!!!\033[0m $1"; }
@@ -170,7 +171,7 @@ command -v stow &>/dev/null || sudo pacman -S --needed --noconfirm stow
 
 for pkg in "${STOW_PACKAGES[@]}"; do
     if [[ -d "$pkg" ]]; then
-        # This links mirador service files to ~/.config/systemd/user/
+        # This links service files to ~/.config/systemd/user/ if structured correctly
         stow --adopt --target="$HOME" "$pkg"
     else
         warn "Package '$pkg' not found, skipping"
@@ -232,5 +233,23 @@ fi
 # 14. Enable optional services
 info "Enabling services..."
 sudo systemctl enable --now docker 2>/dev/null || true
+
+# 15. Configure Gammastep
+info "Configuring Gammastep..."
+if ! command -v gammastep &>/dev/null; then
+    warn "Gammastep not found. Installing..."
+    sudo pacman -S --needed --noconfirm gammastep
+fi
+
+# Reload systemd user daemon to pick up new service files from stow
+systemctl --user daemon-reload
+
+# Enable the service if the unit file exists
+if systemctl --user list-unit-files | grep -q gammastep.service; then
+    systemctl --user enable --now gammastep
+    info "Gammastep service enabled and started."
+else
+    warn "Gammastep service file not found (make sure it's in the stowed directory). Service not enabled."
+fi
 
 info "Done! Log out and back in for shell change, reboot for keyd."

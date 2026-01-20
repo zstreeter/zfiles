@@ -21,3 +21,6 @@ zotero-bin
 
 # Password Management
 pass
+
+# Blue light filter
+gammastep
