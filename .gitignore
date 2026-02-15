@@ -2,3 +2,6 @@
 tmux/.config/tmux/plugins/
 **/.zcompdump
 yazi/.config/yazi/package.toml
+cura/.local/share/cura/.sentry-native/
+cura/.local/share/cura/stderr.log
+cura/.local/share/cura/stdout.log
