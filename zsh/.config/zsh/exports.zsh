@@ -37,6 +37,9 @@ export STACK_XDG=1
 
 export CONDA_ROOT="$HOME/.local/miniconda"
 
+# API keys (gitignored)
+[[ -f "$XDG_CONFIG_HOME/zsh/secrets.env" ]] && source "$XDG_CONFIG_HOME/zsh/secrets.env"
+
 # Other program settings:
 export FZF_DEFAULT_OPTS="--layout=reverse --height 40%"
 export LESS=-R

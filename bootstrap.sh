@@ -71,6 +71,19 @@ export ZDOTDIR="${XDG_CONFIG_HOME:-$HOME/.config}/zsh"
 [[ -f "$ZDOTDIR/.zshenv" ]] && source "$ZDOTDIR/.zshenv"
 EOF
 
+SECRETS_FILE="${XDG_CONFIG_HOME:-$HOME/.config}/zsh/secrets.env"
+if [[ ! -f "$SECRETS_FILE" ]]; then
+    mkdir -p "$(dirname "$SECRETS_FILE")"
+    cat > "$SECRETS_FILE" << 'SECRETS'
+# API keys — fill these in, this file is never tracked by git
+# export ANTHROPIC_API_KEY=""
+# export OPENAI_API_KEY=""
+SECRETS
+    info "Created $SECRETS_FILE — add your API keys there."
+else
+    info "Secrets file already exists at $SECRETS_FILE"
+fi
+
 ZAP_DIR="$HOME/.local/share/zap"
 if [[ -d "$ZAP_DIR" ]]; then
     info "Zap is already installed."
