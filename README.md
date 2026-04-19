@@ -9,9 +9,9 @@ This overlay extends Omarchy with:
 - **Zsh** - Shell configuration (Omarchy uses bash by default)
 - **Keyd** - Caps Lock → Escape (tap) / Super (hold)
 - **Hyprland bindings** - Custom keybindings layered on top of Omarchy's defaults
-- **Theme integration** - Zathura and Yazi follow Omarchy's theme automatically
+- **Theme integration** - Sioyek and Yazi follow Omarchy's theme automatically
 - **Neovim** - Personal config synced with Omarchy themes
-- **Additional tools** - tmux, yazi, zathura, cura
+- **Additional tools** - tmux, yazi, sioyek, cura
 
 ## Installation
 
@@ -23,6 +23,36 @@ chmod +x bootstrap.sh
 ```
 
 Reboot after installation for keyd to take effect.
+
+### Non-Omarchy systems
+
+`bootstrap.sh` auto-detects Omarchy (via `~/.config/omarchy/` or
+`~/.local/share/omarchy/`). When absent, it installs **core packages only**:
+
+| Package  | Purpose                            |
+|----------|------------------------------------|
+| `zsh`    | Shell config                       |
+| `tmux`   | Terminal multiplexer config        |
+| `yazi`   | File manager                       |
+| `sioyek` | PDF viewer                         |
+| `cura`   | 3D printing slicer                 |
+| `scripts`| `new-research-project`, `publish-post` helpers + vault template |
+
+Skipped without Omarchy: Hyprland source, theme-set hook, mirador/himalaya
+email tools, gammastep service. Sioyek runs with default colors (no
+omarchy-driven theme sync).
+
+### À la carte stowing
+
+Each package directory is independent. To install just one:
+
+```bash
+cd ~/zfiles
+stow --target=$HOME sioyek      # symlinks .config/sioyek/ into $HOME
+stow --target=$HOME zsh         # etc.
+```
+
+Bootstrap is just the orchestrator — `stow` itself is per-package.
 
 ## Structure
 
@@ -38,7 +68,7 @@ zfiles/
 ├── hypr/                 # Hyprland custom bindings
 ├── tmux/                 # Tmux config
 ├── yazi/                 # File manager config
-├── zathura/              # PDF viewer config
+├── sioyek/               # PDF viewer config
 ├── zsh/                  # Shell config
 └── cura/                 # 3D printing slicer config
 ```
@@ -68,20 +98,18 @@ The keyd config (`root_etc/keyd/default.conf`) maps Caps Lock to:
 ### Theme Integration
 
 When you change Omarchy's theme, the `theme-set` hook automatically generates configs for:
-- Zathura (`~/.config/zathura/omarchy-theme`)
+- Sioyek — appends a `# zfiles-theme` block to `~/.config/sioyek/prefs_user.config`
 - Yazi (`~/.config/yazi/omarchy-theme.toml`)
 
-Make sure your configs include these:
-
-**zathura/zathurarc:**
-```bash
-include omarchy-theme
-```
+For Yazi, make sure your config includes:
 
 **yazi/theme.toml:**
 ```toml
 "$include" = "./omarchy-theme.toml"
 ```
+
+Sioyek's prefs_user.config is overwritten between `# zfiles-theme` markers — keep
+non-color customizations above that marker.
 
 ### Neovim
 
@@ -102,7 +130,7 @@ The bootstrap script clones [my neovim config](https://github.com/zstreeter/nvim
 4. Clones neovim config and symlinks Omarchy theme
 5. Stows all dotfile packages
 6. Adds `zfilesbindings.conf` source to Hyprland config
-7. Installs the theme-set hook for zathura/yazi
+7. Installs the theme-set hook for sioyek/yazi
 
 ## Adding More Packages
 

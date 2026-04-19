@@ -19,11 +19,16 @@ python-pandas
 python-plotly
 
 # GUI Apps
-zathura
-zathura-pdf-mupdf
+sioyek
 cura-bin
 yazi
 zotero-bin
+obsidian
+
+# Research / Writing
+texlive-most
+texlive-bibtexextra
+ripgrep-all
 
 # Password Management
 pass

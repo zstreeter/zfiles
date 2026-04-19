@@ -4,13 +4,33 @@ set -euo pipefail
 REPO_DIR="$(cd "$(dirname "$0")" && pwd)"
 cd "$REPO_DIR"
 
-# Packages to stow (directories with dotfiles)
-# Added gammastep to the list
-STOW_PACKAGES=(cura hypr tmux yazi zathura zsh himalaya mirador gammastep)
+# Detect whether we're on top of Omarchy. When false, omarchy-specific steps
+# (Hyprland source, theme-hook install, mirador/gammastep services) are skipped
+# and only cross-platform packages are stowed.
+OMARCHY=false
+if [[ -d "$HOME/.local/share/omarchy" || -d "$HOME/.config/omarchy" ]]; then
+    OMARCHY=true
+fi
+
+# Cross-platform packages — safe on any Linux
+CORE_PACKAGES=(cura tmux yazi sioyek zsh scripts)
+# Omarchy/Hyprland-specific packages — only stowed when OMARCHY=true
+OMARCHY_PACKAGES=(hypr himalaya mirador gammastep)
+
+STOW_PACKAGES=("${CORE_PACKAGES[@]}")
+if $OMARCHY; then
+    STOW_PACKAGES+=("${OMARCHY_PACKAGES[@]}")
+fi
 
 info() { echo -e "\033[1;34m>>>\033[0m $1"; }
 warn() { echo -e "\033[1;33m!!!\033[0m $1"; }
 error() { echo -e "\033[1;31mERR\033[0m $1" >&2; exit 1; }
+
+if $OMARCHY; then
+    info "Omarchy detected — installing full overlay."
+else
+    info "No Omarchy detected — installing core packages only."
+fi
 
 # 1. Install packages
 info "Installing packages..."
@@ -35,12 +55,13 @@ sudo pacman -S --needed --noconfirm pinentry stow xdg-utils
 grep -v '^#' pkglist.txt | grep -v '^$' | $AUR_HELPER -S --needed --noconfirm -
 
 # 2. Configure Default Applications
-info "Setting default applications (Zathura for PDF)..."
-if command -v zathura &>/dev/null; then
-    xdg-mime default org.pwmt.zathura.desktop application/pdf
-    info "Default PDF reader set to Zathura."
+info "Setting default applications (Sioyek for PDF)..."
+if command -v sioyek &>/dev/null; then
+    # Sioyek's AUR package installs sioyek.desktop
+    xdg-mime default sioyek.desktop application/pdf
+    info "Default PDF reader set to Sioyek."
 else
-    warn "Zathura not found, skipping default application setup."
+    warn "Sioyek not found, skipping default application setup."
 fi
 
 # 3. Configure keyd
@@ -154,27 +175,28 @@ else
     info "TPM already installed."
 fi
 
-# 8. Install Pimalaya Tools (Himalaya & Mirador)
-info "Checking Pimalaya tools..."
+# 8. Install Pimalaya Tools (Himalaya & Mirador) — omarchy-only since configs
+# (himalaya/mirador stow packages) are only stowed on omarchy
+if $OMARCHY; then
+    info "Checking Pimalaya tools..."
 
-# Himalaya via Cargo
-if command -v cargo &>/dev/null; then
-    if ! command -v himalaya &>/dev/null; then
-        info "Himalaya not found. Installing via cargo..."
-        cargo install himalaya
+    if command -v cargo &>/dev/null; then
+        if ! command -v himalaya &>/dev/null; then
+            info "Himalaya not found. Installing via cargo..."
+            cargo install himalaya
+        else
+            info "Himalaya is already installed."
+        fi
     else
-        info "Himalaya is already installed."
+        warn "Cargo not found! Skipping Himalaya installation."
     fi
-else
-    warn "Cargo not found! Skipping Himalaya installation."
-fi
 
-# Mirador via AUR (Moved from Cargo to AUR as requested)
-if ! command -v mirador &>/dev/null; then
-    info "Mirador not found. Installing via AUR..."
-    $AUR_HELPER -S --needed --noconfirm mirador-git
-else
-    info "Mirador is already installed."
+    if ! command -v mirador &>/dev/null; then
+        info "Mirador not found. Installing via AUR..."
+        $AUR_HELPER -S --needed --noconfirm mirador-git
+    else
+        info "Mirador is already installed."
+    fi
 fi
 
 # 9. Stow dotfiles
@@ -194,13 +216,13 @@ done
 # Restore repo state (adopt pulls in local changes)
 git checkout -- .
 
-# 10. Configure Mirador Services
-# Must happen AFTER stowing so the service files exist
-info "Configuring Mirador services..."
-systemctl --user daemon-reload
-# Enable specific instances defined in your config
-systemctl --user enable --now mirador@gmail 2>/dev/null || true
-systemctl --user enable --now mirador@work 2>/dev/null || true
+# 10. Configure Mirador Services (omarchy-only — service files come from stowed mirador package)
+if $OMARCHY; then
+    info "Configuring Mirador services..."
+    systemctl --user daemon-reload
+    systemctl --user enable --now mirador@gmail 2>/dev/null || true
+    systemctl --user enable --now mirador@work 2>/dev/null || true
+fi
 
 # 11. Install Yazi Plugins
 info "Setting up Yazi plugins..."
@@ -214,55 +236,83 @@ else
     warn "Yazi (ya) binary not found, skipping plugin setup."
 fi
 
-# 12. Configure Hyprland to source zfiles bindings
-info "Configuring Hyprland..."
-HYPR_CONF="$HOME/.config/hypr/hyprland.conf"
-ZFILES_SOURCE='source = ~/.config/hypr/zfilesbindings.conf'
+# 12. Configure Hyprland to source zfiles bindings (omarchy-only)
+if $OMARCHY; then
+    info "Configuring Hyprland..."
+    HYPR_CONF="$HOME/.config/hypr/hyprland.conf"
+    ZFILES_SOURCE='source = ~/.config/hypr/zfilesbindings.conf'
 
-if [[ -f "$HYPR_CONF" ]]; then
-    if ! grep -qF "$ZFILES_SOURCE" "$HYPR_CONF"; then
-        echo -e "\n# zfiles overlay\n$ZFILES_SOURCE" >> "$HYPR_CONF"
-        info "Added zfilesbindings.conf to hyprland.conf"
+    if [[ -f "$HYPR_CONF" ]]; then
+        if ! grep -qF "$ZFILES_SOURCE" "$HYPR_CONF"; then
+            echo -e "\n# zfiles overlay\n$ZFILES_SOURCE" >> "$HYPR_CONF"
+            info "Added zfilesbindings.conf to hyprland.conf"
+        else
+            info "zfilesbindings.conf already sourced in hyprland.conf"
+        fi
     else
-        info "zfilesbindings.conf already sourced in hyprland.conf"
+        warn "hyprland.conf not found, skipping"
     fi
-else
-    warn "hyprland.conf not found, skipping"
 fi
 
-# 13. Install Omarchy theme hook
-info "Installing Omarchy theme hook..."
-HOOKS_DIR="$HOME/.config/omarchy/hooks"
-mkdir -p "$HOOKS_DIR"
-cp "$REPO_DIR/hooks/theme-set" "$HOOKS_DIR/theme-set"
-chmod +x "$HOOKS_DIR/theme-set"
+# 13. Install Omarchy theme hook (omarchy-only)
+if $OMARCHY; then
+    info "Installing Omarchy theme hook..."
+    HOOKS_DIR="$HOME/.config/omarchy/hooks"
+    mkdir -p "$HOOKS_DIR"
+    cp "$REPO_DIR/hooks/theme-set" "$HOOKS_DIR/theme-set"
+    chmod +x "$HOOKS_DIR/theme-set"
 
-if [[ -d "$HOME/.config/omarchy/current/theme" ]]; then
-    CURRENT_THEME=$(basename "$(readlink -f "$HOME/.config/omarchy/current")" 2>/dev/null || echo "unknown")
-    info "Generating theme configs for: $CURRENT_THEME"
-    "$HOOKS_DIR/theme-set" "$CURRENT_THEME"
+    if [[ -d "$HOME/.config/omarchy/current/theme" ]]; then
+        CURRENT_THEME=$(basename "$(readlink -f "$HOME/.config/omarchy/current")" 2>/dev/null || echo "unknown")
+        info "Generating theme configs for: $CURRENT_THEME"
+        "$HOOKS_DIR/theme-set" "$CURRENT_THEME"
+    fi
 fi
 
 # 14. Enable optional services
 info "Enabling services..."
 sudo systemctl enable --now docker 2>/dev/null || true
 
-# 15. Configure Gammastep
-info "Configuring Gammastep..."
-if ! command -v gammastep &>/dev/null; then
-    warn "Gammastep not found. Installing..."
-    sudo pacman -S --needed --noconfirm gammastep
+# 14b. Set up research workspace
+info "Setting up research workspace..."
+mkdir -p "$HOME/research"
+if ! command -v new-research-project &>/dev/null; then
+    warn "new-research-project not on PATH. Ensure ~/.local/bin is in PATH (zsh)."
 fi
 
-# Reload systemd user daemon to pick up new service files from stow
-systemctl --user daemon-reload
+# 15. Configure Gammastep (omarchy-only — service file comes from stowed gammastep package)
+if $OMARCHY; then
+    info "Configuring Gammastep..."
+    if ! command -v gammastep &>/dev/null; then
+        warn "Gammastep not found. Installing..."
+        sudo pacman -S --needed --noconfirm gammastep
+    fi
 
-# Enable the service if the unit file exists
-if systemctl --user list-unit-files | grep -q gammastep.service; then
-    systemctl --user enable --now gammastep
-    info "Gammastep service enabled and started."
-else
-    warn "Gammastep service file not found (make sure it's in the stowed directory). Service not enabled."
+    systemctl --user daemon-reload
+
+    if systemctl --user list-unit-files | grep -q gammastep.service; then
+        systemctl --user enable --now gammastep
+        info "Gammastep service enabled and started."
+    else
+        warn "Gammastep service file not found (make sure it's in the stowed directory). Service not enabled."
+    fi
 fi
+
+cat <<'EOF'
+
+>>> Research workflow — manual steps remaining:
+
+  1. Zotero (one-time): install Better BibTeX if not already.
+     Edit → Preferences → Better BibTeX → Citation keys: choose a key format.
+
+  2. To start a new research project:
+       new-research-project <name>     # creates ~/research/<name>/
+     Then open that folder in Obsidian and install the community plugins
+     listed in the vault's README.md.
+
+  3. Per-vault: configure Better BibTeX → Automatic export → target the
+     vault's references.bib (Format: Better BibLaTeX, On change).
+
+EOF
 
 info "Done! Log out and back in for shell change, reboot for keyd."

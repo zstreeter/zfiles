@@ -1,0 +1,47 @@
+#!/usr/bin/env bash
+# publish-post <draft.qmd> [slug]
+# Copies a vault draft (and adjacent assets) into the blog at
+# ~/Documents/Repos/zstreeter.github.io/posts/YYYY-MM-DD-<slug>/index.qmd
+set -euo pipefail
+
+if [[ $# -lt 1 ]]; then
+    echo "usage: publish-post <draft.qmd> [slug]" >&2
+    exit 1
+fi
+
+DRAFT="$1"
+SLUG="${2:-$(basename "$DRAFT" .qmd)}"
+DATE=$(date +%Y-%m-%d)
+BLOG_DIR="$HOME/Documents/Repos/zstreeter.github.io"
+DEST_DIR="$BLOG_DIR/posts/${DATE}-${SLUG}"
+
+if [[ ! -f "$DRAFT" ]]; then
+    echo "ERR: draft not found: $DRAFT" >&2
+    exit 1
+fi
+
+if [[ ! -d "$BLOG_DIR" ]]; then
+    echo "ERR: blog repo not found at $BLOG_DIR" >&2
+    exit 1
+fi
+
+if [[ -e "$DEST_DIR" ]]; then
+    echo "ERR: $DEST_DIR already exists. Edit there directly or remove it first." >&2
+    exit 1
+fi
+
+mkdir -p "$DEST_DIR"
+cp "$DRAFT" "$DEST_DIR/index.qmd"
+
+# Copy adjacent images (siblings of the draft). Quarto's image: paths in
+# frontmatter resolve relative to the post directory, so colocating is simplest.
+DRAFT_DIR=$(dirname "$DRAFT")
+shopt -s nullglob
+for f in "$DRAFT_DIR"/*.{png,jpg,jpeg,svg,gif,webp}; do
+    cp "$f" "$DEST_DIR/"
+done
+shopt -u nullglob
+
+echo "Published to $DEST_DIR"
+echo "Preview:  cd $BLOG_DIR && quarto preview posts/${DATE}-${SLUG}/"
+echo "Publish:  cd $BLOG_DIR && quarto publish gh-pages"
