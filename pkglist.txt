@@ -18,6 +18,9 @@ python-numpy
 python-pandas
 python-plotly
 
+# AI / Agents
+opencode-bin
+
 # GUI Apps
 sioyek
 cura-bin

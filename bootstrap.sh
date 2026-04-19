@@ -276,6 +276,15 @@ sudo systemctl enable --now docker 2>/dev/null || true
 # 14b. Set up research workspace
 info "Setting up research workspace..."
 mkdir -p "$HOME/research"
+
+# Seed the research workflow README on first install (don't clobber user edits)
+RESEARCH_README="$HOME/research/README.md"
+README_TEMPLATE="${XDG_DATA_HOME:-$HOME/.local/share}/zfiles/research-readme.md"
+if [[ ! -f "$RESEARCH_README" && -f "$README_TEMPLATE" ]]; then
+    cp "$README_TEMPLATE" "$RESEARCH_README"
+    info "Installed research workflow README to $RESEARCH_README"
+fi
+
 if ! command -v new-research-project &>/dev/null; then
     warn "new-research-project not on PATH. Ensure ~/.local/bin is in PATH (zsh)."
 fi
