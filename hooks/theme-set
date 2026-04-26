@@ -161,6 +161,41 @@ EOF
 
 echo "theme-set hook: Generated $YAZI_THEME"
 
+# === Generate Opencode TUI Theme ===
+# Map omarchy themes to opencode's built-in TUI themes.
+# Unmapped themes fall back to opencode's default theme.
+case "$THEME_NAME" in
+    catppuccin|catppuccin-latte) OC_THEME="catppuccin" ;;
+    everforest)                  OC_THEME="everforest" ;;
+    flexoki-light)               OC_THEME="flexoki" ;;
+    gruvbox)                     OC_THEME="gruvbox" ;;
+    kanagawa)                    OC_THEME="kanagawa" ;;
+    nord)                        OC_THEME="nord" ;;
+    osaka-jade)                  OC_THEME="osaka-jade" ;;
+    rose-pine)                   OC_THEME="rosepine" ;;
+    tokyo-night)                 OC_THEME="tokyonight" ;;
+    matte-black|vantablack)      OC_THEME="amoled" ;;
+    hackerman)                   OC_THEME="matrix" ;;
+    white)                       OC_THEME="github" ;;
+    *)                           OC_THEME="opencode" ;;
+esac
+
+OPENCODE_TUI="$HOME/.config/opencode/tui.json"
+mkdir -p "$(dirname "$OPENCODE_TUI")"
+cat > "$OPENCODE_TUI" << EOF
+{
+  "\$schema": "https://opencode.ai/tui.json",
+  "theme": "$OC_THEME"
+}
+EOF
+echo "theme-set hook: Set opencode TUI theme to $OC_THEME"
+
+# Re-signal opencode so it picks up the new tui.json. omarchy-theme-set
+# already restarted it once before our hook ran, but with the OLD tui.json.
+if pgrep -x opencode >/dev/null; then
+    killall -SIGUSR2 opencode 2>/dev/null || true
+fi
+
 # === Append Email Rules to Mako ===
 MAKO_CONFIG="$HOME/.config/mako/config"
 if [[ -f "$MAKO_CONFIG" ]]; then

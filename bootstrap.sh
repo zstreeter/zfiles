@@ -13,7 +13,7 @@ if [[ -d "$HOME/.local/share/omarchy" || -d "$HOME/.config/omarchy" ]]; then
 fi
 
 # Cross-platform packages — safe on any Linux
-CORE_PACKAGES=(cura tmux yazi sioyek zsh scripts)
+CORE_PACKAGES=(cura tmux yazi sioyek zsh scripts opencode)
 # Omarchy/Hyprland-specific packages — only stowed when OMARCHY=true
 OMARCHY_PACKAGES=(hypr himalaya mirador gammastep)
 
@@ -96,9 +96,28 @@ SECRETS_FILE="${XDG_CONFIG_HOME:-$HOME/.config}/zsh/secrets.env"
 if [[ ! -f "$SECRETS_FILE" ]]; then
     mkdir -p "$(dirname "$SECRETS_FILE")"
     cat > "$SECRETS_FILE" << 'SECRETS'
-# API keys — fill these in, this file is never tracked by git
+# API keys — fill these in, this file is never tracked by git.
+# Sourced by zsh/.config/zsh/exports.zsh on every shell start.
+# Uncomment and set the providers you actually use.
+
+# --- AI providers (used by pi, opencode, claude code, etc.) ---
 # export ANTHROPIC_API_KEY=""
 # export OPENAI_API_KEY=""
+# export GEMINI_API_KEY=""
+# export GOOGLE_API_KEY=""
+# export OPENROUTER_API_KEY=""
+# export DEEPSEEK_API_KEY=""
+# export GROQ_API_KEY=""
+# export CEREBRAS_API_KEY=""
+# export XAI_API_KEY=""
+# export MISTRAL_API_KEY=""
+# export FIREWORKS_API_KEY=""
+# export KIMI_API_KEY=""
+# export OPENCODE_API_KEY=""
+# export AI_GATEWAY_API_KEY=""
+
+# --- Source-control / registry tokens ---
+# export GITHUB_TOKEN=""
 SECRETS
     info "Created $SECRETS_FILE — add your API keys there."
 else
@@ -197,6 +216,25 @@ if $OMARCHY; then
     else
         info "Mirador is already installed."
     fi
+fi
+
+# 8b. Install pi coding agent (npm-only; not in pacman/AUR)
+# Used by pi.nvim. Node is provided via mise (in pkglist) so we don't pollute
+# the system with a global node install — pi gets installed under mise's
+# managed node prefix and exposed on PATH via mise shims.
+info "Checking pi coding agent..."
+if command -v pi &>/dev/null; then
+    info "pi is already installed ($(pi --version 2>/dev/null || echo unknown))."
+else
+    command -v mise &>/dev/null || error "mise not found — should be in pkglist.txt"
+    if ! mise which node &>/dev/null; then
+        info "Installing node@lts via mise..."
+        mise use --global node@lts
+    fi
+    info "Installing pi via npm..."
+    mise exec node@lts -- npm install -g @mariozechner/pi-coding-agent
+    mise reshim
+    info "pi installed."
 fi
 
 # 9. Stow dotfiles

@@ -8,9 +8,14 @@ bat
 ripgrep
 fd
 fzf
+git
+gnupg
+curl
 
 # Development
 go
+rust
+mise
 quarto-cli-bin
 python-jupyter
 python-matplotlib
@@ -20,6 +25,7 @@ python-plotly
 
 # AI / Agents
 opencode-bin
+lsof
 
 # GUI Apps
 sioyek
