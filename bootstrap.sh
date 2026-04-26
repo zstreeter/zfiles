@@ -251,6 +251,28 @@ if [[ -d "$PI_OLD_DIR" && -n "$(ls -A "$PI_OLD_DIR" 2>/dev/null)" ]]; then
     rmdir "$HOME/.pi" 2>/dev/null || true
 fi
 
+# 8d. XDG hygiene — relocate well-known dotfiles to XDG paths and remove
+# dead artifacts. Each relocate runs only when the legacy path exists and
+# the XDG target doesn't, so this is safe to rerun.
+xdg_relocate() {
+    local old="$1" new="$2"
+    if [[ -e "$old" && ! -e "$new" ]]; then
+        info "Relocating $old → $new"
+        mkdir -p "$(dirname "$new")"
+        mv "$old" "$new"
+    fi
+}
+
+xdg_relocate "$HOME/.docker"         "${XDG_CONFIG_HOME:-$HOME/.config}/docker"
+xdg_relocate "$HOME/.password-store" "${XDG_DATA_HOME:-$HOME/.local/share}/password-store"
+xdg_relocate "$HOME/.XCompose"       "${XDG_CONFIG_HOME:-$HOME/.config}/X11/XCompose"
+
+# Dead artifacts — recreated on demand by their tools if ever needed.
+# ~/.zshrc gets clobbered by `mamba shell init`; the canonical zshrc lives
+# in $ZDOTDIR (zsh/.config/zsh/.zshrc) so any $HOME/.zshrc is leftover noise.
+rm -f "$HOME/.cdb_history" "$HOME/.zshrc"
+rm -rf "$HOME/.mamba" "$HOME/.nv"
+
 # 9. Stow dotfiles
 info "Stowing dotfiles..."
 # Ensure stow is installed
