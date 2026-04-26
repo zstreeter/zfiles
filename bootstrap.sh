@@ -71,18 +71,31 @@ sudo cp root_etc/keyd/default.conf /etc/keyd/default.conf
 sudo systemctl enable --now keyd
 
 # 4. Configure GPG Agent (Pinentry GTK)
+# zsh/exports.zsh sets GNUPGHOME=$XDG_DATA_HOME/gnupg. Bootstrap may run
+# under bash without that loaded, so derive the target path the same way.
 info "Configuring GPG Agent..."
-mkdir -p ~/.gnupg
-chmod 700 ~/.gnupg
+GNUPGHOME_TARGET="${GNUPGHOME:-${XDG_DATA_HOME:-$HOME/.local/share}/gnupg}"
+
+# Relocate legacy ~/.gnupg once. Stop the running agent first so it doesn't
+# hold open file handles in the source tree mid-move.
+if [[ -d "$HOME/.gnupg" && ! -e "$GNUPGHOME_TARGET" ]]; then
+    info "Relocating $HOME/.gnupg → $GNUPGHOME_TARGET"
+    gpgconf --kill gpg-agent 2>/dev/null || true
+    mkdir -p "$(dirname "$GNUPGHOME_TARGET")"
+    mv "$HOME/.gnupg" "$GNUPGHOME_TARGET"
+fi
+
+mkdir -p "$GNUPGHOME_TARGET"
+chmod 700 "$GNUPGHOME_TARGET"
 
 # Ensure pinentry-gtk is set (idempotent)
-if ! grep -q "pinentry-program /usr/bin/pinentry-gtk" ~/.gnupg/gpg-agent.conf 2>/dev/null; then
-    echo "pinentry-program /usr/bin/pinentry-gtk" >> ~/.gnupg/gpg-agent.conf
+if ! grep -q "pinentry-program /usr/bin/pinentry-gtk" "$GNUPGHOME_TARGET/gpg-agent.conf" 2>/dev/null; then
+    echo "pinentry-program /usr/bin/pinentry-gtk" >> "$GNUPGHOME_TARGET/gpg-agent.conf"
     echo "    Added pinentry-gtk to gpg-agent.conf"
 fi
 
-# Reload agent to apply changes
-gpg-connect-agent reloadagent /bye || true
+# Reload agent (auto-starts under the new GNUPGHOME) to apply changes
+GNUPGHOME="$GNUPGHOME_TARGET" gpg-connect-agent reloadagent /bye || true
 
 # 5. Configure zsh with XDG and Zap
 info "Configuring zsh..."
@@ -266,6 +279,7 @@ xdg_relocate() {
 xdg_relocate "$HOME/.docker"         "${XDG_CONFIG_HOME:-$HOME/.config}/docker"
 xdg_relocate "$HOME/.password-store" "${XDG_DATA_HOME:-$HOME/.local/share}/password-store"
 xdg_relocate "$HOME/.XCompose"       "${XDG_CONFIG_HOME:-$HOME/.config}/X11/XCompose"
+xdg_relocate "$HOME/.cargo"          "${XDG_DATA_HOME:-$HOME/.local/share}/cargo"
 
 # Dead artifacts — recreated on demand by their tools if ever needed.
 # ~/.zshrc gets clobbered by `mamba shell init`; the canonical zshrc lives
