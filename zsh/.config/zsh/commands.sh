@@ -1,5 +1,19 @@
 #!/usr/bin/env bash
 
+# Pull in omarchy's portable bash aliases and functions. They're plain POSIX-ish
+# shell so zsh sources them cleanly, which means omarchy updates flow through
+# automatically without re-porting per release.
+if [[ -d "$OMARCHY_PATH/default/bash" ]]; then
+	source "$OMARCHY_PATH/default/bash/aliases"
+	source "$OMARCHY_PATH/default/bash/functions"
+fi
+
+# zsh-side tool integrations (omarchy's init file is bash-only).
+# starship is skipped — handled by my-prompt.sh.
+# fzf is handled by the zap-zsh/fzf plugin in .zshrc.
+command -v mise &>/dev/null && eval "$(mise activate zsh)"
+command -v zoxide &>/dev/null && eval "$(zoxide init zsh)"
+
 function run_yazi() {
 	local tmp="$(mktemp -t "yazi-cwd.XXXXX")"
 	yazi "$@" --cwd-file="$tmp"

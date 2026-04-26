@@ -7,7 +7,6 @@
 PATH=$HOME/.local/share/cargo/bin:$PATH
 
 plug "$HOME/.config/zsh/my-prompt.sh"
-# plug "$HOME/.config/zsh/exports.zsh" # Exports must be before aliases
 plug "$HOME/.config/zsh/aliases.zsh"
 
 # From Marketplace

@@ -42,6 +42,13 @@ export STACK_XDG=1
 
 export CONDA_ROOT="$HOME/.local/miniconda"
 
+# Omarchy environment (mirrors omarchy/default/bash/envs so SSH/non-omarchy
+# zsh sessions get the same baseline).
+export OMARCHY_PATH="$XDG_DATA_HOME/omarchy"
+export SUDO_EDITOR="$EDITOR"
+export BAT_THEME=ansi
+export PATH="$OMARCHY_PATH/bin:$PATH:$HOME/.local/bin"
+
 # API keys (gitignored)
 [[ -f "$XDG_CONFIG_HOME/zsh/secrets.env" ]] && source "$XDG_CONFIG_HOME/zsh/secrets.env"
 
