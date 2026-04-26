@@ -6,3 +6,12 @@ cura/.local/share/cura/.sentry-native/
 cura/.local/share/cura/stderr.log
 cura/.local/share/cura/stdout.log
 zsh/.config/zsh/secrets.env
+
+# pi runtime data — secrets, sessions, and migration artifacts.
+# The directory itself is stowed; these specific files must never be tracked.
+pi/.config/pi/agent/auth.json
+pi/.config/pi/agent/auth.json.migrated
+pi/.config/pi/agent/oauth.json
+pi/.config/pi/agent/oauth.json.migrated
+pi/.config/pi/agent/sessions/
+pi/.config/pi/agent/*.jsonl

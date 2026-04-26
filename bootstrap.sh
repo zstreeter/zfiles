@@ -13,7 +13,7 @@ if [[ -d "$HOME/.local/share/omarchy" || -d "$HOME/.config/omarchy" ]]; then
 fi
 
 # Cross-platform packages — safe on any Linux
-CORE_PACKAGES=(cura tmux yazi sioyek zsh scripts opencode)
+CORE_PACKAGES=(cura tmux yazi sioyek zsh scripts opencode pi)
 # Omarchy/Hyprland-specific packages — only stowed when OMARCHY=true
 OMARCHY_PACKAGES=(hypr himalaya mirador gammastep)
 
@@ -235,6 +235,20 @@ else
     mise exec node@lts -- npm install -g @mariozechner/pi-coding-agent
     mise reshim
     info "pi installed."
+fi
+
+# 8c. Migrate pi data from legacy ~/.pi to XDG (~/.config/pi)
+# Pi defaults to ~/.pi/agent but respects $PI_CODING_AGENT_DIR (set in
+# zsh/exports.zsh to $XDG_CONFIG_HOME/pi/agent). Move pre-existing data
+# once so authed sessions / API keys aren't orphaned.
+PI_OLD_DIR="$HOME/.pi/agent"
+PI_NEW_DIR="${XDG_CONFIG_HOME:-$HOME/.config}/pi/agent"
+if [[ -d "$PI_OLD_DIR" && -n "$(ls -A "$PI_OLD_DIR" 2>/dev/null)" ]]; then
+    info "Migrating pi data: $PI_OLD_DIR → $PI_NEW_DIR"
+    mkdir -p "$PI_NEW_DIR"
+    cp -an "$PI_OLD_DIR"/. "$PI_NEW_DIR"/
+    rm -rf "$PI_OLD_DIR"
+    rmdir "$HOME/.pi" 2>/dev/null || true
 fi
 
 # 9. Stow dotfiles
