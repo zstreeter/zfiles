@@ -15,14 +15,14 @@ backend.host = "imap.gmail.com"
 backend.port = 993
 backend.login = "zacharylouis42@gmail.com"
 backend.auth.type = "password"
-backend.auth.cmd = "pass show email/gmail-himalaya"
+backend.auth.cmd = "GNUPGHOME=\"${XDG_DATA_HOME:-$HOME/.local/share}/gnupg\" PASSWORD_STORE_DIR=\"${XDG_DATA_HOME:-$HOME/.local/share}/password-store\" pass show email/gmail-himalaya"
 
 message.send.backend.type = "smtp"
 message.send.backend.host = "smtp.gmail.com"
 message.send.backend.port = 465
 message.send.backend.login = "zacharylouis42@gmail.com"
 message.send.backend.auth.type = "password"
-message.send.backend.auth.cmd = "pass show email/gmail-himalaya"
+message.send.backend.auth.cmd = "GNUPGHOME=\"${XDG_DATA_HOME:-$HOME/.local/share}/gnupg\" PASSWORD_STORE_DIR=\"${XDG_DATA_HOME:-$HOME/.local/share}/password-store\" pass show email/gmail-himalaya"
 
 # =============================================================================
 # Work (JBI Tools)
@@ -39,13 +39,13 @@ backend.port = 993
 backend.login = "zach@jbi.tools"
 backend.timeout = 300
 backend.auth.type = "password"
-backend.auth.cmd = "pass show email/work-himalaya"
+backend.auth.cmd = "GNUPGHOME=\"${XDG_DATA_HOME:-$HOME/.local/share}/gnupg\" PASSWORD_STORE_DIR=\"${XDG_DATA_HOME:-$HOME/.local/share}/password-store\" pass show email/work-himalaya"
 message.send.backend.type = "smtp"
 message.send.backend.host = "smtp.hostinger.com"
 message.send.backend.port = 587
 message.send.backend.encryption.type = "start-tls"
 message.send.backend.login = "zach@jbi.tools"
 message.send.backend.auth.type = "password"
-message.send.backend.auth.cmd = "pass show email/work-himalaya"
+message.send.backend.auth.cmd = "GNUPGHOME=\"${XDG_DATA_HOME:-$HOME/.local/share}/gnupg\" PASSWORD_STORE_DIR=\"${XDG_DATA_HOME:-$HOME/.local/share}/password-store\" pass show email/work-himalaya"
 message.send.backend.timeout = 120
 message.send.save-copy = false
