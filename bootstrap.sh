@@ -281,6 +281,7 @@ xdg_relocate "$HOME/.password-store" "${XDG_DATA_HOME:-$HOME/.local/share}/passw
 xdg_relocate "$HOME/.XCompose"       "${XDG_CONFIG_HOME:-$HOME/.config}/X11/XCompose"
 xdg_relocate "$HOME/.cargo"          "${XDG_DATA_HOME:-$HOME/.local/share}/cargo"
 xdg_relocate "$HOME/.npm"            "${XDG_CACHE_HOME:-$HOME/.cache}/npm"
+xdg_relocate "$HOME/.bun"            "${XDG_DATA_HOME:-$HOME/.local/share}/bun"
 
 # Dead artifacts — recreated on demand by their tools if ever needed.
 # ~/.zshrc gets clobbered by `mamba shell init`; the canonical zshrc lives

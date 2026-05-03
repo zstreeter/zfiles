@@ -16,6 +16,7 @@ curl
 go
 rust
 mise
+bun-bin
 quarto-cli-bin
 python-jupyter
 python-matplotlib
