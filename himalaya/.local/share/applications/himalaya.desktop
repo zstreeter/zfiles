@@ -1,0 +1,10 @@
+[Desktop Entry]
+Type=Application
+Name=Himalaya
+GenericName=Email Client
+Comment=Compose email via himalaya inside ghostty
+Exec=himalaya-mailto %u
+Terminal=false
+Icon=mail-message-new
+Categories=Network;Email;
+MimeType=x-scheme-handler/mailto;

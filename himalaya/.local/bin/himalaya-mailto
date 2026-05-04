@@ -1,0 +1,50 @@
+#!/usr/bin/env bash
+# himalaya-mailto — mailto: URI handler that opens himalaya in ghostty.
+# Wired up by himalaya.desktop (MimeType=x-scheme-handler/mailto).
+#
+# Desktop-file launches don't inherit zsh PATH, so prepend the cargo bin
+# dir explicitly — himalaya is installed via `cargo install` (see bootstrap.sh §8).
+set -euo pipefail
+
+export PATH="${XDG_DATA_HOME:-$HOME/.local/share}/cargo/bin:$HOME/.local/bin:/usr/local/bin:/usr/bin:${PATH:-}"
+
+urldecode() {
+    local data="${1//+/ }"
+    printf '%b' "${data//%/\\x}"
+}
+
+uri="${1:-}"
+to="" subject="" body="" cc="" bcc=""
+
+if [[ -n "$uri" ]]; then
+    rest="${uri#mailto:}"
+    if [[ "$rest" == *\?* ]]; then
+        to="$(urldecode "${rest%%\?*}")"
+        IFS='&' read -ra parts <<< "${rest#*\?}"
+        for part in "${parts[@]}"; do
+            key="${part%%=*}"
+            val="$(urldecode "${part#*=}")"
+            case "${key,,}" in
+                subject) subject="$val" ;;
+                body)    body="$val" ;;
+                cc)      cc="$val" ;;
+                bcc)     bcc="$val" ;;
+            esac
+        done
+    else
+        to="$(urldecode "$rest")"
+    fi
+fi
+
+if [[ -z "$to" && -z "$subject" && -z "$body" ]]; then
+    exec ghostty -e himalaya
+fi
+
+args=(message write)
+[[ -n "$to" ]]      && args+=(-H "To:$to")
+[[ -n "$subject" ]] && args+=(-H "Subject:$subject")
+[[ -n "$cc" ]]      && args+=(-H "Cc:$cc")
+[[ -n "$bcc" ]]     && args+=(-H "Bcc:$bcc")
+[[ -n "$body" ]]    && args+=("$body")
+
+exec ghostty -e himalaya "${args[@]}"

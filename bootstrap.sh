@@ -13,7 +13,7 @@ if [[ -d "$HOME/.local/share/omarchy" || -d "$HOME/.config/omarchy" ]]; then
 fi
 
 # Cross-platform packages — safe on any Linux
-CORE_PACKAGES=(cura tmux yazi sioyek zsh scripts opencode pi)
+CORE_PACKAGES=(cura tmux yazi sioyek zsh scripts opencode pi xdg)
 # Omarchy/Hyprland-specific packages — only stowed when OMARCHY=true
 OMARCHY_PACKAGES=(hypr himalaya mirador gammastep)
 
@@ -54,15 +54,9 @@ sudo pacman -S --needed --noconfirm pinentry stow xdg-utils
 # Strip comments and blank lines from pkglist.txt
 grep -v '^#' pkglist.txt | grep -v '^$' | $AUR_HELPER -S --needed --noconfirm -
 
-# 2. Configure Default Applications
-info "Setting default applications (Sioyek for PDF)..."
-if command -v sioyek &>/dev/null; then
-    # Sioyek's AUR package installs sioyek.desktop
-    xdg-mime default sioyek.desktop application/pdf
-    info "Default PDF reader set to Sioyek."
-else
-    warn "Sioyek not found, skipping default application setup."
-fi
+# 2. Default applications are declarative — defined in xdg/.config/mimeapps.list
+# (stowed in step 9). Entries that point at uninstalled .desktop files
+# silently no-op, so it's safe to ship the full list cross-platform.
 
 # 3. Configure keyd
 info "Configuring keyd (Caps → Esc/Super)..."

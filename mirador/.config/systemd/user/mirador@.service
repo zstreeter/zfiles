@@ -8,6 +8,10 @@ ExecStart=/usr/bin/mirador watch %i
 Restart=on-failure
 RestartSec=60
 Environment=RUST_LOG=info
+# pass / gpg expect XDG-relocated stores (see bootstrap.sh §8d).
+# The systemd user env doesn't inherit zsh exports, so set them here.
+Environment=PASSWORD_STORE_DIR=%h/.local/share/password-store
+Environment=GNUPGHOME=%h/.local/share/gnupg
 
 [Install]
 WantedBy=graphical-session.target
