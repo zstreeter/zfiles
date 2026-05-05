@@ -1,0 +1,23 @@
+#!/bin/bash
+# Wrapper: launch sioyek in custom color mode so omarchy theme colors
+# (custom_background_color/custom_text_color in prefs_user.config) apply to
+# the PDF page from the first frame.
+#
+# Uses absolute /usr/bin/sioyek to avoid recursing into this wrapper, which
+# shadows the system binary via ~/.local/bin appearing earlier in PATH.
+
+SIOYEK=/usr/bin/sioyek
+
+# If a sioyek instance is already running, this invocation just hands the
+# file to it. Don't toggle — that would flip the existing instance OUT of
+# custom color mode.
+# Use pidof (matches /proc/[pid]/exe — the real binary) rather than pgrep,
+# which would match this wrapper script itself: bash sets comm=sioyek when
+# argv[0] is the script name, so pgrep -x sioyek finds the wrapper.
+if pidof "$SIOYEK" >/dev/null; then
+    exec "$SIOYEK" "$@"
+fi
+
+# Fresh launch: prepend toggle_custom_color so the new instance bootstraps
+# into custom color mode in the same invocation (no startup race).
+exec "$SIOYEK" --execute-command toggle_custom_color "$@"

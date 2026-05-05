@@ -7,25 +7,34 @@
 
 THEME_NAME="$1"
 THEME_DIR="$HOME/.config/omarchy/current/theme"
-KITTY_CONF="$THEME_DIR/kitty.conf"
+GHOSTTY_CONF="$THEME_DIR/ghostty.conf"
 
-# Parse a color from kitty.conf
+# Parse a color from ghostty.conf. Handles both flat keys (background = #xxx)
+# and palette entries (palette = 4=#xxx) addressed as colorN.
 get_color() {
-    grep "^$1 " "$KITTY_CONF" | awk '{print $2}'
+    case "$1" in
+        color[0-9]|color1[0-5])
+            local n="${1#color}"
+            awk -F'[= ]+' -v n="$n" '/^palette/ && $2==n {print $3; exit}' "$GHOSTTY_CONF"
+            ;;
+        *)
+            awk -F' *= *' -v k="$1" '$1==k {print $2; exit}' "$GHOSTTY_CONF"
+            ;;
+    esac
 }
 
-# Abort if no kitty.conf
-if [[ ! -f "$KITTY_CONF" ]]; then
-    echo "theme-set hook: No kitty.conf found, skipping"
+# Abort if no ghostty.conf
+if [[ ! -f "$GHOSTTY_CONF" ]]; then
+    echo "theme-set hook: No ghostty.conf found, skipping"
     exit 0
 fi
 
 # Extract colors
 bg=$(get_color "background")
 fg=$(get_color "foreground")
-sel_bg=$(get_color "selection_background")
-sel_fg=$(get_color "selection_foreground")
-cursor=$(get_color "cursor")
+sel_bg=$(get_color "selection-background")
+sel_fg=$(get_color "selection-foreground")
+cursor=$(get_color "cursor-color")
 
 # Terminal colors
 color0=$(get_color "color0")   # black
@@ -76,6 +85,21 @@ link_highlight_color $accent_rgb
 search_highlight_color $sel_rgb
 EOF
     echo "theme-set hook: Updated $SIOYEK_PREFS"
+
+    # Hot-swap: push new colors to any running sioyek. reload_config picks up
+    # highlight/link colors and the chrome bg; set_custom_*_color is required
+    # to re-render the PDF page itself when in custom color mode (the page
+    # render caches don't refresh on reload_config alone).
+    # The pgrep guard prevents --execute-command from spawning a blank window
+    # when no sioyek is running.
+    if pgrep -x sioyek >/dev/null; then
+        sioyek --execute-command reload_config 2>/dev/null || true
+        sioyek --execute-command set_custom_background_color \
+               --execute-command-data "$bg_rgb" 2>/dev/null || true
+        sioyek --execute-command set_custom_text_color \
+               --execute-command-data "$fg_rgb" 2>/dev/null || true
+        echo "theme-set hook: Pushed colors to running sioyek"
+    fi
 fi
 
 # === Generate Yazi Theme ===

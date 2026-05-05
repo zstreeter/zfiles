@@ -343,8 +343,8 @@ if $OMARCHY; then
     info "Installing Omarchy theme hook..."
     HOOKS_DIR="$HOME/.config/omarchy/hooks"
     mkdir -p "$HOOKS_DIR"
-    cp "$REPO_DIR/hooks/theme-set" "$HOOKS_DIR/theme-set"
-    chmod +x "$HOOKS_DIR/theme-set"
+    ln -sfn "$REPO_DIR/hooks/theme-set" "$HOOKS_DIR/theme-set"
+    chmod +x "$REPO_DIR/hooks/theme-set"
 
     if [[ -d "$HOME/.config/omarchy/current/theme" ]]; then
         CURRENT_THEME=$(basename "$(readlink -f "$HOME/.config/omarchy/current")" 2>/dev/null || echo "unknown")
