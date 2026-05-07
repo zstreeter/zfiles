@@ -1,0 +1,16 @@
+[Desktop Entry]
+# User override of /usr/share/applications/sioyek.desktop. Routes PDF launches
+# through ~/.local/bin/sioyek (the custom-color wrapper) without depending on
+# PATH — guards against launchers (xdg-open, Zotero) that bypass the shell.
+# .desktop Exec= keys do not expand $HOME or ~, so we go through `sh -c`.
+Name=Sioyek
+Comment=PDF viewer for reading research papers and technical books
+Keywords=pdf;viewer;reader;research;
+TryExec=sioyek
+Exec=sh -c 'exec "$HOME/.local/bin/sioyek" "$@"' sh %f
+StartupNotify=true
+Terminal=false
+Type=Application
+Icon=sioyek-icon-linux
+Categories=Development;Viewer;
+MimeType=application/pdf;
