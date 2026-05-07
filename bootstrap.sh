@@ -14,8 +14,10 @@ fi
 
 # Cross-platform packages — safe on any Linux
 CORE_PACKAGES=(cura tmux yazi sioyek zsh scripts opencode pi xdg)
-# Omarchy/Hyprland-specific packages — only stowed when OMARCHY=true
-OMARCHY_PACKAGES=(hypr himalaya mirador gammastep)
+# Omarchy/Hyprland-specific packages — only stowed when OMARCHY=true.
+# `omarchy` ships user template overrides at ~/.config/omarchy/themed/ that
+# Omarchy's template engine renders on every theme switch.
+OMARCHY_PACKAGES=(hypr himalaya mirador gammastep omarchy)
 
 STOW_PACKAGES=("${CORE_PACKAGES[@]}")
 if $OMARCHY; then
@@ -288,10 +290,21 @@ info "Stowing dotfiles..."
 # Ensure stow is installed
 command -v stow &>/dev/null || sudo pacman -S --needed --noconfirm stow
 
+# Packages that must NOT be tree-folded. By default stow links the deepest
+# directory it can — so a package whose only child is `.config/foo/` becomes
+# `~/.config/foo` -> repo/.../foo, and a later `ln -s` into ~/.config/foo/
+# would land in the repo. These packages get a runtime theme symlink (see
+# step #13) into ~/.config/<pkg>/, so the directory must stay real.
+NO_FOLD_PACKAGES=(yazi)
+
 for pkg in "${STOW_PACKAGES[@]}"; do
     if [[ -d "$pkg" ]]; then
+        flags=(--adopt --target="$HOME")
+        if [[ " ${NO_FOLD_PACKAGES[*]} " == *" $pkg "* ]]; then
+            flags+=(--no-folding)
+        fi
         # This links service files to ~/.config/systemd/user/ if structured correctly
-        stow --adopt --target="$HOME" "$pkg"
+        stow "${flags[@]}" "$pkg"
     else
         warn "Package '$pkg' not found, skipping"
     fi
@@ -338,18 +351,53 @@ if $OMARCHY; then
     fi
 fi
 
-# 13. Install Omarchy theme hook (omarchy-only)
+# 13. Install Omarchy theme hook + wire up consumers (omarchy-only)
+#
+# Theme architecture (see hooks/theme-set for full detail):
+#   Templates:   omarchy/.config/omarchy/themed/*.tpl  (stowed in step #9)
+#   Rendered:    ~/.config/omarchy/current/theme/<file>  (Omarchy's engine)
+#   Hook output: ~/.config/omarchy/current/theme/sioyek-prefs.config (our hook)
+#   Consumers:   user configs symlink into the rendered dir; on theme
+#                switch, Omarchy's `mv next-theme current` swaps everything
+#                atomically and the hook regenerates sioyek/opencode.
 if $OMARCHY; then
-    info "Installing Omarchy theme hook..."
+    info "Installing Omarchy hooks..."
     HOOKS_DIR="$HOME/.config/omarchy/hooks"
     mkdir -p "$HOOKS_DIR"
-    ln -sfn "$REPO_DIR/hooks/theme-set" "$HOOKS_DIR/theme-set"
-    chmod +x "$REPO_DIR/hooks/theme-set"
+    ln -sfn "$REPO_DIR/hooks/theme-set"   "$HOOKS_DIR/theme-set"
+    ln -sfn "$REPO_DIR/hooks/post-update" "$HOOKS_DIR/post-update"
+    chmod +x "$REPO_DIR/hooks/theme-set" "$REPO_DIR/hooks/post-update"
 
-    if [[ -d "$HOME/.config/omarchy/current/theme" ]]; then
-        CURRENT_THEME=$(basename "$(readlink -f "$HOME/.config/omarchy/current")" 2>/dev/null || echo "unknown")
-        info "Generating theme configs for: $CURRENT_THEME"
-        "$HOOKS_DIR/theme-set" "$CURRENT_THEME"
+    # Seed the upstream-template snapshot used by post-update's drift check.
+    # On first install we treat the current upstream as "reviewed."
+    SNAPSHOT_DIR="${XDG_STATE_HOME:-$HOME/.local/state}/zfiles/upstream-tpl-seen"
+    mkdir -p "$SNAPSHOT_DIR"
+    for user_tpl in "$REPO_DIR"/omarchy/.config/omarchy/themed/*.tpl; do
+        [[ -f "$user_tpl" ]] || continue
+        name=$(basename "$user_tpl")
+        upstream="$HOME/.local/share/omarchy/default/themed/$name"
+        if [[ -f "$upstream" && ! -f "$SNAPSHOT_DIR/$name" ]]; then
+            cp "$upstream" "$SNAPSHOT_DIR/$name"
+        fi
+    done
+
+    # Wire consuming configs to the rendered theme dir. ln -snf is idempotent
+    # and replaces any prior real file (e.g., a stale frozen copy from a
+    # previous broken setup).
+    info "Linking theme consumers to rendered theme dir..."
+    THEME_DIR="$HOME/.config/omarchy/current/theme"
+    mkdir -p "$HOME/.config/mako" "$HOME/.config/yazi" "$HOME/.config/sioyek"
+    ln -snf "$THEME_DIR/mako.ini"                 "$HOME/.config/mako/config"
+    ln -snf "$THEME_DIR/yazi-omarchy-theme.toml"  "$HOME/.config/yazi/omarchy-theme.toml"
+    ln -snf "$THEME_DIR/sioyek-prefs.config"      "$HOME/.config/sioyek/prefs_user.config"
+
+    # Trigger a full theme re-set so Omarchy renders our user templates and
+    # our hook generates its outputs. The theme name lives in theme.name
+    # (not in the `current` symlink itself, which points to a real dir).
+    if [[ -f "$HOME/.config/omarchy/current/theme.name" ]]; then
+        CURRENT_THEME=$(cat "$HOME/.config/omarchy/current/theme.name")
+        info "Re-rendering theme: $CURRENT_THEME"
+        omarchy-theme-set "$CURRENT_THEME" || warn "omarchy-theme-set failed; templates may be stale until next theme switch"
     fi
 fi
 

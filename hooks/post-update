@@ -1,0 +1,47 @@
+#!/bin/bash
+# Omarchy post-update hook for zfiles.
+#
+# Called by omarchy-update-perform after upstream changes are applied to
+# ~/.local/share/omarchy/. Re-renders the active theme so any improvements
+# to Omarchy's built-in templates, template engine, or theme color palettes
+# take effect immediately rather than at the user's next theme switch.
+#
+# Note on robustness to upstream template drift: when Omarchy improves a
+# built-in template that we override (e.g., omarchy/.config/omarchy/themed/
+# mako.ini.tpl), our override is whole-file and won't pick up upstream
+# additions. This hook detects that case and warns so the user can merge.
+
+set -e
+
+REPO_USER_TPL="$HOME/.config/omarchy/themed"
+UPSTREAM_TPL="$HOME/.local/share/omarchy/default/themed"
+
+# 1. Re-render the active theme — picks up template-engine and color changes.
+if [[ -f "$HOME/.config/omarchy/current/theme.name" ]]; then
+    THEME=$(cat "$HOME/.config/omarchy/current/theme.name")
+    echo "zfiles post-update: re-rendering theme '$THEME'"
+    omarchy-theme-set "$THEME" >/dev/null
+fi
+
+# 2. Drift check on overridden templates. We track the upstream content we
+# last reconciled against in a tiny snapshot dir; if upstream has moved on,
+# warn the user to review. This catches "Omarchy added a feature to mako
+# template that we'd want in our override."
+SNAPSHOT_DIR="${XDG_STATE_HOME:-$HOME/.local/state}/zfiles/upstream-tpl-seen"
+mkdir -p "$SNAPSHOT_DIR"
+
+shopt -s nullglob
+for user_tpl in "$REPO_USER_TPL"/*.tpl; do
+    name=$(basename "$user_tpl")
+    upstream="$UPSTREAM_TPL/$name"
+    [[ -f "$upstream" ]] || continue   # no upstream pair = pure-zfiles template (e.g., yazi)
+
+    seen="$SNAPSHOT_DIR/$name"
+    if [[ ! -f "$seen" ]] || ! cmp -s "$upstream" "$seen"; then
+        echo "zfiles post-update: upstream '$name' changed since last review."
+        echo "  Compare:  diff $seen $upstream"
+        echo "  Override: $user_tpl"
+        echo "  After reconciling, snapshot the new upstream:"
+        echo "    cp $upstream $seen"
+    fi
+done

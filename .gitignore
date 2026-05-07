@@ -15,3 +15,9 @@ pi/.config/pi/agent/oauth.json
 pi/.config/pi/agent/oauth.json.migrated
 pi/.config/pi/agent/sessions/
 pi/.config/pi/agent/*.jsonl
+
+# Defense-in-depth: yazi's omarchy-theme.toml is a runtime symlink at
+# ~/.config/yazi/, never inside the package. If it ever shows up here it
+# means stow folded the directory and the symlink landed in-tree — which
+# bootstrap's NO_FOLD_PACKAGES is supposed to prevent.
+yazi/.config/yazi/omarchy-theme.toml
