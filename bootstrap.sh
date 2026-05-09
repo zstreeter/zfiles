@@ -13,7 +13,7 @@ if [[ -d "$HOME/.local/share/omarchy" || -d "$HOME/.config/omarchy" ]]; then
 fi
 
 # Cross-platform packages — safe on any Linux
-CORE_PACKAGES=(cura tmux yazi sioyek zsh scripts opencode pi xdg)
+CORE_PACKAGES=(cura tmux yazi sioyek zsh scripts opencode pi xdg wireplumber)
 # Omarchy/Hyprland-specific packages — only stowed when OMARCHY=true.
 # `omarchy` ships user template overrides at ~/.config/omarchy/themed/ that
 # Omarchy's template engine renders on every theme switch.
@@ -295,7 +295,7 @@ command -v stow &>/dev/null || sudo pacman -S --needed --noconfirm stow
 # `~/.config/foo` -> repo/.../foo, and a later `ln -s` into ~/.config/foo/
 # would land in the repo. These packages get a runtime theme symlink (see
 # step #13) into ~/.config/<pkg>/, so the directory must stay real.
-NO_FOLD_PACKAGES=(yazi)
+NO_FOLD_PACKAGES=(yazi sioyek)
 
 for pkg in "${STOW_PACKAGES[@]}"; do
     if [[ -d "$pkg" ]]; then
