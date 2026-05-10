@@ -386,9 +386,12 @@ if $OMARCHY; then
     # previous broken setup).
     info "Linking theme consumers to rendered theme dir..."
     THEME_DIR="$HOME/.config/omarchy/current/theme"
-    mkdir -p "$HOME/.config/mako" "$HOME/.config/yazi" "$HOME/.config/sioyek"
+    mkdir -p "$HOME/.config/mako" "$HOME/.config/yazi/flavors/omarchy.yazi" "$HOME/.config/sioyek"
+    # yazi 25.12.29 removed `$include`; selection now goes through the flavor
+    # system, so the rendered theme is exposed as flavors/omarchy.yazi/flavor.toml.
+    rm -f "$HOME/.config/yazi/omarchy-theme.toml"
     ln -snf "$THEME_DIR/mako.ini"                 "$HOME/.config/mako/config"
-    ln -snf "$THEME_DIR/yazi-omarchy-theme.toml"  "$HOME/.config/yazi/omarchy-theme.toml"
+    ln -snf "$THEME_DIR/yazi-omarchy-theme.toml"  "$HOME/.config/yazi/flavors/omarchy.yazi/flavor.toml"
     ln -snf "$THEME_DIR/sioyek-prefs.config"      "$HOME/.config/sioyek/prefs_user.config"
 
     # Trigger a full theme re-set so Omarchy renders our user templates and

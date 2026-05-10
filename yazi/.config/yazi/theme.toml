@@ -1,1 +1,3 @@
-"$include" = "./omarchy-theme.toml"
+[flavor]
+dark  = "omarchy"
+light = "omarchy"
