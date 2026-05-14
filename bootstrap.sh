@@ -227,22 +227,13 @@ if $OMARCHY; then
     fi
 fi
 
-# 8b. Install pi coding agent (npm-only; not in pacman/AUR)
-# Used by pi.nvim. Node is provided via mise (in pkglist) so we don't pollute
-# the system with a global node install — pi gets installed under mise's
-# managed node prefix and exposed on PATH via mise shims.
+# 8b. Install pi coding agent via upstream installer (used by pi.nvim).
 info "Checking pi coding agent..."
 if command -v pi &>/dev/null; then
     info "pi is already installed ($(pi --version 2>/dev/null || echo unknown))."
 else
-    command -v mise &>/dev/null || error "mise not found — should be in pkglist.txt"
-    if ! mise which node &>/dev/null; then
-        info "Installing node@lts via mise..."
-        mise use --global node@lts
-    fi
-    info "Installing pi via npm..."
-    mise exec node@lts -- npm install -g @mariozechner/pi-coding-agent
-    mise reshim
+    info "Installing pi via pi.dev installer..."
+    curl -fsSL https://pi.dev/install.sh | sh
     info "pi installed."
 fi
 
@@ -442,7 +433,15 @@ if $OMARCHY; then
     fi
 fi
 
-cat <<'EOF'
+SECRETS_FILE_DISPLAY="${XDG_CONFIG_HOME:-$HOME/.config}/zsh/secrets.env"
+cat <<EOF
+
+>>> AI providers — add your API keys to:
+       $SECRETS_FILE_DISPLAY
+
+     Uncomment and fill in the providers you actually use (ANTHROPIC_API_KEY,
+     GEMINI_API_KEY, OPENAI_API_KEY, …). The file is sourced by zsh on shell
+     start and is gitignored. Used by pi, opencode, claude code, etc.
 
 >>> Research workflow — manual steps remaining:
 
