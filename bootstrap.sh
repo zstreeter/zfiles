@@ -17,7 +17,7 @@ CORE_PACKAGES=(cura tmux yazi sioyek zsh scripts opencode pi xdg wireplumber)
 # Omarchy/Hyprland-specific packages — only stowed when OMARCHY=true.
 # `omarchy` ships user template overrides at ~/.config/omarchy/themed/ that
 # Omarchy's template engine renders on every theme switch.
-OMARCHY_PACKAGES=(hypr himalaya mirador gammastep omarchy)
+OMARCHY_PACKAGES=(hypr himalaya mirador omarchy)
 
 STOW_PACKAGES=("${CORE_PACKAGES[@]}")
 if $OMARCHY; then
@@ -413,24 +413,6 @@ fi
 
 if ! command -v new-research-project &>/dev/null; then
     warn "new-research-project not on PATH. Ensure ~/.local/bin is in PATH (zsh)."
-fi
-
-# 15. Configure Gammastep (omarchy-only — service file comes from stowed gammastep package)
-if $OMARCHY; then
-    info "Configuring Gammastep..."
-    if ! command -v gammastep &>/dev/null; then
-        warn "Gammastep not found. Installing..."
-        sudo pacman -S --needed --noconfirm gammastep
-    fi
-
-    systemctl --user daemon-reload
-
-    if systemctl --user list-unit-files | grep -q gammastep.service; then
-        systemctl --user enable --now gammastep
-        info "Gammastep service enabled and started."
-    else
-        warn "Gammastep service file not found (make sure it's in the stowed directory). Service not enabled."
-    fi
 fi
 
 SECRETS_FILE_DISPLAY="${XDG_CONFIG_HOME:-$HOME/.config}/zsh/secrets.env"

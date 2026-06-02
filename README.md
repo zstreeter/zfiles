@@ -39,8 +39,7 @@ Reboot after installation for keyd to take effect.
 | `scripts`| `new-research-project`, `publish-post` helpers + vault template |
 
 Skipped without Omarchy: Hyprland source, theme-set hook, mirador/himalaya
-email tools, gammastep service. Sioyek runs with default colors (no
-omarchy-driven theme sync).
+email tools. Sioyek runs with default colors (no omarchy-driven theme sync).
 
 ### À la carte stowing
 

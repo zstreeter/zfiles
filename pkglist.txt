@@ -45,6 +45,3 @@ ripgrep-all
 
 # Password Management
 pass
-
-# Blue light filter
-gammastep
