@@ -2,6 +2,10 @@
 # himalaya-mailto — mailto: URI handler that opens himalaya in ghostty.
 # Wired up by himalaya.desktop (MimeType=x-scheme-handler/mailto).
 #
+# himalaya v2 dropped v1's interactive `message write -H "To:..."` editor flow.
+# v2's `message compose` is a non-interactive stdout composer, so we assemble
+# the draft with it, open $EDITOR on the result, then send/save-draft/discard.
+#
 # Desktop-file launches don't inherit zsh PATH, so prepend the cargo bin
 # dir explicitly — himalaya is installed via `cargo install` (see bootstrap.sh §8).
 set -euo pipefail
@@ -36,15 +40,40 @@ if [[ -n "$uri" ]]; then
     fi
 fi
 
+# No recipient/content at all → just open the TUI.
 if [[ -z "$to" && -z "$subject" && -z "$body" ]]; then
-    exec ghostty -e himalaya
+    exec ghostty -e himalaya-tui
 fi
 
-args=(message write)
-[[ -n "$to" ]]      && args+=(-H "To:$to")
-[[ -n "$subject" ]] && args+=(-H "Subject:$subject")
-[[ -n "$cc" ]]      && args+=(-H "Cc:$cc")
-[[ -n "$bcc" ]]     && args+=(-H "Bcc:$bcc")
-[[ -n "$body" ]]    && args+=("$body")
+# compose doesn't inject From:, and send needs it for the SMTP envelope.
+# ponytail: assumes the default account is the first `from=` in the config.
+config="${HIMALAYA_CONFIG:-$HOME/.config/himalaya/config.toml}"
+from_addr="$(grep -m1 -oP '^from\s*=\s*"\K[^"]+' "$config" || true)"
 
-exec ghostty -e himalaya "${args[@]}"
+args=(message compose)
+[[ -n "$from_addr" ]] && args+=(--from "$from_addr")
+[[ -n "$to" ]]        && args+=(--to "$to")
+[[ -n "$subject" ]]   && args+=(--subject "$subject")
+[[ -n "$cc" ]]        && args+=(--cc "$cc")
+[[ -n "$bcc" ]]       && args+=(--bcc "$bcc")
+[[ -n "$body" ]]      && args+=(--body "$body")
+
+tmp="$(mktemp --suffix=.eml)"
+himalaya "${args[@]}" </dev/null > "$tmp"
+
+# Edit + confirm inside the terminal. Plain `bash -c` (not -l) so the PATH we
+# exported above survives into the child.
+exec ghostty -e bash -c '
+    set -euo pipefail
+    tmp="$1"
+    trap "rm -f \"$tmp\"" EXIT
+    "${EDITOR:-nvim}" "$tmp"
+    printf "\nSend this message? [y=send / d=draft / N=discard] "
+    read -r ans
+    case "$ans" in
+        y|Y) himalaya message send --save sent < "$tmp" && echo "Sent." ;;
+        d|D) himalaya message add --mailbox drafts < "$tmp" && echo "Saved to drafts." ;;
+        *)   echo "Discarded." ;;
+    esac
+    printf "Press enter to close."; read -r _
+' _ "$tmp"

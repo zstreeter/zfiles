@@ -12,10 +12,10 @@
 # Passwords come from `pass` via a command; the env prefix pins the XDG GNUPG /
 # password-store dirs (single-quoted TOML literal so the inner "" survive).
 #
-# KNOWN GAP: the mailto: handler is broken under v2. v1's `himalaya message
-# write mailto:%U` opened an editor; v2 renamed it to `message compose`, which
-# is a non-interactive stdout composer with no mailto URL parser. himalaya-tui
-# also takes no mailto URL. Left broken until upstream adds mailto support.
+# mailto: handling lives in the `himalaya-mailto` wrapper (himalaya/.local/bin):
+# it parses the URL, assembles a draft via v2's `message compose`, opens $EDITOR
+# in ghostty, then sends / saves-draft / discards. (v1's `message write -H` +
+# built-in mailto parser were both dropped in v2.)
 # =============================================================================
 
 # -----------------------------------------------------------------------------
