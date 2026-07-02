@@ -303,6 +303,19 @@ done
 # Restore repo state (adopt pulls in local changes)
 git checkout -- .
 
+# 9b. Wire herdr agent-state integrations (live working/blocked/done in the
+# sidebar). Hook files are herdr-versioned generated code, so we invoke the
+# generator instead of vendoring them — re-run this anytime to upgrade. Each
+# install self-guards on the agent being present; pi needs its extensions dir.
+if command -v herdr &>/dev/null; then
+    info "Installing herdr agent integrations..."
+    mkdir -p "$HOME/.config/pi/agent/extensions"
+    for agent in claude opencode pi; do
+        herdr integration install "$agent" 2>/dev/null \
+            || warn "herdr $agent integration skipped (agent not installed yet)"
+    done
+fi
+
 # 10. Configure Mirador Services (omarchy-only — service files come from stowed mirador package)
 if $OMARCHY; then
     info "Configuring Mirador services..."
