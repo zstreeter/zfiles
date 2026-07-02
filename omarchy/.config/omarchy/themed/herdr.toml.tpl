@@ -30,12 +30,11 @@ key     = "prefix+y"
 type    = "pane"
 command = "yazi"
 
-# himalaya is a per-subcommand CLI, not a TUI: show the inbox, then drop into
-# a shell so you can act on it (himalaya message read <id>, reply, etc.).
+# himalaya-tui: the official Pimalaya mail TUI (shares himalaya's config).
 [[keys.command]]
 key     = "prefix+m"
 type    = "pane"
-command = "himalaya envelope list; exec $SHELL"
+command = "himalaya-tui"
 
 [ui]
 pane_borders = false            # zen: no boxes around split panes

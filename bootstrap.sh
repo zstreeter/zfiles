@@ -214,6 +214,15 @@ if $OMARCHY; then
         else
             info "Himalaya is already installed."
         fi
+
+        # himalaya-tui: official TUI, not yet released to crates.io — git only.
+        # Shares himalaya's config. Bound to prefix+m in herdr.
+        if ! command -v himalaya-tui &>/dev/null; then
+            info "himalaya-tui not found. Installing from git via cargo..."
+            cargo install --locked --git https://github.com/pimalaya/himalaya-tui.git
+        else
+            info "himalaya-tui is already installed."
+        fi
     else
         warn "Cargo not found! Skipping Himalaya installation."
     fi
