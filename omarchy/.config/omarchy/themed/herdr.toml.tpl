@@ -22,6 +22,13 @@ focus_pane_right = "prefix+l"
 resize_mode = "prefix+f"        # herdr uses a resize mode, then hjkl to nudge
 copy_mode   = "prefix+space"    # tmux: bind Space copy-mode
 
+[ui]
+pane_borders = false            # zen: no boxes around split panes
+pane_gaps    = false            # zen: no spacing between panes
+
+[ui.sound]
+enabled = false                 # no bell on agent state change
+
 # Theme tracks Omarchy. panel_bg reset lets the terminal/Omarchy bg show
 # through (matches your old `status-style bg=default`).
 [theme.custom]
