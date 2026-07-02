@@ -4,6 +4,15 @@ After=graphical-session.target
 PartOf=graphical-session.target
 
 [Service]
+# TODO(mirador v2): consolidate onto the shared himalaya v2 config once mirador
+# stabilizes. Blocked as of 2026-07 (HEAD 2b50652e): mirador v2 hard-requires
+# IMAP QRESYNC, which Gmail doesn't advertise, so `watch` dies on the gmail
+# account. When fixed, switch to:
+#   ExecStart=%h/.local/share/cargo/bin/mirador -c %h/.config/himalaya/config.toml watch -a %i
+# and fold mirador's hooks (hooks.on-message-added.*, $sender/$subject) into
+# ~/.config/himalaya/config.toml, dropping this package's own config.toml.
+# Note: himalaya's mailbox.alias.* collides with mirador's `mailbox` key — the
+# shared file can't carry both, so aliases must go when consolidating.
 ExecStart=/usr/bin/mirador watch %i
 Restart=on-failure
 RestartSec=60
