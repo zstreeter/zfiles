@@ -208,11 +208,14 @@ if $OMARCHY; then
     info "Checking Pimalaya tools..."
 
     if command -v cargo &>/dev/null; then
-        if ! command -v himalaya &>/dev/null; then
-            info "Himalaya not found. Installing via cargo..."
-            cargo install himalaya
+        # himalaya-tui needs the v2 config schema, and crates.io still ships
+        # v1.2.0 — so install the CLI v2 from git too. Keep both binaries on v2
+        # or the shared ~/.config/himalaya/config.toml won't parse.
+        if himalaya --version 2>/dev/null | grep -qE 'v?2\.'; then
+            info "Himalaya v2 already installed."
         else
-            info "Himalaya is already installed."
+            info "Installing Himalaya v2 from git via cargo..."
+            cargo install --locked --git https://github.com/pimalaya/himalaya.git
         fi
 
         # himalaya-tui: official TUI, not yet released to crates.io — git only.
