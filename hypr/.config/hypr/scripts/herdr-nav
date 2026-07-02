@@ -1,0 +1,57 @@
+#!/usr/bin/env bash
+# Unified vim-style focus movement across nvim splits, herdr panes, and
+# Hyprland windows. Bound to SUPER+h/j/k/l in zfilesbindings.conf.
+#
+# Order of precedence for a direction:
+#   1. If the focused window is the herdr terminal AND its current pane runs
+#      nvim -> ask nvim to move between its splits (RPC over nvim's server
+#      socket). If nvim actually moved, stop.
+#   2. Else if herdr has a pane in that direction -> focus it.
+#   3. Else -> move Hyprland window focus.
+#
+# No nvim plugin needed: nvim's built-in server socket lives at
+# $XDG_RUNTIME_DIR/nvim.<pid>.0, and one --remote-expr both moves and reports
+# whether it was already at the edge.
+#
+# ponytail: assumes a single ghostty window and that ghostty == herdr (true on
+# this box). Each keypress spawns a few short-lived queries; latency is a few
+# tens of ms over local sockets — fine for interactive focus.
+set -euo pipefail
+
+TERM_CLASS="com.mitchellh.ghostty"
+
+hdir="$1"                       # l | r | u | d  (Hyprland movefocus arg)
+case "$hdir" in
+  l) herdr=left;  win=h ;;
+  r) herdr=right; win=l ;;
+  u) herdr=up;    win=k ;;
+  d) herdr=down;  win=j ;;
+  *) echo "usage: herdr-nav l|r|u|d" >&2; exit 2 ;;
+esac
+
+# Focused window not the terminal? Plain Hyprland focus move.
+if [ "$(hyprctl activewindow -j | jq -r '.class')" != "$TERM_CLASS" ]; then
+  exec hyprctl dispatch movefocus "$hdir"
+fi
+
+# In the terminal: if the current herdr pane runs nvim, let nvim move first.
+nvim_pid=$(herdr pane process-info --current 2>/dev/null \
+  | jq -r '.result.process_info.foreground_processes[]? | select(.name=="nvim") | .pid' \
+  | head -1)
+if [ -n "$nvim_pid" ]; then
+  sock="$XDG_RUNTIME_DIR/nvim.$nvim_pid.0"
+  if [ -S "$sock" ]; then
+    moved=$(nvim --server "$sock" --remote-expr \
+      "luaeval('(function() local a=vim.api.nvim_get_current_win() pcall(vim.cmd,\"wincmd $win\") return a~=vim.api.nvim_get_current_win() and 1 or 0 end)()')" \
+      2>/dev/null || echo 0)
+    [ "$moved" = "1" ] && exit 0   # moved between nvim splits; done
+  fi
+fi
+
+# nvim absent or at its edge: try a herdr pane in that direction.
+changed=$(herdr pane focus --direction "$herdr" --current 2>/dev/null \
+  | jq -r '.result.focus.changed // false')
+[ "$changed" = "true" ] && exit 0
+
+# herdr also at its edge: cross into the next Hyprland window.
+exec hyprctl dispatch movefocus "$hdir"

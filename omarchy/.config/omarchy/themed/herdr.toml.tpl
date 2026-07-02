@@ -14,12 +14,15 @@ split_vertical   = "prefix+v"   # tmux: bind v split-window -h (side by side)
 split_horizontal = "prefix+s"   # tmux: bind s split-window -v (stacked)
 close_pane       = "prefix+x"
 
-focus_pane_left  = "prefix+h"   # replaces vim-tmux-navigator WITHIN herdr only;
-focus_pane_down  = "prefix+j"   # seamless nvim<->pane C-hjkl does NOT carry over
+# Prefix+hjkl still works inside herdr, but SUPER+hjkl (Hyprland binding ->
+# scripts/herdr-nav) is the seamless path: nvim splits -> herdr panes -> windows.
+focus_pane_left  = "prefix+h"
+focus_pane_down  = "prefix+j"
 focus_pane_up    = "prefix+k"
 focus_pane_right = "prefix+l"
 
-resize_mode = "prefix+f"        # herdr uses a resize mode, then hjkl to nudge
+zoom        = "prefix+f"        # fullscreen the focused pane (tmux: bind f)
+resize_mode = "prefix+r"        # herdr default; resize mode, then hjkl to nudge
 copy_mode   = "prefix+space"    # tmux: bind Space copy-mode
 
 # Launch-in-pane commands (temp pane, closes when the command exits).
