@@ -9,9 +9,9 @@ This overlay extends Omarchy with:
 - **Zsh** - Shell configuration (Omarchy uses bash by default)
 - **Keyd** - Caps Lock → Escape (tap) / Super (hold)
 - **Hyprland bindings** - Custom keybindings layered on top of Omarchy's defaults
-- **Theme integration** - Sioyek and Yazi follow Omarchy's theme automatically
+- **Theme integration** - herdr, Sioyek and Yazi follow Omarchy's theme automatically
 - **Neovim** - Personal config synced with Omarchy themes
-- **Additional tools** - tmux, yazi, sioyek, cura
+- **Additional tools** - herdr, yazi, sioyek, cura
 
 ## Installation
 
@@ -32,7 +32,6 @@ Reboot after installation for keyd to take effect.
 | Package  | Purpose                            |
 |----------|------------------------------------|
 | `zsh`    | Shell config                       |
-| `tmux`   | Terminal multiplexer config        |
 | `yazi`   | File manager                       |
 | `sioyek` | PDF viewer                         |
 | `cura`   | 3D printing slicer                 |
@@ -65,7 +64,6 @@ zfiles/
 │   └── keyd/
 │       └── default.conf  # Caps Lock remapping
 ├── hypr/                 # Hyprland custom bindings
-├── tmux/                 # Tmux config
 ├── yazi/                 # File manager config
 ├── sioyek/               # PDF viewer config
 ├── zsh/                  # Shell config

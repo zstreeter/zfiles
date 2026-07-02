@@ -1,7 +1,6 @@
 # Core Tools
 keyd
 neovim
-tmux
 zsh
 eza
 bat

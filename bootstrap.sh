@@ -13,7 +13,7 @@ if [[ -d "$HOME/.local/share/omarchy" || -d "$HOME/.config/omarchy" ]]; then
 fi
 
 # Cross-platform packages — safe on any Linux
-CORE_PACKAGES=(cura tmux yazi sioyek zsh scripts opencode pi xdg wireplumber)
+CORE_PACKAGES=(cura yazi sioyek zsh scripts opencode pi xdg wireplumber)
 # Omarchy/Hyprland-specific packages — only stowed when OMARCHY=true.
 # `omarchy` ships user template overrides at ~/.config/omarchy/themed/ that
 # Omarchy's template engine renders on every theme switch.
@@ -193,14 +193,13 @@ else
     warn "Omarchy theme not found, skipping neovim symlink"
 fi
 
-# 7. Install Tmux Plugin Manager (TPM)
-info "Setting up Tmux Plugin Manager..."
-TPM_DIR="$HOME/.config/tmux/plugins/tpm"
-if [[ ! -d "$TPM_DIR" ]]; then
-    mkdir -p "$TPM_DIR"
-    git clone https://github.com/tmux-plugins/tpm "$TPM_DIR"
+# 7. Install herdr (agent/terminal multiplexer; replaces tmux). Not in the
+# Arch repos, so use the official installer. Config is wired in §13.
+if ! command -v herdr &>/dev/null; then
+    info "Installing herdr..."
+    curl -fsSL https://herdr.dev/install.sh | sh
 else
-    info "TPM already installed."
+    info "herdr already installed."
 fi
 
 # 8. Install Pimalaya Tools (Himalaya & Mirador) — omarchy-only since configs
@@ -384,6 +383,10 @@ if $OMARCHY; then
     ln -snf "$THEME_DIR/mako.ini"                 "$HOME/.config/mako/config"
     ln -snf "$THEME_DIR/yazi-omarchy-theme.toml"  "$HOME/.config/yazi/flavors/omarchy.yazi/flavor.toml"
     ln -snf "$THEME_DIR/sioyek-prefs.config"      "$HOME/.config/sioyek/prefs_user.config"
+    # herdr: whole config.toml is a rendered Omarchy template (keybindings +
+    # theme). Live config symlinks to it; hooks/theme-set hot-reloads herdr.
+    mkdir -p "$HOME/.config/herdr"
+    ln -snf "$THEME_DIR/herdr.toml"               "$HOME/.config/herdr/config.toml"
 
     # Trigger a full theme re-set so Omarchy renders our user templates and
     # our hook generates its outputs. The theme name lives in theme.name
