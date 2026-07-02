@@ -22,6 +22,21 @@ focus_pane_right = "prefix+l"
 resize_mode = "prefix+f"        # herdr uses a resize mode, then hjkl to nudge
 copy_mode   = "prefix+space"    # tmux: bind Space copy-mode
 
+# Launch-in-pane commands (temp pane, closes when the command exits).
+# prefix+y avoids the zsh ^o run_yazi binding (cwd-on-exit) — different job:
+# this browses in a scratch pane, ^o still cd's the shell.
+[[keys.command]]
+key     = "prefix+y"
+type    = "pane"
+command = "yazi"
+
+# himalaya is a per-subcommand CLI, not a TUI: show the inbox, then drop into
+# a shell so you can act on it (himalaya message read <id>, reply, etc.).
+[[keys.command]]
+key     = "prefix+m"
+type    = "pane"
+command = "himalaya envelope list; exec $SHELL"
+
 [ui]
 pane_borders = false            # zen: no boxes around split panes
 pane_gaps    = false            # zen: no spacing between panes
