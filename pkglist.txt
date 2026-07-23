@@ -28,7 +28,7 @@ opencode-bin
 lsof
 
 # GUI Apps
-sioyek
+sioyek-git
 cura-bin
 yazi
 zotero-bin
