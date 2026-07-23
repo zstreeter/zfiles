@@ -1,0 +1,70 @@
+# herdr config — plain stowed dotfile (zfiles/herdr), stows to ~/.config/herdr.
+# Was an Omarchy theme template; moved here so it lives with every other
+# program's config and survives reboots/theme-switches without depending on
+# Omarchy's render step. Colors are static Catppuccin Mocha — edit [theme.custom]
+# to match a different Omarchy theme (herdr no longer auto-recolors on theme-set).
+#
+# Translated from the old ~/.config/tmux/tmux.conf. Key names follow herdr's
+# docs — verify against `herdr --default-config` if any differ.
+
+# Suppress herdr's first-run onboarding. Without this, a fresh install / update
+# re-runs onboarding, which shows DEFAULT keybindings until dismissed — the
+# "default config after reboot" bug.
+onboarding = false
+
+[theme]
+name = "catppuccin"
+
+[theme.custom]
+panel_bg = "reset"              # let the terminal / Omarchy background show through
+accent   = "#89b4fa"
+green    = "#a6e3a1"            # herdr "done"
+red      = "#f38ba8"            # herdr "blocked"
+yellow   = "#f9e2af"            # herdr "working"
+
+[keys]
+prefix = "ctrl+a"               # tmux: set -g prefix C-a
+
+split_vertical   = "prefix+v"   # tmux: bind v split-window -h (side by side)
+split_horizontal = "prefix+s"   # tmux: bind s split-window -v (stacked)
+close_pane       = "prefix+x"
+
+# Prefix+hjkl still works inside herdr, but SUPER+hjkl (Hyprland binding ->
+# scripts/herdr-nav) is the seamless path: nvim splits -> herdr panes -> windows.
+focus_pane_left  = "prefix+h"
+focus_pane_down  = "prefix+j"
+focus_pane_up    = "prefix+k"
+focus_pane_right = "prefix+l"
+
+fullscreen  = "prefix+f"        # fullscreen the focused pane (tmux: bind f)
+resize_mode = "prefix+r"        # herdr default; resize mode, then hjkl to nudge
+copy_mode   = "prefix+space"    # tmux: bind Space copy-mode
+
+# Launch-in-pane commands (temp pane, closes when the command exits).
+# prefix+y avoids the zsh ^o run_yazi binding (cwd-on-exit) — different job:
+# this browses in a scratch pane, ^o still cd's the shell.
+[[keys.command]]
+key     = "prefix+y"
+type    = "pane"
+command = "yazi"
+
+# himalaya-tui: the official Pimalaya mail TUI (shares himalaya's config).
+[[keys.command]]
+key     = "prefix+m"
+type    = "pane"
+command = "himalaya-tui"
+
+[ui]
+pane_borders = true             # line between panes on split
+pane_gaps    = false            # zen: no spacing between panes
+
+# The left agent/workspace sidebar. Toggle it with prefix+b (ctrl+a then b).
+# "hidden" makes the collapsed state ZERO width — fully gone, no status rail —
+# so the terminal reclaims the full width. ("compact" would leave a thin rail
+# still showing agent-running dots, which is what we don't want.)
+# There is no "start collapsed" key in herdr 0.7.3; collapse once with prefix+b
+# and herdr persists that state in session.json across restarts.
+sidebar_collapsed_mode = "hidden"
+
+[ui.sound]
+enabled = false                 # no bell on agent state change

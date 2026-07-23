@@ -126,10 +126,5 @@ if pgrep -x opencode >/dev/null; then
     killall -SIGUSR2 opencode 2>/dev/null || true
 fi
 
-# === herdr ===
-# herdr's config.toml is an Omarchy template (themed/herdr.toml.tpl), already
-# re-rendered before this hook ran. Just tell a running herdr to reload.
-if pgrep -x herdr >/dev/null; then
-    herdr server reload-config 2>/dev/null || true
-    echo "theme-set hook: Reloaded herdr config"
-fi
+# herdr config is a static stowed dotfile (zfiles/herdr), no longer theme-rendered,
+# so there's nothing to reload on theme-set.

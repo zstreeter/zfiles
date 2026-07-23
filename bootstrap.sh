@@ -13,7 +13,7 @@ if [[ -d "$HOME/.local/share/omarchy" || -d "$HOME/.config/omarchy" ]]; then
 fi
 
 # Cross-platform packages — safe on any Linux
-CORE_PACKAGES=(cura yazi sioyek zsh scripts opencode pi xdg wireplumber)
+CORE_PACKAGES=(cura yazi sioyek zsh scripts opencode pi xdg wireplumber herdr)
 # Omarchy/Hyprland-specific packages — only stowed when OMARCHY=true.
 # `omarchy` ships user template overrides at ~/.config/omarchy/themed/ that
 # Omarchy's template engine renders on every theme switch.
@@ -294,10 +294,11 @@ command -v stow &>/dev/null || sudo pacman -S --needed --noconfirm stow
 
 # Packages that must NOT be tree-folded. By default stow links the deepest
 # directory it can — so a package whose only child is `.config/foo/` becomes
-# `~/.config/foo` -> repo/.../foo, and a later `ln -s` into ~/.config/foo/
-# would land in the repo. These packages get a runtime theme symlink (see
-# step #13) into ~/.config/<pkg>/, so the directory must stay real.
-NO_FOLD_PACKAGES=(yazi sioyek)
+# `~/.config/foo` -> repo/.../foo, and anything else that lands in ~/.config/foo/
+# would end up inside the repo. yazi/sioyek get a runtime theme symlink (step
+# #13); herdr writes runtime files (sockets, logs, session.json) there. Either
+# way ~/.config/<pkg>/ must stay a real directory.
+NO_FOLD_PACKAGES=(yazi sioyek herdr)
 
 for pkg in "${STOW_PACKAGES[@]}"; do
     if [[ -d "$pkg" ]]; then
@@ -408,10 +409,7 @@ if $OMARCHY; then
     ln -snf "$THEME_DIR/mako.ini"                 "$HOME/.config/mako/config"
     ln -snf "$THEME_DIR/yazi-omarchy-theme.toml"  "$HOME/.config/yazi/flavors/omarchy.yazi/flavor.toml"
     ln -snf "$THEME_DIR/sioyek-prefs.config"      "$HOME/.config/sioyek/prefs_user.config"
-    # herdr: whole config.toml is a rendered Omarchy template (keybindings +
-    # theme). Live config symlinks to it; hooks/theme-set hot-reloads herdr.
-    mkdir -p "$HOME/.config/herdr"
-    ln -snf "$THEME_DIR/herdr.toml"               "$HOME/.config/herdr/config.toml"
+    # herdr config is a plain stowed dotfile (zfiles/herdr), not a theme template.
 
     # Trigger a full theme re-set so Omarchy renders our user templates and
     # our hook generates its outputs. The theme name lives in theme.name
