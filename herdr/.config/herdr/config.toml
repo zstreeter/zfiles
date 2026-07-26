@@ -68,3 +68,9 @@ sidebar_collapsed_mode = "hidden"
 
 [ui.sound]
 enabled = false                 # no bell on agent state change
+
+[experimental]
+# tmux's `allow-passthrough on` equivalent: herdr parses the Kitty graphics
+# protocol out of the pane and re-emits it to the outer terminal (Ghostty),
+# which is what makes yazi/chafa image previews render inside a pane.
+kitty_graphics = true
