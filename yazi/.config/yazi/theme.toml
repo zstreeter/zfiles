@@ -1,3 +1,7 @@
+# One flavor name for every target; bootstrap decides what fills the slot at
+# ~/.config/yazi/flavors/zfiles.yazi/. On Omarchy it's a symlink to the rendered
+# theme, so yazi follows theme switches. Everywhere else (WSL, servers) it's
+# static Catppuccin Mocha, matching what herdr settled on in 63563fa.
 [flavor]
-dark  = "omarchy"
-light = "omarchy"
+dark  = "zfiles"
+light = "zfiles"

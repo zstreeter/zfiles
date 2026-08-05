@@ -5,7 +5,16 @@ yazi/.config/yazi/package.toml
 cura/.local/share/cura/.sentry-native/
 cura/.local/share/cura/stderr.log
 cura/.local/share/cura/stdout.log
-zsh/.config/zsh/secrets.env
+
+# API keys. secrets.env is the real path (~/.config/shell/secrets.env, created
+# by bootstrap outside the repo); the other two are historical/mistyped names
+# that have shown up in-tree before. Ignore all of them everywhere — a folded
+# stow symlink is all it takes for one to land inside the repo.
+**/secrets.env
+**/secrets.sh
+
+# Editor/tool backup droppings (yazi writes keymap.toml-<epoch> on upgrade)
+**/*.toml-[0-9]*
 
 # pi runtime data — secrets, sessions, and migration artifacts.
 # The directory itself is stowed; these specific files must never be tracked.
@@ -16,8 +25,13 @@ pi/.config/pi/agent/oauth.json.migrated
 pi/.config/pi/agent/sessions/
 pi/.config/pi/agent/*.jsonl
 
-# Defense-in-depth: yazi's omarchy-theme.toml is a runtime symlink at
-# ~/.config/yazi/, never inside the package. If it ever shows up here it
+# Defense-in-depth: yazi's theme is a runtime symlink at ~/.config/yazi/
+# flavors/zfiles.yazi, never inside the package. If either shows up here it
 # means stow folded the directory and the symlink landed in-tree — which
 # bootstrap's NO_FOLD_PACKAGES is supposed to prevent.
 yazi/.config/yazi/omarchy-theme.toml
+yazi/.config/yazi/flavors/
+
+# Zap installs zsh plugins to ~/.local/share/zap, never in-tree. A copy here
+# is fallout from the same folding bug.
+zsh/.config/zsh/zsh-syntax-highlighting/

@@ -2,7 +2,7 @@
 # right = (git)-[branch|state] right-aligned, second line = ➜.
 # Git info comes from the same contrib git-prompt.sh zsh uses.
 
-source "$HOME/.config/zsh/git-prompt.sh"
+source "$HOME/.config/shell/git-prompt.sh"
 
 __zfiles_prompt() {
     local reset='\[\e[0m\]' bold='\[\e[1m\]'

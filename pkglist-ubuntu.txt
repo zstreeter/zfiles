@@ -12,6 +12,7 @@ bat
 ripgrep
 fd-find
 fzf
+zoxide
 git
 gnupg
 curl

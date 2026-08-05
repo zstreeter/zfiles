@@ -68,7 +68,7 @@ function set-prompt() {
   emulate -L zsh
 
   # git info
-  source "$HOME/.config/zsh/git-prompt.sh"
+  source "$HOME/.config/shell/git-prompt.sh"
   setopt prompt_subst
   autoload -Uz vcs_info
   zstyle ':vcs_info:*' actionformats \

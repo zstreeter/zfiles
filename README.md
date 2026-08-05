@@ -1,6 +1,9 @@
-# ZFiles - Omarchy Overlay
+# ZFiles
 
-Personal dotfiles overlay for [Omarchy](https://github.com/basecamp/omarchy), adding zsh, custom keybindings, and additional tools.
+Personal dotfiles. Primarily an overlay for
+[Omarchy](https://github.com/basecamp/omarchy) — adding zsh, custom keybindings,
+and additional tools — but the same `bootstrap.sh` also targets WSL, plain
+Linux, and root-less work servers. See [Targets](#targets).
 
 ## What This Does
 
@@ -26,23 +29,31 @@ Reboot after installation for keyd to take effect.
 
 ### Targets
 
-`bootstrap.sh` detects three orthogonal facts and gates every step on them:
+`bootstrap.sh` gates every step on four orthogonal facts:
 
+- **Remote** (`--remote` flag or `ZFILES_TARGET=remote`) — the only one that
+  can't be sniffed, so it's explicit. A work server you `ssh` into from a herdr
+  pane. Installs **only** the bash prompt, yazi, and neovim, entirely under
+  `$HOME`: **never sudo, never a package manager, never `chsh`**. See
+  [Remote servers](#remote-servers) below.
 - **Omarchy** (`~/.config/omarchy/` or `~/.local/share/omarchy/` exists) —
   full overlay: core + Hyprland bindings, keyd, theme hooks, himalaya/mirador,
   cura/sioyek/xdg/wireplumber, docker.
 - **WSL** (`/proc/version` mentions Microsoft) — core packages via apt + mise
   (`pkglist-ubuntu.txt`; neovim/yazi/go/rust/bun/opencode via mise since noble
-  is stale or missing them), pinentry-curses, and — once present — a
-  `windows/install.ps1` hook that wires up the Windows side (kanata caps-lock
-  remap, GlazeWM, WezTerm).
+  is stale or missing them) and pinentry-curses. The Windows side (kanata
+  caps-lock remap, GlazeWM, WezTerm) is not automated — `windows/` holds the
+  configs to copy over by hand.
 - **Package manager** (pacman vs apt) — picks the install branch in step 1.
+  Forced to `none` on remote.
 
 Core packages on every target:
 
 | Package    | Purpose                            |
 |------------|------------------------------------|
-| `zsh`      | Shell config                       |
+| `shell`    | Shell-agnostic config sourced by **both** zsh and bash: `env.sh`, `aliases.sh`, `commands.sh`, `git-prompt.sh` |
+| `zsh`      | zsh-only bits (`.zshrc`, prompt, zap plugins) |
+| `bash`     | bash-only bits (`rc.sh`, prompt) — see [The bash hook](#the-bash-hook) |
 | `yazi`     | File manager                       |
 | `herdr`    | Terminal workspace manager         |
 | `opencode` | opencode agent config              |
@@ -52,6 +63,53 @@ Core packages on every target:
 Skipped without Omarchy: Hyprland source, keyd, theme-set hook,
 mirador/himalaya email tools, docker, and the desktop/hardware packages
 (cura, sioyek, xdg, wireplumber).
+
+Remote gets `shell`, `bash`, and `yazi` only — no zsh, no herdr, no pi, no
+desktop anything.
+
+### Remote servers
+
+The workflow is: herdr runs on the local machine, one pane holds an `ssh`
+session to a work server. Those are bash terminals with no root. One line gets
+zfiles' bash prompt, yazi, and neovim onto that server:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/zstreeter/zfiles/main/remote/install.sh | sh
+```
+
+What it does:
+
+1. Blobless **sparse** clone of only `shell bash yazi remote` into `~/.zfiles`
+   (falls back to a shallow full clone on git < 2.25 — still small).
+2. `exec ~/.zfiles/bootstrap.sh --remote`, which:
+   - appends a guarded hook to `~/.bashrc` (never replaces it),
+   - installs `neovim yazi fd ripgrep fzf zoxide bat eza` via **mise** into
+     `~/.local` — no root, nothing touched outside `$HOME`,
+   - stows `shell bash yazi`, clones the neovim config, installs yazi plugins
+     and the Catppuccin Mocha flavor.
+
+Nothing herdr-related ships to the server; herdr stays local and the server is
+just what's running inside one of its panes.
+
+To re-run later, `zfiles-update` (defined in `shell/commands.sh`) pulls and
+re-bootstraps whichever checkout it finds.
+
+### The bash hook
+
+`~/.bashrc` is **appended to, not replaced**. Bootstrap adds an idempotent
+block:
+
+```sh
+# >>> zfiles >>>
+[ -f "$HOME/.config/bash/rc.sh" ] && . "$HOME/.config/bash/rc.sh"
+# <<< zfiles <<<
+```
+
+so a server's site setup (lmod, `module`, conda init) survives untouched, and
+`stow --adopt` can never swallow a pre-existing `~/.bashrc` into the repo. If
+the login chain (`.bash_profile` → `.bash_login` → `.profile`) doesn't already
+reach `~/.bashrc`, bootstrap wires that up too. Anything it overwrites or
+displaces first lands in `~/.local/state/zfiles/backup/`.
 
 ### À la carte stowing
 
@@ -69,8 +127,10 @@ Bootstrap is just the orchestrator — `stow` itself is per-package.
 
 ```
 zfiles/
-├── bootstrap.sh          # Main installer
+├── bootstrap.sh          # Main installer (--remote for servers)
 ├── pkglist.txt           # Packages to install
+├── remote/
+│   └── install.sh        # curl-able entry point for work servers
 ├── hooks/
 │   └── theme-set         # Generates theme configs when Omarchy theme changes
 ├── root_etc/
@@ -79,7 +139,10 @@ zfiles/
 ├── hypr/                 # Hyprland custom bindings
 ├── yazi/                 # File manager config
 ├── sioyek/               # PDF viewer config
-├── zsh/                  # Shell config
+├── shell/                # Shell-agnostic config (zsh + bash both source it)
+├── zsh/                  # zsh-only config
+├── bash/                 # bash-only config (rc.sh, prompt.sh)
+├── windows/              # WSL host-side configs, copied over manually
 └── cura/                 # 3D printing slicer config
 ```
 
@@ -109,9 +172,10 @@ The keyd config (`root_etc/keyd/default.conf`) maps Caps Lock to:
 
 When you change Omarchy's theme, the `theme-set` hook automatically generates configs for:
 - Sioyek — appends a `# zfiles-theme` block to `~/.config/sioyek/prefs_user.config`
-- Yazi — the rendered theme is exposed as the `omarchy` flavor
-  (`~/.config/yazi/flavors/omarchy.yazi/flavor.toml`), which `yazi/theme.toml`
-  selects via `[flavor] dark = "omarchy"`.
+- Yazi — `yazi/theme.toml` always selects a flavor named `zfiles`; each target
+  decides what fills `~/.config/yazi/flavors/zfiles.yazi/`. On Omarchy it's a
+  symlink to the rendered theme, so yazi follows theme switches. On WSL and
+  remote it's static Catppuccin Mocha (`ya pkg add yazi-rs/flavors:catppuccin-mocha`).
 
 Sioyek's prefs_user.config is overwritten between `# zfiles-theme` markers — keep
 non-color customizations above that marker.
@@ -129,13 +193,14 @@ The bootstrap script clones [my neovim config](https://github.com/zstreeter/nvim
 
 ## What Bootstrap Does
 
-1. Installs packages from `pkglist.txt`
+1. Installs packages from `pkglist.txt` (or mise-only on remote)
 2. Configures keyd and enables the service
 3. Sets up zsh with XDG directories
-4. Clones neovim config and symlinks Omarchy theme
-5. Stows all dotfile packages
-6. Adds `zfilesbindings.conf` source to Hyprland config
-7. Installs the theme-set hook for sioyek/yazi
+4. Appends the guarded zfiles block to `~/.bashrc` and fixes the login chain
+5. Clones neovim config and symlinks Omarchy theme
+6. Backs up any file `stow` would collide with, then stows all packages
+7. Adds `zfilesbindings.conf` source to Hyprland config
+8. Installs the theme-set hook for sioyek/yazi
 
 ## Adding More Packages
 
