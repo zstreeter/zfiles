@@ -5,6 +5,8 @@
 
 # Core Tools
 zsh
+make
+gawk
 eza
 bat
 ripgrep

@@ -24,7 +24,7 @@ elif command -v apt-get &>/dev/null; then
 fi
 
 # True core — anything that makes sense in a bare terminal on any Linux
-CORE_PACKAGES=(zsh yazi scripts opencode pi herdr)
+CORE_PACKAGES=(zsh bash yazi scripts opencode pi herdr)
 # Omarchy/desktop-specific packages — only stowed when OMARCHY=true.
 # `omarchy` ships user template overrides at ~/.config/omarchy/themed/ that
 # Omarchy's template engine renders on every theme switch. cura/sioyek/xdg/
@@ -214,6 +214,23 @@ fi
 if [[ "$SHELL" != */zsh ]]; then
     info "Changing default shell to zsh..."
     chsh -s "$(command -v zsh)"
+fi
+
+# 5b. ble.sh — bash syntax highlighting/autosuggestions/autopair, giving the
+# bash mirror (bash/.bashrc) parity with the zsh plugins. bash stays the
+# secondary shell; zsh remains default.
+BLESH_DIR="${XDG_DATA_HOME:-$HOME/.local/share}/blesh"
+if [[ -f "$BLESH_DIR/ble.sh" ]]; then
+    info "ble.sh already installed."
+elif command -v make &>/dev/null && command -v gawk &>/dev/null; then
+    info "Installing ble.sh (bash line editor)..."
+    tmpdir=$(mktemp -d)
+    git clone --recursive --depth 1 --shallow-submodules \
+        https://github.com/akinomyoga/ble.sh.git "$tmpdir/ble.sh"
+    make -C "$tmpdir/ble.sh" install PREFIX="$HOME/.local"
+    rm -rf "$tmpdir"
+else
+    warn "make/gawk not found — skipping ble.sh (bash highlighting)."
 fi
 
 # 6. Clone neovim config (SMART INSTALL)

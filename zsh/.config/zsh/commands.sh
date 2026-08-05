@@ -8,11 +8,13 @@ if [[ -d "$OMARCHY_PATH/default/bash" ]]; then
 	source "$OMARCHY_PATH/default/bash/functions"
 fi
 
-# zsh-side tool integrations (omarchy's init file is bash-only).
-# starship is skipped — handled by my-prompt.sh.
-# fzf is handled by the zap-zsh/fzf plugin in .zshrc.
-command -v mise &>/dev/null && eval "$(mise activate zsh)"
-command -v zoxide &>/dev/null && eval "$(zoxide init zsh)"
+# Tool integrations — this file is sourced by both zsh and bash.
+# starship is skipped — handled by my-prompt.sh / bash prompt.sh.
+# fzf is handled by the zap-zsh/fzf plugin (zsh) / .bashrc (bash).
+if [ -n "${ZSH_VERSION:-}" ]; then _zfiles_shell=zsh; else _zfiles_shell=bash; fi
+command -v mise &>/dev/null && eval "$(mise activate $_zfiles_shell)"
+command -v zoxide &>/dev/null && eval "$(zoxide init $_zfiles_shell)"
+unset _zfiles_shell
 
 function run_yazi() {
 	local tmp="$(mktemp -t "yazi-cwd.XXXXX")"
@@ -22,7 +24,8 @@ function run_yazi() {
 	fi
 	rm -f -- "$tmp"
 }
-bindkey -s '^o' 'run_yazi\n'
+# bash binds ^o in .bashrc (bind -x); bindkey is zsh-only
+[ -n "${ZSH_VERSION:-}" ] && bindkey -s '^o' 'run_yazi\n'
 
 # Persistent ssh-agent at ~/.ssh/agent/socket shared across shells. Skipped
 # inside SSH sessions (preserves forwarded SSH_AUTH_SOCK) and when another
