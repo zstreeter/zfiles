@@ -24,21 +24,34 @@ chmod +x bootstrap.sh
 
 Reboot after installation for keyd to take effect.
 
-### Non-Omarchy systems
+### Targets
 
-`bootstrap.sh` auto-detects Omarchy (via `~/.config/omarchy/` or
-`~/.local/share/omarchy/`). When absent, it installs **core packages only**:
+`bootstrap.sh` detects three orthogonal facts and gates every step on them:
 
-| Package  | Purpose                            |
-|----------|------------------------------------|
-| `zsh`    | Shell config                       |
-| `yazi`   | File manager                       |
-| `sioyek` | PDF viewer                         |
-| `cura`   | 3D printing slicer                 |
-| `scripts`| `new-research-project`, `publish-post` helpers + vault template |
+- **Omarchy** (`~/.config/omarchy/` or `~/.local/share/omarchy/` exists) —
+  full overlay: core + Hyprland bindings, keyd, theme hooks, himalaya/mirador,
+  cura/sioyek/xdg/wireplumber, docker.
+- **WSL** (`/proc/version` mentions Microsoft) — core packages via apt + mise
+  (`pkglist-ubuntu.txt`; neovim/yazi/go/rust/bun/opencode via mise since noble
+  is stale or missing them), pinentry-curses, and — once present — a
+  `windows/install.ps1` hook that wires up the Windows side (kanata caps-lock
+  remap, GlazeWM, WezTerm).
+- **Package manager** (pacman vs apt) — picks the install branch in step 1.
 
-Skipped without Omarchy: Hyprland source, theme-set hook, mirador/himalaya
-email tools. Sioyek runs with default colors (no omarchy-driven theme sync).
+Core packages on every target:
+
+| Package    | Purpose                            |
+|------------|------------------------------------|
+| `zsh`      | Shell config                       |
+| `yazi`     | File manager                       |
+| `herdr`    | Terminal workspace manager         |
+| `opencode` | opencode agent config              |
+| `pi`       | pi agent config                    |
+| `scripts`  | `new-research-project`, `publish-post` helpers + vault template |
+
+Skipped without Omarchy: Hyprland source, keyd, theme-set hook,
+mirador/himalaya email tools, docker, and the desktop/hardware packages
+(cura, sioyek, xdg, wireplumber).
 
 ### À la carte stowing
 
@@ -96,14 +109,9 @@ The keyd config (`root_etc/keyd/default.conf`) maps Caps Lock to:
 
 When you change Omarchy's theme, the `theme-set` hook automatically generates configs for:
 - Sioyek — appends a `# zfiles-theme` block to `~/.config/sioyek/prefs_user.config`
-- Yazi (`~/.config/yazi/omarchy-theme.toml`)
-
-For Yazi, make sure your config includes:
-
-**yazi/theme.toml:**
-```toml
-"$include" = "./omarchy-theme.toml"
-```
+- Yazi — the rendered theme is exposed as the `omarchy` flavor
+  (`~/.config/yazi/flavors/omarchy.yazi/flavor.toml`), which `yazi/theme.toml`
+  selects via `[flavor] dark = "omarchy"`.
 
 Sioyek's prefs_user.config is overwritten between `# zfiles-theme` markers — keep
 non-color customizations above that marker.

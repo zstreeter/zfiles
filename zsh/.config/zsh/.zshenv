@@ -1,7 +1,9 @@
 # Default programs:
 export EDITOR="nvim"
-export TERMINAL="ghostty"
-export TERMINAL_PROG="ghostty"
+if command -v ghostty >/dev/null 2>&1; then
+    export TERMINAL="ghostty"
+    export TERMINAL_PROG="ghostty"
+fi
 export FILE_MANAGER="yazi"
 
 export XDG_CONFIG_HOME="$HOME/.config"
@@ -50,11 +52,13 @@ export PATH="$BUN_INSTALL/bin:$PATH"
 export PATH="$CARGO_HOME/bin:$PATH"
 
 # Omarchy environment (mirrors omarchy/default/bash/envs so SSH/non-omarchy
-# zsh sessions get the same baseline).
+# zsh sessions get the same baseline). Only prepend Omarchy's bin where it
+# actually exists (not on WSL/servers).
 export OMARCHY_PATH="$XDG_DATA_HOME/omarchy"
 export SUDO_EDITOR="$EDITOR"
 export BAT_THEME=ansi
-export PATH="$OMARCHY_PATH/bin:$PATH:$HOME/.local/bin"
+export PATH="$PATH:$HOME/.local/bin"
+[[ -d "$OMARCHY_PATH/bin" ]] && export PATH="$OMARCHY_PATH/bin:$PATH"
 
 # API keys (gitignored)
 [[ -f "$XDG_CONFIG_HOME/zsh/secrets.env" ]] && source "$XDG_CONFIG_HOME/zsh/secrets.env"

@@ -4,24 +4,42 @@ set -euo pipefail
 REPO_DIR="$(cd "$(dirname "$0")" && pwd)"
 cd "$REPO_DIR"
 
-# Detect whether we're on top of Omarchy. When false, omarchy-specific steps
-# (Hyprland source, theme-hook install, mirador/gammastep services) are skipped
-# and only cross-platform packages are stowed.
+# Orthogonal machine facts — each step gates on the fact it cares about.
+# OMARCHY: full desktop overlay (Hyprland source, theme hooks, keyd, services).
+# WSL: Windows work laptop; keyboard/WM/terminal live on the Windows side.
+# PKG: which package manager drives step 1.
 OMARCHY=false
 if [[ -d "$HOME/.local/share/omarchy" || -d "$HOME/.config/omarchy" ]]; then
     OMARCHY=true
 fi
 
-# Cross-platform packages — safe on any Linux
-CORE_PACKAGES=(cura yazi sioyek zsh scripts opencode pi xdg wireplumber herdr)
-# Omarchy/Hyprland-specific packages — only stowed when OMARCHY=true.
+WSL=false
+grep -qi microsoft /proc/version 2>/dev/null && WSL=true
+
+PKG=none
+if command -v pacman &>/dev/null; then
+    PKG=pacman
+elif command -v apt-get &>/dev/null; then
+    PKG=apt
+fi
+
+# True core — anything that makes sense in a bare terminal on any Linux
+CORE_PACKAGES=(zsh yazi scripts opencode pi herdr)
+# Omarchy/desktop-specific packages — only stowed when OMARCHY=true.
 # `omarchy` ships user template overrides at ~/.config/omarchy/themed/ that
-# Omarchy's template engine renders on every theme switch.
-OMARCHY_PACKAGES=(hypr himalaya mirador omarchy)
+# Omarchy's template engine renders on every theme switch. cura/sioyek/xdg/
+# wireplumber are desktop- or hardware-bound, so they ride with Omarchy too.
+OMARCHY_PACKAGES=(hypr himalaya mirador omarchy cura sioyek xdg wireplumber)
+# WSL-specific packages (wezterm, windows-side configs) land here as the
+# Windows keybinding/terminal design settles.
+WSL_PACKAGES=()
 
 STOW_PACKAGES=("${CORE_PACKAGES[@]}")
 if $OMARCHY; then
     STOW_PACKAGES+=("${OMARCHY_PACKAGES[@]}")
+fi
+if $WSL && ((${#WSL_PACKAGES[@]})); then
+    STOW_PACKAGES+=("${WSL_PACKAGES[@]}")
 fi
 
 info() { echo -e "\033[1;34m>>>\033[0m $1"; }
@@ -30,41 +48,88 @@ error() { echo -e "\033[1;31mERR\033[0m $1" >&2; exit 1; }
 
 if $OMARCHY; then
     info "Omarchy detected — installing full overlay."
+elif $WSL; then
+    info "WSL detected — installing core packages for the work laptop."
 else
     info "No Omarchy detected — installing core packages only."
 fi
 
 # 1. Install packages
-info "Installing packages..."
+info "Installing packages ($PKG)..."
 
-AUR_HELPER=$(command -v paru || command -v yay || true)
-if [[ -z "$AUR_HELPER" ]]; then
-    warn "No AUR helper found. Installing paru..."
-    sudo pacman -S --needed --noconfirm base-devel git
-    tmpdir=$(mktemp -d)
-    git clone https://aur.archlinux.org/paru.git "$tmpdir/paru"
-    (cd "$tmpdir/paru" && makepkg -si --noconfirm)
-    rm -rf "$tmpdir"
-    AUR_HELPER="paru"
+if [[ $PKG == pacman ]]; then
+    AUR_HELPER=$(command -v paru || command -v yay || true)
+    if [[ -z "$AUR_HELPER" ]]; then
+        warn "No AUR helper found. Installing paru..."
+        sudo pacman -S --needed --noconfirm base-devel git
+        tmpdir=$(mktemp -d)
+        git clone https://aur.archlinux.org/paru.git "$tmpdir/paru"
+        (cd "$tmpdir/paru" && makepkg -si --noconfirm)
+        rm -rf "$tmpdir"
+        AUR_HELPER="paru"
+    fi
+
+    # Install essential base tools explicitly to ensure they exist
+    # (pinentry is needed for the GPG config step below)
+    # (xdg-utils is needed for xdg-mime)
+    sudo pacman -S --needed --noconfirm pinentry stow xdg-utils
+
+    # Strip comments and blank lines from pkglist.txt
+    grep -v '^#' pkglist.txt | grep -v '^$' | $AUR_HELPER -S --needed --noconfirm -
+elif [[ $PKG == apt ]]; then
+    # Ubuntu path (WSL work laptop). apt covers the stable system tools
+    # (pkglist-ubuntu.txt); mise covers everything noble ships stale or not
+    # at all — see the mapping research on zfiles issue #7.
+    sudo apt-get update
+    grep -v '^#' pkglist-ubuntu.txt | grep -v '^$' | xargs sudo apt-get install -y
+
+    # Debian renames: expose the upstream binary names
+    mkdir -p "$HOME/.local/bin"
+    command -v fdfind &>/dev/null && ln -sf "$(command -v fdfind)" "$HOME/.local/bin/fd"
+    command -v batcat &>/dev/null && ln -sf "$(command -v batcat)" "$HOME/.local/bin/bat"
+
+    # mise-first TUI stack (apt neovim is stale, yazi absent from noble)
+    if ! command -v mise &>/dev/null && [[ ! -x "$HOME/.local/bin/mise" ]]; then
+        info "Installing mise..."
+        curl -fsSL https://mise.run | sh
+    fi
+    export PATH="$HOME/.local/bin:$PATH"
+    mise use -g go@latest rust@latest bun@latest node@lts \
+               neovim@latest yazi@latest opencode@latest
+    eval "$(mise activate bash --shims)"
+
+    command -v jupyter-lab &>/dev/null || pipx install jupyterlab
+    command -v rga &>/dev/null || cargo install ripgrep_all
+
+    if ! command -v quarto &>/dev/null; then
+        info "Installing quarto from official .deb..."
+        QUARTO_DEB=$(curl -fsSL https://api.github.com/repos/quarto-dev/quarto-cli/releases/latest \
+            | grep -o 'https://[^"]*linux-amd64\.deb' | head -1)
+        if [[ -n "$QUARTO_DEB" ]]; then
+            tmpdeb=$(mktemp --suffix=.deb)
+            curl -fsSL -o "$tmpdeb" "$QUARTO_DEB"
+            sudo dpkg -i "$tmpdeb"
+            rm -f "$tmpdeb"
+        else
+            warn "Could not resolve quarto .deb URL; install manually."
+        fi
+    fi
+else
+    warn "No supported package manager (pacman/apt) — skipping package install."
 fi
-
-# Install essential base tools explicitly to ensure they exist
-# (pinentry is needed for the GPG config step below)
-# (xdg-utils is needed for xdg-mime)
-sudo pacman -S --needed --noconfirm pinentry stow xdg-utils
-
-# Strip comments and blank lines from pkglist.txt
-grep -v '^#' pkglist.txt | grep -v '^$' | $AUR_HELPER -S --needed --noconfirm -
 
 # 2. Default applications are declarative — defined in xdg/.config/mimeapps.list
 # (stowed in step 9). Entries that point at uninstalled .desktop files
 # silently no-op, so it's safe to ship the full list cross-platform.
 
-# 3. Configure keyd
-info "Configuring keyd (Caps → Esc/Super)..."
-sudo mkdir -p /etc/keyd
-sudo cp root_etc/keyd/default.conf /etc/keyd/default.conf
-sudo systemctl enable --now keyd
+# 3. Configure keyd (omarchy-only — on WSL the keyboard is remapped on the
+# Windows side by kanata, and plain servers don't want the Caps/Super overload)
+if $OMARCHY; then
+    info "Configuring keyd (Caps → Esc/Super)..."
+    sudo mkdir -p /etc/keyd
+    sudo cp root_etc/keyd/default.conf /etc/keyd/default.conf
+    sudo systemctl enable --now keyd
+fi
 
 # 4. Configure GPG Agent (Pinentry GTK)
 # zsh/exports.zsh sets GNUPGHOME=$XDG_DATA_HOME/gnupg. Bootstrap may run
@@ -84,10 +149,13 @@ fi
 mkdir -p "$GNUPGHOME_TARGET"
 chmod 700 "$GNUPGHOME_TARGET"
 
-# Ensure pinentry-gtk is set (idempotent)
-if ! grep -q "pinentry-program /usr/bin/pinentry-gtk" "$GNUPGHOME_TARGET/gpg-agent.conf" 2>/dev/null; then
-    echo "pinentry-program /usr/bin/pinentry-gtk" >> "$GNUPGHOME_TARGET/gpg-agent.conf"
-    echo "    Added pinentry-gtk to gpg-agent.conf"
+# Ensure the right pinentry is set (idempotent): GUI on Omarchy, curses on
+# WSL/headless so pass and signed commits still work in a bare terminal.
+PINENTRY="/usr/bin/pinentry-gtk"
+$WSL && PINENTRY="/usr/bin/pinentry-curses"
+if ! grep -q "pinentry-program $PINENTRY" "$GNUPGHOME_TARGET/gpg-agent.conf" 2>/dev/null; then
+    echo "pinentry-program $PINENTRY" >> "$GNUPGHOME_TARGET/gpg-agent.conf"
+    echo "    Added $(basename "$PINENTRY") to gpg-agent.conf"
 fi
 
 # Reload agent (auto-starts under the new GNUPGHOME) to apply changes
@@ -289,8 +357,8 @@ rm -rf "$HOME/.mamba" "$HOME/.nv"
 
 # 9. Stow dotfiles
 info "Stowing dotfiles..."
-# Ensure stow is installed
-command -v stow &>/dev/null || sudo pacman -S --needed --noconfirm stow
+# Both package branches in step 1 install stow; fail loudly if neither ran.
+command -v stow &>/dev/null || error "stow not installed — rerun step 1 or install it manually."
 
 # Packages that must NOT be tree-folded. By default stow links the deepest
 # directory it can — so a package whose only child is `.config/foo/` becomes
@@ -421,9 +489,12 @@ if $OMARCHY; then
     fi
 fi
 
-# 14. Enable optional services
-info "Enabling services..."
-sudo systemctl enable --now docker 2>/dev/null || true
+# 14. Enable optional services (omarchy-only — work laptops have their own
+# sanctioned docker story, and plain servers opt in manually)
+if $OMARCHY; then
+    info "Enabling services..."
+    sudo systemctl enable --now docker 2>/dev/null || true
+fi
 
 # 14b. Set up research workspace
 info "Setting up research workspace..."
@@ -439,6 +510,19 @@ fi
 
 if ! command -v new-research-project &>/dev/null; then
     warn "new-research-project not on PATH. Ensure ~/.local/bin is in PATH (zsh)."
+fi
+
+# 15. Windows-side setup (WSL only) — registers the logon scheduled task,
+# copies the kanata config, and sets env-var pointers so kanata/GlazeWM/
+# WezTerm on the Windows side read their configs from this repo. The script
+# arrives with the Windows keybinding/terminal design (zfiles issues #11/#13).
+if $WSL; then
+    if [[ -f windows/install.ps1 ]]; then
+        info "Running Windows-side setup..."
+        powershell.exe -ExecutionPolicy Bypass -File "$(wslpath -w windows/install.ps1)"
+    else
+        warn "windows/install.ps1 not present yet — Windows-side setup skipped."
+    fi
 fi
 
 SECRETS_FILE_DISPLAY="${XDG_CONFIG_HOME:-$HOME/.config}/zsh/secrets.env"
@@ -466,4 +550,8 @@ cat <<EOF
 
 EOF
 
-info "Done! Log out and back in for shell change, reboot for keyd."
+if $OMARCHY; then
+    info "Done! Log out and back in for shell change, reboot for keyd."
+else
+    info "Done! Log out and back in for shell change."
+fi

@@ -1,0 +1,43 @@
+# Ubuntu 24.04 (WSL) apt packages — fed to `apt-get install` by bootstrap.sh.
+# Toolchains and anything noble ships stale/absent (neovim, yazi, go, rust,
+# bun, opencode) are installed via mise in bootstrap step 1, not listed here.
+# Mapping rationale: zfiles issue #7.
+
+# Core Tools
+zsh
+eza
+bat
+ripgrep
+fd-find
+fzf
+git
+gnupg
+curl
+lsof
+pass
+stow
+pinentry-curses
+xdg-utils
+
+# Python
+python3-matplotlib
+python3-numpy
+python3-pandas
+python3-plotly
+pipx
+
+# GUI-ish (WSLg)
+imv
+mpv
+sioyek
+
+# Research / Writing
+texlive-latex-extra
+texlive-fonts-extra
+texlive-science
+texlive-bibtex-extra
+biber
+latexmk
+pandoc
+poppler-utils
+ffmpeg
