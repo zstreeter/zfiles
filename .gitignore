@@ -35,3 +35,7 @@ yazi/.config/yazi/flavors/
 # Zap installs zsh plugins to ~/.local/share/zap, never in-tree. A copy here
 # is fallout from the same folding bug.
 zsh/.config/zsh/zsh-syntax-highlighting/
+
+# herdr-navd is an extensionless Python script, so importing or running it in
+# place leaves bytecode next to the stowed original.
+**/__pycache__/

@@ -797,10 +797,31 @@ if ! $REMOTE; then
     fi
 fi
 
-# 15. Windows-side setup (WSL only) — registers the logon scheduled task,
-# copies the kanata config, and sets env-var pointers so kanata/GlazeWM/
-# WezTerm on the Windows side read their configs from this repo. The script
-# arrives with the Windows keybinding/terminal design (zfiles issues #11/#13).
+# 14b. herdr-navd (WSL only) — the resident daemon that arbitrates a focus move
+# across nvim splits → herdr panes → GlazeWM windows. Caps+hjkl on the Windows
+# side reaches it over localhost; see the header of herdr/.local/bin/herdr-navd
+# for why the Linux half has to be resident rather than a script.
+#
+# WSL-only because step 3 of that arbitration talks to GlazeWM. On Omarchy the
+# same job belongs to hypr/.config/hypr/scripts/herdr-nav, which Hyprland spawns
+# per keypress.
+if $WSL; then
+    info "Enabling herdr-navd..."
+    systemctl --user daemon-reload
+    if systemctl --user enable --now herdr-navd 2>/dev/null; then
+        # A stowed unit that changed on disk needs the restart; enable --now is
+        # a no-op once it's already running.
+        systemctl --user restart herdr-navd 2>/dev/null || true
+        info "herdr-navd running on 127.0.0.1:6224"
+    else
+        warn "could not enable herdr-navd — Caps+hjkl will move windows but not panes/splits."
+    fi
+fi
+
+# 15. Windows-side setup (WSL only) — installs AutoHotkey and GlazeWM, copies
+# their configs plus WezTerm's onto the Windows side, registers both logon
+# tasks, and switches WSL to mirrored networking so herdr-navd can reach
+# GlazeWM's IPC server on 127.0.0.1.
 if $WSL; then
     if [[ -f windows/install.ps1 ]]; then
         info "Running Windows-side setup..."

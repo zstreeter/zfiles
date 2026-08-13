@@ -41,9 +41,9 @@ Reboot after installation for keyd to take effect.
   cura/sioyek/xdg/wireplumber, docker.
 - **WSL** (`/proc/version` mentions Microsoft) — core packages via apt + mise
   (`pkglist-ubuntu.txt`; neovim/yazi/go/rust/bun/opencode via mise since noble
-  is stale or missing them) and pinentry-curses. The Windows side (kanata
-  caps-lock remap, GlazeWM, WezTerm) is not automated — `windows/` holds the
-  configs to copy over by hand.
+  is stale or missing them) and pinentry-curses. The Windows side runs from
+  `windows/install.ps1` (bootstrap step 15) — see [The Windows
+  side](#the-windows-side).
 - **Package manager** (pacman vs apt) — picks the install branch in step 1.
   Forced to `none` on remote.
 
@@ -55,7 +55,7 @@ Core packages on every target:
 | `zsh`      | zsh-only bits (`.zshrc`, prompt, zap plugins) |
 | `bash`     | bash-only bits (`rc.sh`, prompt) — see [The bash hook](#the-bash-hook) |
 | `yazi`     | File manager                       |
-| `herdr`    | Terminal workspace manager         |
+| `herdr`    | Terminal workspace manager + `herdr-navd` (WSL only; see [Seamless navigation](#seamless-navigation)) |
 | `opencode` | opencode agent config              |
 | `pi`       | pi agent config                    |
 | `scripts`  | `new-research-project`, `publish-post` helpers + vault template |
@@ -142,7 +142,8 @@ zfiles/
 ├── shell/                # Shell-agnostic config (zsh + bash both source it)
 ├── zsh/                  # zsh-only config
 ├── bash/                 # bash-only config (rc.sh, prompt.sh)
-├── windows/              # WSL host-side configs, copied over manually
+├── herdr/                # Terminal workspace manager + herdr-navd (WSL)
+├── windows/              # WSL host-side configs + install.ps1 (bootstrap §15)
 └── cura/                 # 3D printing slicer config
 ```
 
@@ -167,6 +168,89 @@ These are loaded after Omarchy's defaults, so you can override or extend them.
 The keyd config (`root_etc/keyd/default.conf`) maps Caps Lock to:
 - **Tap** → Escape
 - **Hold** → Super (for Hyprland bindings)
+
+On WSL the same remap has to happen on the Windows host — WSL2 has no
+`/dev/input`, so keyd can never see the keyboard. `windows/autohotkey/caps.ahk`
+reproduces it, with one difference: **hold → `F14`, not Super**. Windows itself
+owns a large slice of Super (Win+E, Win+R, Win+number, the Start menu on bare
+press), so Caps-as-Super collides constantly. `F14` is a private channel — no
+physical key emits it, nothing binds it, and it carries no modifier semantics
+that could leak into an app. GlazeWM can still match on it because its
+keybinding matcher tests whether *any* listed key is held, not just real
+modifiers. So `f14+h` in `windows/glazewm/config.yaml` is what `SUPER+H` is on
+Omarchy. See [The Windows side](#the-windows-side).
+
+### The Windows side
+
+Bootstrap step 15 runs `windows/install.ps1` on the WSL target. It is
+idempotent — bootstrap re-runs it every time, and it only acts on what differs.
+
+| component | state |
+|-----------|-------|
+| Caps Lock | working, via AutoHotkey — `windows/autohotkey/caps.ahk` |
+| WezTerm   | working — `windows/wezterm/wezterm.lua` is the source of truth |
+| GlazeWM   | configured — `windows/glazewm/config.yaml`, mapped from Omarchy's Hyprland bindings |
+| Navigation | `herdr-navd` — nvim splits → herdr panes → GlazeWM windows |
+
+Configs are **copied** to the Windows side, not symlinked across
+`\\wsl.localhost`: the logon tasks run when the distro may not be up, and a UNC
+path there would either fail or force the distro to boot just to read a config.
+So editing `windows/*` takes a bootstrap re-run to reach Windows. An unmanaged
+file already at the destination is backed up once to `<name>.zfiles-bak`.
+
+Both the Caps Lock remap (`zfiles-caps`) and GlazeWM (`zfiles-glazewm`) run as
+logon tasks at highest privileges, so they also apply over elevated windows and
+raise no UAC prompt at logon. `caps.ahk` is syntax-checked with `/validate`
+before any running instance is restarted, and only restarted when it actually
+changed; a GlazeWM config change triggers `wm-reload-config` rather than a
+restart, so windows stay where they are.
+
+#### Seamless navigation
+
+On Omarchy, `SUPER+hjkl` runs `hypr/.config/hypr/scripts/herdr-nav`, which walks
+outward — nvim splits, then herdr panes, then Hyprland windows — and stops at
+the first layer that can take the move. Reproducing that on WSL takes two
+pieces, because the keyboard is on the Windows side and the panes and splits are
+on the Linux side:
+
+- **`hjkl` is deliberately not bound in GlazeWM.** If it were, GlazeWM's
+  system-wide hook would swallow `f14+h` before WezTerm ever saw it. Instead
+  `caps.ahk` arbitrates: outside the terminal it forwards to the WM as usual,
+  and inside the terminal it asks the daemon first.
+- **`herdr-navd`** (`herdr/.local/bin/herdr-navd`) is a small Python 3 stdlib
+  daemon on `127.0.0.1:6224`, run from a stowed systemd user unit. `GET
+  /nav/{left,down,up,right}` does the arbitration and replies with the layer
+  that consumed the move (`nvim` / `herdr` / `wm` / `none`), which is the whole
+  debugging story when a keypress does nothing.
+
+It has to be resident rather than a script: reaching into WSL through interop
+(`wsl.exe -- …`) measures ~290ms per invocation, unusable for focus movement.
+An HTTP round trip into an already-running process measures **~6ms end to end
+from Windows**, arbitration included.
+
+Its outermost hop talks to GlazeWM's IPC server — a WebSocket on
+`ws://127.0.0.1:6123` — which is why `install.ps1` sets `networkingMode=mirrored`
+in `%USERPROFILE%\.wslconfig`: in WSL2's default NAT mode, `127.0.0.1` inside
+the distro is not the Windows host. (The Windows → WSL direction works in either
+mode, so `caps.ahk` can always reach the daemon.) That change needs a
+`wsl --shutdown` to take effect. If it hasn't been applied, or the daemon is
+down, `caps.ahk` falls back to sending `f14+hjkl` to GlazeWM — so Caps+hjkl
+always moves *something*, it just stops seeing inside the terminal.
+
+Python rather than a bash port of `herdr-nav` for one concrete reason: that
+script leans on `jq`, which isn't installed on WSL and isn't in
+`pkglist-ubuntu.txt`. The stdlib `json` module makes the gap moot instead of
+adding a dependency.
+
+**Why AutoHotkey and not kanata.** kanata is the closer analogue to keyd, and
+`windows/kanata/kanata.kbd` is kept as the reference the `.ahk` was ported from,
+but nothing installs it: its only winget source is the GitHub release, and
+Zscaler 403s that download (the direct URL and the `api.github.com` asset
+endpoint both redirect to the same CDN; msstore doesn't carry it). Unrelated
+GitHub release downloads — AutoHotkey, PowerToys — come through fine, so the
+block reads as aimed at keyboard-interception tools rather than incidental.
+PowerToys was the other candidate and can't do this at all: Keyboard Manager
+does one-to-one remaps only, with no notion of tap versus hold.
 
 ### Theme Integration
 
@@ -201,6 +285,9 @@ The bootstrap script clones [my neovim config](https://github.com/zstreeter/nvim
 6. Backs up any file `stow` would collide with, then stows all packages
 7. Adds `zfilesbindings.conf` source to Hyprland config
 8. Installs the theme-set hook for sioyek/yazi
+9. Enables `herdr-navd` on WSL (§14b)
+10. Runs `windows/install.ps1` on WSL (§15) — AutoHotkey, GlazeWM, WezTerm,
+    `.wslconfig`
 
 ## Adding More Packages
 
