@@ -76,44 +76,32 @@ window_behavior:
       maximized: false
       shown_on_top: false
 
-# Each workspace has a home monitor, so 1-5 always mean the primary screen and
-# 6-0 always mean the second one. Unbound (the previous state), a workspace
-# lands on whichever monitor happened to have focus when it was first
-# activated, which is why a fresh dock could leave, say, an empty '6' sitting on
-# the second screen with no reliable key to reach it.
+# Ten workspaces, deliberately WITHOUT `bind_to_monitor`. They are one shared
+# sequence, not two per-screen pools: a monitor with nothing on it takes the
+# lowest number that isn't already active, so a second screen next to a primary
+# holding 1 and 2 comes up as 3, and 4 is whatever screen you're focused on when
+# you ask for it. That is the i3/sway model and the one Hyprland gives us on
+# Omarchy, so the muscle memory transfers.
 #
-# `bind_to_monitor` is an INDEX, and GlazeWM orders monitors left-to-right by
-# their x coordinate -- not by Windows' display numbering, and with no notion of
-# a vertical stack. On the current dock the two screens are stacked, so the
-# indices come down to a 15px x-offset: DISPLAY3 (Windows primary, at 0,0) sorts
-# to 0 and DISPLAY2 (above it, x=15) to 1. Re-check with `glazewm query
-# monitors` after rearranging displays in Windows settings; that offset is the
-# only thing keeping the order stable.
+# Binding halves of the range to fixed screens (1-5 here, 6-0 there) was tried
+# and reverted: it makes the numbers mean "which monitor" instead of "which
+# task", strands five of them the moment you undock, and made the second screen
+# look stuck on a workspace the first screen could never reach.
 #
-# Undocking is safe: a workspace bound to an index that doesn't exist falls back
-# to the focused monitor (verified against 3.10.1 with a deliberately bogus
-# index), so the laptop on its own still gets all ten.
+# Naming them all up front still matters -- an unlisted workspace can't be a
+# `focus --workspace` target, so f14+<n> would be dead for anything not
+# currently active.
 workspaces:
   - name: '1'
-    bind_to_monitor: 0
   - name: '2'
-    bind_to_monitor: 0
   - name: '3'
-    bind_to_monitor: 0
   - name: '4'
-    bind_to_monitor: 0
   - name: '5'
-    bind_to_monitor: 0
   - name: '6'
-    bind_to_monitor: 1
   - name: '7'
-    bind_to_monitor: 1
   - name: '8'
-    bind_to_monitor: 1
   - name: '9'
-    bind_to_monitor: 1
   - name: '0'
-    bind_to_monitor: 1
 
 window_rules:
   - commands: ['ignore']
@@ -269,8 +257,10 @@ keybindings:
 
   # Absolute monitor jumps, for when "the other screen" is faster to think
   # about than a direction. `focus --monitor` takes ONLY an index in 3.10.1 --
-  # next/prev/left/right are all rejected by the CLI parser -- so these are the
-  # same indices the workspace bindings above use.
+  # next/prev/left/right are all rejected by the CLI parser. The index is
+  # GlazeWM's own left-to-right ordering by x coordinate, not Windows' display
+  # numbering; on a vertically stacked dock it comes down to whatever small
+  # x-offset the two screens have. `glazewm query monitors` prints the order.
   - commands: ['focus --monitor 0']
     bindings: ['f14+alt+1']
   - commands: ['focus --monitor 1']
