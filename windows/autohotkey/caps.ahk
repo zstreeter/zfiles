@@ -107,19 +107,23 @@ WM_KEYS := [
 ; terminal first. Values are the direction word herdr-navd expects.
 NAV_KEYS := Map("h", "left", "j", "down", "k", "up", "l", "right")
 
-; q is absent from WM_KEYS for a third reason: GlazeWM's `close` command does
-; not work on this machine. Measured on 3.10.1, and it is not specific to any
-; window type -- `glazewm command --id <id> close` returns success: true and
-; the window is still there afterwards, for Notepad, for a native Qt window
-; and for a WSLg RAIL window alike. The f14 channel itself is fine: the same
-; test with `f14+t` flips Notepad to floating, so the chord reaches the WM and
-; only this one command is dead.
+; q is absent from WM_KEYS for a third reason: Caps+Q closes the window here
+; rather than proxying to GlazeWM.
 ;
-; WM_CLOSE, which is what `close` is supposed to amount to, kills every one of
-; those windows on the first try. WinClose sends exactly that, so Caps+Q is
-; handled here rather than proxied. windows/glazewm/config.yaml has no f14+q
-; binding for the same reason -- leaving one there would be config that looks
-; load-bearing and is not.
+; This used to say GlazeWM's `close` command does not work on this machine.
+; It was wrong. Re-measured on 3.10.1 in Aug 2026 against a freshly restarted
+; WM, `glazewm command --id <id> close` returns success: true and the window
+; does go away. The original test ran against a glazewm.exe that had been up a
+; long time and had quietly stopped acting on windows -- see the README on
+; restarting it. Nothing measured against a single long-lived instance belongs
+; in a comment until it has been checked against a fresh one.
+;
+; WinClose stays, on its own merits rather than as a workaround: it posts
+; WM_CLOSE straight at the window, so Caps+Q keeps working when the window
+; manager does not, which is exactly the failure this comment used to
+; misdiagnose. windows/glazewm/config.yaml still has no f14+q binding -- one
+; route to close a window is enough, and a second is an undocumented way to do
+; it by accident.
 
 ; Space is absent from WM_KEYS for a different reason: it is the app launcher,
 ; Omarchy's SUPER+SPACE. GlazeWM cannot host this one -- it has no "send a

@@ -244,9 +244,10 @@ Remote Desktop client. Measured on GlazeWM 3.10.1:
   GlazeWM reads the initial state off the geometry RDP hands over.
 - **Nothing can close them.** Neither `glazewm command close` nor a direct
   `WM_CLOSE` does anything, so a stale RAIL window can outlive the Linux
-  process that owned it. (`close` turned out to be broken for *every* window
-  on this machine — see below — but RAIL windows survive `WM_CLOSE` too, which
-  ordinary windows do not.)
+  process that owned it. (The `glazewm command close` half of this was measured
+  against the sick instance described below and has not been re-tested. The
+  `WM_CLOSE` half is the load-bearing one anyway: ordinary windows do not
+  survive it and RAIL windows do.)
 
 The Windows build of the same program has none of that. Native sioyek is
 `processName: sioyek`, class `Qt5152QWindowIcon`, arrives tiling, and closes.
@@ -261,20 +262,61 @@ worked example. Note that `ahrm.sioyek` is a *portable* package: it reads its
 config from the directory holding the exe, which is version-stamped, so a
 sioyek upgrade starts with empty configs until the next bootstrap run.
 
+#### When GlazeWM stops moving one window
+
+A long-running `glazewm.exe` can stop applying geometry to a *single* window
+while going on managing everything else perfectly. Measured Aug 2026 with
+sioyek, WezTerm and a throwaway Explorer window sharing one workspace:
+
+| window   | GlazeWM computed    | actually was        |
+|----------|---------------------|---------------------|
+| WezTerm  | 1908x1544 @ 8,48    | 1922x1551 @ 1,48    |
+| Explorer | 1269x1544 @ 1285,48 | 1283x1551 @ 1278,48 |
+| sioyek   | 1908x1544 @ 1924,48 | 700x539 @ 300,300   |
+
+Nothing in GlazeWM's own view of the world looked wrong. `query windows`
+reported sioyek as an ordinary `tiling`, `shown` window on the focused
+workspace throughout, no rule matched it, `query paused` was false, and every
+command aimed at it came back `success: true`. Three separate recomputes of its
+slot — another window appearing, that window closing, `set-floating` then
+`set-tiling` — moved it by nothing, with no reverted transient visible while
+polling its real rect every 20ms. A plain non-elevated `SetWindowPos` on the
+same HWND moved it exactly, so the window was never the problem.
+
+**Restarting `glazewm.exe` fixes it.** Why an instance gets into that state is
+not known: nothing in `errors.log`, and it has not been reproduced on demand.
+
+Two habits fall out of this. Measure the real rect with `GetWindowRect` instead
+of trusting `query windows`, which reports what GlazeWM *computed*, not what it
+applied — the two disagreeing is the entire signature, and every command
+returning `success: true` means the IPC will not tell you. And restart the WM
+before concluding a GlazeWM command is broken: the section below is a whole
+feature that got written up as dead on the strength of one sick instance.
+
+Restart is `Stop-Process` on `glazewm`, a pause, then `glazewm.exe start` — and
+**wait for port 6123 to be released**. Racing the new instance against the old
+one gets `Only one usage of each socket address ... (os error 10048)` in
+`errors.log` and leaves a glazewm that manages windows but has no IPC listener,
+which breaks `herdr-navd` silently: keybindings still work, navigation stops.
+
 #### Caps+Q does not go through GlazeWM
 
-`close` is broken in GlazeWM 3.10.1 on this machine, for every window rather
-than for any particular kind. `glazewm command --id <id> close` returns
-`success: true` and the window is still there — Notepad, a native Qt window, a
-WSLg RAIL window, all the same. It is not the keybinding channel: `f14+t` on
-the same Notepad flips it to floating, so the chord arrives and only this one
-command is dead.
+`caps.ahk` handles Caps+Q itself with `WinClose`, which posts `WM_CLOSE`
+straight at the focused window, and `config.yaml` has no `f14+q` binding at
+all. Only a *bare* Caps+Q closes; Caps+Shift+Q and friends fall through to the
+f14 channel and stay inert, so there is no second, undocumented way to close
+the focused window by accident.
 
-So `caps.ahk` handles Caps+Q itself with `WinClose`, which posts the `WM_CLOSE`
-that closes all of them on the first try, and `config.yaml` has no `f14+q`
-binding at all. Only a *bare* Caps+Q closes; Caps+Shift+Q and friends fall
-through to the f14 channel and stay inert, so there is no second, undocumented
-way to close the focused window by accident.
+This used to be documented here as "`close` is broken in GlazeWM 3.10.1 on this
+machine, for every window rather than for any particular kind". **That was
+wrong.** Re-measured Aug 2026 against a freshly restarted WM,
+`glazewm command --id <id> close` returns `success: true` and the window does
+go away. The original measurement was taken against the instance described
+above, which had stopped acting on windows.
+
+`WinClose` stays, but on its own merits rather than as a workaround: posting
+`WM_CLOSE` directly means Caps+Q keeps working when the window manager does
+not, which is exactly the failure the old note misdiagnosed.
 
 Configs are **copied** to the Windows side, not symlinked across
 `\\wsl.localhost`: the logon tasks run when the distro may not be up, and a UNC
