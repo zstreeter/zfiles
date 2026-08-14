@@ -1,0 +1,56 @@
+;; kanata — Caps Lock dual-role for the Windows host of a WSL machine.
+;;
+;; SUPERSEDED, kept for reference only. Nothing installs or reads this file.
+;; kanata's only winget source is its GitHub release, and Zscaler 403s that
+;; download on the AMD network; unrelated GitHub release downloads come through
+;; fine, so the block reads as aimed at keyboard-interception tools rather than
+;; incidental. windows/autohotkey/caps.ahk reproduces this behavior with
+;; AutoHotkey, which installs without a fight. Revive this if IT ever unblocks
+;; kanata — the tap/hold semantics below are the reference the .ahk was ported
+;; from.
+;;
+;; Why this exists separately from keyd:
+;; On Omarchy/Arch the same behavior comes from keyd
+;; (root_etc/keyd/default.conf):
+;;
+;;     capslock = overload(meta, esc)
+;;
+;; WSL2 has no /dev/input — the physical keyboard is never exposed to the Linux
+;; side, it arrives pre-cooked through ConPTY from Windows. So keyd can never
+;; work under WSL. The remap has to happen on the Windows host, before input
+;; reaches WezTerm/WSL at all. kanata is the closest equivalent: identical
+;; tap/hold semantics, plain-text config, no kernel driver in LLHOOK mode.
+;;
+;; Install and autostart steps: see README.md → "Caps Lock Behavior".
+;; Panic exit if a config change goes wrong: hold LeftCtrl + Space + Escape.
+
+(defcfg
+  ;; defsrc below lists only `caps`, so kanata has to be told explicitly to
+  ;; pass every other key through untouched. This is not optional here:
+  ;; without it, tap-hold-press does not activate for keys outside defsrc.
+  process-unmapped-keys yes
+)
+
+(defsrc
+  caps
+)
+
+(defvar
+  ;; keyd's overload() exposes no timeout knob; 200ms is kanata's conventional
+  ;; value and matches how the Arch box feels in practice. Raise hold-timeout
+  ;; if fast typing produces stray Supers, lower it if held-Caps feels sluggish.
+  tap-repress-timeout 200
+  hold-timeout        200
+)
+
+(defalias
+  ;; tap-hold-press rather than plain tap-hold: it resolves to the hold action
+  ;; as soon as another key goes down, so fast Caps+key chords land as Super+key
+  ;; instead of leaking a stray Escape. This is the recommended variant for
+  ;; caps-lock specifically.
+  caps (tap-hold-press $tap-repress-timeout $hold-timeout esc lmet)
+)
+
+(deflayer base
+  @caps
+)

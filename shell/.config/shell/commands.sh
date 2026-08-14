@@ -51,3 +51,16 @@ function sshf() {
 	[ $? -eq 1 ] && ssh-add 2>/dev/null
 	ssh -o ForwardAgent=yes -o AddKeysToAgent=yes "$@"
 }
+
+# Pull the latest zfiles and re-run bootstrap for whichever checkout is here.
+# ~/.zfiles is the sparse remote-server clone; ~/zfiles is the full local one.
+function zfiles-update() {
+	if [ -d "$HOME/.zfiles/.git" ]; then
+		git -C "$HOME/.zfiles" pull --ff-only && "$HOME/.zfiles/bootstrap.sh" --remote
+	elif [ -d "$HOME/zfiles/.git" ]; then
+		git -C "$HOME/zfiles" pull --ff-only && "$HOME/zfiles/bootstrap.sh"
+	else
+		echo "zfiles-update: no checkout found at ~/.zfiles or ~/zfiles" >&2
+		return 1
+	fi
+}

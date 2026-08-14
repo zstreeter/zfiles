@@ -1,13 +1,23 @@
 [Desktop Entry]
-# User override of /usr/share/applications/sioyek.desktop. Routes PDF launches
-# through ~/.local/bin/sioyek (the custom-color wrapper) without depending on
-# PATH — guards against launchers (xdg-open, Zotero) that bypass the shell.
-# .desktop Exec= keys do not expand $HOME or ~, so we go through `sh -c`.
+# User override of /usr/share/applications/sioyek.desktop. Aims PDF launches at
+# ~/.local/bin/sioyek, the custom-color wrapper, which shadows /usr/bin/sioyek
+# on PATH.
+#
+# Bare `sioyek`, not the `sh -c 'exec "$HOME/.local/bin/sioyek" "$@"' sh %f`
+# this used to be. That form only works under a spec-compliant Exec parser
+# (gio/gtk-launch, i.e. a real desktop session). xdg-utils' own reader just
+# word-splits the line and runs `which <first word>`, so the quotes arrived
+# literally and sh died on an unterminated string — which is every PDF opened
+# on WSLg or any session without gio. PATH is the portable contract instead:
+# environment.d/path.conf in this package puts ~/.local/bin ahead of /usr/bin
+# for session-launched apps, and a PATH that somehow misses it degrades to the
+# system binary (PDF still opens, just without custom colors) rather than
+# failing outright.
 Name=Sioyek
 Comment=PDF viewer for reading research papers and technical books
 Keywords=pdf;viewer;reader;research;
 TryExec=sioyek
-Exec=sh -c 'exec "$HOME/.local/bin/sioyek" "$@"' sh %f
+Exec=sioyek %f
 StartupNotify=true
 Terminal=false
 Type=Application

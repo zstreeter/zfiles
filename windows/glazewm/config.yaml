@@ -1,0 +1,346 @@
+# GlazeWM config -- the Windows counterpart to Omarchy's Hyprland bindings.
+#
+# Copied (not symlinked) to %USERPROFILE%\.glzr\glazewm\config.yaml by
+# windows/install.ps1; see the header there for why nothing points across
+# \\wsl.localhost. Editing this file takes a bootstrap re-run to reach Windows.
+#
+# EVERY binding here is on `f14`, which no physical keyboard can produce. It is
+# a private channel from windows/autohotkey/caps.ahk: Caps Lock held + <key>
+# arrives as f14+<key>. Read caps.ahk's header for why the modifier is a
+# synthetic function key rather than Super or a Ctrl+Alt+Shift "hyper" chord.
+#
+# So `f14+h` here is what SUPER+H is on Omarchy. The mapping is kept as close
+# to hypr/.config/hypr/zfilesbindings.conf as GlazeWM allows; where it can't
+# follow, the gap is called out in a comment rather than faked.
+
+general:
+  # Zebar is GlazeWM's status bar and ships with it -- the rough analogue of
+  # Omarchy's top bar. Harmless if absent; the command just fails.
+  startup_commands: ['shell-exec zebar']
+  shutdown_commands: ['shell-exec taskkill /IM zebar.exe /F']
+  config_reload_commands: []
+  # Omarchy leaves focus-follows-mouse off; matching that keeps focus
+  # predictable when a herdr pane is being driven from the keyboard.
+  focus_follows_cursor: false
+  toggle_workspace_on_refocus: false
+  cursor_jump:
+    enabled: true
+    trigger: 'monitor_focus'
+  hide_method: 'cloak'
+  show_all_in_taskbar: false
+
+gaps:
+  scale_with_dpi: true
+  inner_gap: '8px'
+  outer_gap:
+    top: '8px'
+    right: '8px'
+    bottom: '8px'
+    left: '8px'
+
+window_effects:
+  focused_window:
+    border:
+      enabled: true
+      # Catppuccin Mocha blue, matching herdr/.config/herdr/config.toml's
+      # accent so the WM border and the pane borders agree.
+      color: '#89b4fa'
+    hide_title_bar:
+      enabled: false
+    corner_style:
+      enabled: false
+      style: 'square'
+    transparency:
+      enabled: false
+      opacity: '95%'
+  other_windows:
+    border:
+      enabled: true
+      color: '#45475a'
+    hide_title_bar:
+      enabled: false
+    corner_style:
+      enabled: false
+      style: 'square'
+    transparency:
+      enabled: false
+      opacity: '0%'
+
+window_behavior:
+  initial_state: 'tiling'
+  state_defaults:
+    floating:
+      centered: true
+      shown_on_top: false
+    fullscreen:
+      maximized: false
+      shown_on_top: false
+
+# Ten workspaces, deliberately WITHOUT `bind_to_monitor`. They are one shared
+# sequence, not two per-screen pools: a monitor with nothing on it takes the
+# lowest number that isn't already active, so a second screen next to a primary
+# holding 1 and 2 comes up as 3, and 4 is whatever screen you're focused on when
+# you ask for it. That is the i3/sway model and the one Hyprland gives us on
+# Omarchy, so the muscle memory transfers.
+#
+# Binding halves of the range to fixed screens (1-5 here, 6-0 there) was tried
+# and reverted: it makes the numbers mean "which monitor" instead of "which
+# task", strands five of them the moment you undock, and made the second screen
+# look stuck on a workspace the first screen could never reach.
+#
+# Naming them all up front still matters -- an unlisted workspace can't be a
+# `focus --workspace` target, so f14+<n> would be dead for anything not
+# currently active.
+workspaces:
+  - name: '1'
+  - name: '2'
+  - name: '3'
+  - name: '4'
+  - name: '5'
+  - name: '6'
+  - name: '7'
+  - name: '8'
+  - name: '9'
+  - name: '0'
+
+window_rules:
+  - commands: ['ignore']
+    match:
+      - window_process: { equals: 'zebar' }
+      - window_title: { regex: '[Pp]icture.in.[Pp]icture' }
+        window_class: { regex: 'Chrome_WidgetWin_1|MozillaDialogClass' }
+      - window_process: { equals: 'PowerToys' }
+      # AutoHotkey's own tray/dialog windows are never tiling candidates.
+      - window_process: { equals: 'AutoHotkey64' }
+
+  # WSLg apps -- a GUI launched on the Linux side that wsl/.local/bin/winapp
+  # did not route to a Windows build. Nothing in this repo should reach here:
+  # sioyek opened from yazi arrives as its native Windows build, process
+  # `sioyek`, class `Qt5152QWindowIcon`, and tiles like any other window. This
+  # rule is the fallback for anything that slips through.
+  #
+  # As far as Windows is concerned WSLg apps are not their own processes at
+  # all: WSLg publishes them over RDP RemoteApp, so every one of them arrives
+  # as a RAIL_WINDOW belonging to msrdc.exe, the Remote Desktop client.
+  # `glazewm query windows` shows them that way too, which is worth knowing
+  # before hunting for a process named after the app.
+  #
+  # They come up in fullscreen state and stay there, ignoring `initial_state:
+  # tiling` above, because GlazeWM decides the initial state from the window's
+  # geometry at creation and RDP hands it over already sized to the monitor.
+  # The state has to be corrected after the fact instead, which is what a
+  # window rule is for.
+  - commands: ['set-tiling']
+    match:
+      - window_process: { equals: 'msrdc' }
+        window_class: { equals: 'RAIL_WINDOW' }
+
+keybindings:
+  # === Window focus (vim-style) ==========================================
+  # The bare hjkl chords normally never reach GlazeWM when WezTerm is
+  # focused -- caps.ahk hands those to herdr instead, so one keystroke walks
+  # nvim splits -> herdr panes -> windows the way scripts/herdr-nav does on
+  # Omarchy. Everywhere else caps.ahk forwards them straight here.
+  - commands: ['focus --direction left']
+    bindings: ['f14+h', 'f14+left']
+  - commands: ['focus --direction down']
+    bindings: ['f14+j', 'f14+down']
+  - commands: ['focus --direction up']
+    bindings: ['f14+k', 'f14+up']
+  - commands: ['focus --direction right']
+    bindings: ['f14+l', 'f14+right']
+
+  # === Move windows ======================================================
+  - commands: ['move --direction left']
+    bindings: ['f14+shift+h', 'f14+shift+left']
+  - commands: ['move --direction down']
+    bindings: ['f14+shift+j', 'f14+shift+down']
+  - commands: ['move --direction up']
+    bindings: ['f14+shift+k', 'f14+shift+up']
+  - commands: ['move --direction right']
+    bindings: ['f14+shift+l', 'f14+shift+right']
+
+  # === Resize ============================================================
+  # Omarchy resizes with SUPER+minus / SUPER+equal (its `code:20` / `code:21`),
+  # not SUPER+CTRL+hjkl -- that pairing is commented out in zfilesbindings.conf,
+  # and SUPER+CTRL+L is the lock binding, so hjkl here would collide.
+  # GlazeWM has no directional "expand left", only width/height on the focused
+  # container, so minus/equal drive width and the shifted pair drives height.
+  - commands: ['resize --width -2%']
+    bindings: ['f14+oem_minus']
+  - commands: ['resize --width +2%']
+    bindings: ['f14+oem_plus']
+  - commands: ['resize --height -2%']
+    bindings: ['f14+shift+oem_minus']
+  - commands: ['resize --height +2%']
+    bindings: ['f14+shift+oem_plus']
+
+  # === Window actions ====================================================
+  # SUPER+Q closes -- but NOT from here. `close` does not work in 3.10.1 on
+  # this machine: `glazewm command --id <id> close` returns success: true and
+  # the window stays, for a plain Notepad as readily as for a WSLg RAIL
+  # window, while `f14+t` on the same window flips it to floating. So the
+  # chord arrives fine and this one command is dead. caps.ahk handles Caps+Q
+  # itself with WinClose, which posts the WM_CLOSE that closes all of them on
+  # the first try. A `close` binding here would be config that looks
+  # load-bearing and is not; see caps.ahk's CloseWindow.
+  - commands: ['toggle-fullscreen']
+    bindings: ['f14+f']
+  - commands: ['toggle-floating --centered']
+    bindings: ['f14+t']
+  - commands: ['toggle-minimized']
+    bindings: ['f14+m']
+  # Omarchy's SUPER+backslash "toggle split orientation".
+  - commands: ['toggle-tiling-direction']
+    bindings: ['f14+oem_pipe']
+  # Was on f14+space, displaced so Caps+Space can be the app launcher -- which
+  # is what SUPER+SPACE actually does on Omarchy. caps.ahk now consumes Space
+  # itself, so binding it here would be dead config. 'c' for cycle; f14+tab is
+  # taken by next-active-workspace below and must stay there.
+  - commands: ['wm-cycle-focus']
+    bindings: ['f14+c']
+
+  # === Workspaces ========================================================
+  - commands: ['focus --workspace 1']
+    bindings: ['f14+1']
+  - commands: ['focus --workspace 2']
+    bindings: ['f14+2']
+  - commands: ['focus --workspace 3']
+    bindings: ['f14+3']
+  - commands: ['focus --workspace 4']
+    bindings: ['f14+4']
+  - commands: ['focus --workspace 5']
+    bindings: ['f14+5']
+  - commands: ['focus --workspace 6']
+    bindings: ['f14+6']
+  - commands: ['focus --workspace 7']
+    bindings: ['f14+7']
+  - commands: ['focus --workspace 8']
+    bindings: ['f14+8']
+  - commands: ['focus --workspace 9']
+    bindings: ['f14+9']
+  - commands: ['focus --workspace 0']
+    bindings: ['f14+0']
+
+  - commands: ['move --workspace 1', 'focus --workspace 1']
+    bindings: ['f14+shift+1']
+  - commands: ['move --workspace 2', 'focus --workspace 2']
+    bindings: ['f14+shift+2']
+  - commands: ['move --workspace 3', 'focus --workspace 3']
+    bindings: ['f14+shift+3']
+  - commands: ['move --workspace 4', 'focus --workspace 4']
+    bindings: ['f14+shift+4']
+  - commands: ['move --workspace 5', 'focus --workspace 5']
+    bindings: ['f14+shift+5']
+  - commands: ['move --workspace 6', 'focus --workspace 6']
+    bindings: ['f14+shift+6']
+  - commands: ['move --workspace 7', 'focus --workspace 7']
+    bindings: ['f14+shift+7']
+  - commands: ['move --workspace 8', 'focus --workspace 8']
+    bindings: ['f14+shift+8']
+  - commands: ['move --workspace 9', 'focus --workspace 9']
+    bindings: ['f14+shift+9']
+  - commands: ['move --workspace 0', 'focus --workspace 0']
+    bindings: ['f14+shift+0']
+
+  # Omarchy's SUPER+TAB / SUPER+SHIFT+TAB / SUPER+CTRL+TAB.
+  - commands: ['focus --next-active-workspace']
+    bindings: ['f14+tab']
+  - commands: ['focus --prev-active-workspace']
+    bindings: ['f14+shift+tab']
+  - commands: ['focus --recent-workspace']
+    bindings: ['f14+ctrl+tab']
+
+  # === Monitors ==========================================================
+  # Omarchy's SUPER+SHIFT+ALT+<arrow>. Moves the whole workspace to the next
+  # monitor in that direction; hjkl aliases match every other binding here.
+  - commands: ['move-workspace --direction left']
+    bindings: ['f14+shift+alt+left', 'f14+shift+alt+h']
+  - commands: ['move-workspace --direction right']
+    bindings: ['f14+shift+alt+right', 'f14+shift+alt+l']
+  - commands: ['move-workspace --direction up']
+    bindings: ['f14+shift+alt+up', 'f14+shift+alt+k']
+  - commands: ['move-workspace --direction down']
+    bindings: ['f14+shift+alt+down', 'f14+shift+alt+j']
+
+  # Directional focus that goes straight to the window manager, skipping the
+  # terminal's inner layers. Bare f14+hjkl can't do this job: caps.ahk sends
+  # those to herdr-navd first, so from a terminal with stacked panes you have
+  # to walk every pane before the move falls through to the WM and crosses to
+  # the other screen. Holding alt makes caps.ahk's `bare` test false, so the
+  # chord is forwarded to GlazeWM untouched (see caps.ahk's Navigate).
+  #
+  # Direction, not monitor index, so this keeps working whatever the display
+  # arrangement is -- GlazeWM crosses to the adjacent monitor once there's no
+  # window left in that direction on the current one.
+  - commands: ['focus --direction left']
+    bindings: ['f14+alt+h', 'f14+alt+left']
+  - commands: ['focus --direction down']
+    bindings: ['f14+alt+j', 'f14+alt+down']
+  - commands: ['focus --direction up']
+    bindings: ['f14+alt+k', 'f14+alt+up']
+  - commands: ['focus --direction right']
+    bindings: ['f14+alt+l', 'f14+alt+right']
+
+  # Absolute monitor jumps, for when "the other screen" is faster to think
+  # about than a direction. `focus --monitor` takes ONLY an index in 3.10.1 --
+  # next/prev/left/right are all rejected by the CLI parser. The index is
+  # GlazeWM's own left-to-right ordering by x coordinate, not Windows' display
+  # numbering; on a vertically stacked dock it comes down to whatever small
+  # x-offset the two screens have. `glazewm query monitors` prints the order.
+  - commands: ['focus --monitor 0']
+    bindings: ['f14+alt+1']
+  - commands: ['focus --monitor 1']
+    bindings: ['f14+alt+2']
+
+  # === Applications ======================================================
+  # SUPER+RETURN terminal. WezTerm launches straight into WSL -- see
+  # `default_domain` in windows/wezterm/wezterm.lua.
+  - commands: ['shell-exec C:/Program Files/WezTerm/wezterm-gui.exe']
+    bindings: ['f14+enter']
+  # SUPER+W browser, per zfilesbindings.conf.
+  #
+  # `--new-window`, not `cmd /c start ""`. `start` hands the URL to the default
+  # browser, and Chrome already running turns that into a new TAB in whichever
+  # window it last used -- on a multi-monitor setup that means Caps+W silently
+  # does nothing on the screen you're looking at, because the tab opened in the
+  # Chrome window parked on the other monitor. A genuine new window is what
+  # GlazeWM can then tile onto the focused workspace.
+  - commands: ['shell-exec C:/Program Files/Google/Chrome/Application/chrome.exe --new-window https://www.google.com']
+    bindings: ['f14+w']
+  # Chromeless app windows, the equivalent of omarchy-launch-webapp.
+  - commands: ['shell-exec C:/Program Files/Google/Chrome/Application/chrome.exe --app=https://claude.ai']
+    bindings: ['f14+shift+a']
+  - commands: ['shell-exec C:/Program Files/Google/Chrome/Application/chrome.exe --app=https://gemini.google.com']
+    bindings: ['f14+shift+alt+a']
+  # Omarchy opens nvim+Himalaya in a terminal; same idea through WSL.
+  - commands: ['shell-exec C:/Program Files/WezTerm/wezterm-gui.exe start -- wsl.exe -- nvim +Himalaya']
+    bindings: ['f14+shift+e']
+
+  # === System ============================================================
+  # Windows' own snipping overlay -- Omarchy binds PRINT to a screenshot.
+  - commands: ['shell-exec explorer ms-screenclip:']
+    bindings: ['f14+shift+s']
+  # Omarchy's SUPER+CTRL+L.
+  - commands: ['shell-exec rundll32.exe user32.dll,LockWorkStation']
+    bindings: ['f14+ctrl+l']
+
+  # === Window manager ====================================================
+  - commands: ['wm-reload-config']
+    bindings: ['f14+shift+r']
+  - commands: ['wm-toggle-pause']
+    bindings: ['f14+shift+p']
+  # Deliberately awkward: quitting the WM by accident is worse than the
+  # keystroke being hard to reach.
+  - commands: ['wm-exit']
+    bindings: ['f14+shift+ctrl+e']
+
+# No GlazeWM equivalent exists for these Omarchy bindings, so they are absent
+# rather than approximated:
+#   SUPER+G / SUPER+ALT+<dir>   window grouping (no tabbed/stacked containers)
+#   SUPER+S                     scratchpad (no special workspace)
+#   SUPER+P                     pseudo-tiling
+#   SUPER+BACKSPACE             per-window transparency toggle
+#   SUPER+CTRL+Z                cursor zoom
+#   SUPER+/                     keybindings cheat-sheet menu
+# Media and brightness keys are handled by Windows itself and need no binding.

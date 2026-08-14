@@ -1,11 +1,15 @@
 # Bash mirror of the zsh setup. Shared files (env, aliases, commands, git
-# prompt) live in ~/.config/zsh and are sourced from both shells; only the
-# prompt and line-editor pieces are bash-specific.
+# prompt) live in ~/.config/shell and are sourced from both shells; only the
+# prompt and line-editor pieces here are bash-specific.
+#
+# This file is NOT stowed over ~/.bashrc. Bootstrap appends a guarded source
+# line to whatever ~/.bashrc already exists, so a server's site setup (lmod,
+# module, conda init) survives untouched. See ensure_bash_hook() in bootstrap.sh.
 
 # Shared environment (plain exports, bash-safe)
-[[ -f "$HOME/.config/zsh/.zshenv" ]] && source "$HOME/.config/zsh/.zshenv"
+[[ -f "$HOME/.config/shell/env.sh" ]] && source "$HOME/.config/shell/env.sh"
 
-# .zshenv points HISTFILE at zsh's history — keep bash history separate.
+# env.sh points HISTFILE at zsh's history — keep bash history separate.
 export HISTFILE="${XDG_STATE_HOME:-$HOME/.local/state}/bash/history"
 mkdir -p "${HISTFILE%/*}"
 
@@ -30,8 +34,8 @@ shopt -s histappend checkwinsize globstar autocd 2>/dev/null
 set -o vi
 
 # Shared aliases + commands (mise, zoxide, run_yazi, ssh-agent, sshf)
-[[ -f "$HOME/.config/zsh/aliases.zsh" ]] && source "$HOME/.config/zsh/aliases.zsh"
-[[ -f "$HOME/.config/zsh/commands.sh" ]] && source "$HOME/.config/zsh/commands.sh"
+[[ -f "$HOME/.config/shell/aliases.sh" ]] && source "$HOME/.config/shell/aliases.sh"
+[[ -f "$HOME/.config/shell/commands.sh" ]] && source "$HOME/.config/shell/commands.sh"
 
 # eza aliases (zap-zsh/exa parity; omarchy's bash aliases add their own where present)
 if command -v eza &>/dev/null; then
