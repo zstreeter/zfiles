@@ -223,7 +223,9 @@ on the Linux side:
   daemon on `127.0.0.1:6224`, run from a stowed systemd user unit. `GET
   /nav/{left,down,up,right}` does the arbitration and replies with the layer
   that consumed the move (`nvim` / `herdr` / `wm` / `none`), which is the whole
-  debugging story when a keypress does nothing.
+  debugging story when a keypress does nothing. It also serves `GET /launch` —
+  see [Launching onto the focused
+  workspace](#launching-onto-the-focused-workspace).
 
 It has to be resident rather than a script: reaching into WSL through interop
 (`wsl.exe -- …`) measures ~290ms per invocation, unusable for focus movement.
@@ -243,6 +245,33 @@ Python rather than a bash port of `herdr-nav` for one concrete reason: that
 script leans on `jq`, which isn't installed on WSL and isn't in
 `pkglist-ubuntu.txt`. The stdlib `json` module makes the gap moot instead of
 adding a dependency.
+
+#### Launching onto the focused workspace
+
+`Caps+Space` opens PowerToys Run, Omarchy's `SUPER+SPACE`. On a multi-monitor
+setup that used to put the app on the *previous* workspace whenever you launched
+from an empty one — focus workspace 3 on the second screen, launch Outlook, and
+it opens on workspace 1.
+
+An empty workspace has no OS-level focus anchor. GlazeWM's focused container is
+the workspace, but Windows' foreground window is still whatever was up last;
+`sync_focus` can only "focus the desktop". PT Run is a tool window GlazeWM can
+never manage, so it doesn't react to PT Run taking foreground — but when PT Run
+closes, Windows hands foreground to the top *managed* window in the global
+Z-order, which is on the other screen, and GlazeWM follows it as a manual focus
+change. `should_override_focus` only covers the 100ms after a managed window
+goes away, so nothing catches this. Seconds later the app appears and is
+inserted next to the wrong container.
+
+Racing that is hopeless — the race is against app start-up time, which is
+unbounded. So the window is claimed instead. `caps.ahk` calls `GET /launch`
+*before* sending the launcher chord, while the intended workspace is still
+focused; the daemon records it and a watcher thread on GlazeWM's
+`window_managed` event stream moves the next newly managed window there and
+follows it. An already-running app emits no `window_managed` event, so
+activating an existing window is untouched, and a claim expires after 15s so an
+abandoned launcher can't capture something unrelated a minute later. Daemon
+down, and `Caps+Space` is exactly the plain launcher chord it always was.
 
 **Why AutoHotkey and not kanata.** kanata is the closer analogue to keyd, and
 `windows/kanata/kanata.kbd` is kept as the reference the `.ahk` was ported from,
