@@ -197,6 +197,87 @@ if ($progman -eq [IntPtr]::Zero) {
     Info 'desktop    icons hidden'
 }
 
+# --- Caps Lock scancode remap ------------------------------------------------
+# Turn the Caps Lock key into F13 in the keyboard driver, so Windows has no
+# Caps Lock key at all and the lock state can never latch.
+#
+# caps.ahk used to be the only thing holding it off, via SetCapsLockState
+# "AlwaysOff" plus its hook. That leaves a hole exactly the width of the
+# process not running -- during logon before the task fires, and during every
+# restart after an edit to the script -- and one press in that window latches
+# the lock for real. The hole cannot be closed from userspace; it is closed
+# here instead, one layer down, where it holds whether or not AutoHotkey is up.
+#
+# F13 and not F14: GlazeWM installs its own low-level keyboard hook, and hook
+# order between two logon-started processes is not pinnable, so a physical F14
+# could reach GlazeWM before caps.ahk suppressed it and fire every binding
+# twice. Nothing is bound to f13, so the physical key is inert to the WM.
+#
+# Scancode Map layout (REG_BINARY, all little-endian DWORDs): header 0,
+# version 0, count 2 (one mapping plus the null terminator), then each mapping
+# as (target << 16) | source -- 0x0064003A being 0x3A Caps Lock -> 0x64 F13 --
+# then a zero DWORD closing the list.
+$kbLayoutKey = 'HKLM:\SYSTEM\CurrentControlSet\Control\Keyboard Layout'
+$capsToF13 = [byte[]]@(
+    0x00,0x00,0x00,0x00,   # header
+    0x00,0x00,0x00,0x00,   # version
+    0x02,0x00,0x00,0x00,   # entry count, terminator included
+    0x3A,0x00,0x64,0x00,   # 0x3A Caps Lock -> 0x64 F13
+    0x00,0x00,0x00,0x00    # terminator
+)
+
+# GetValue, not Get-ItemProperty: under Set-StrictMode -Version Latest, reading
+# a property off an object that lacks it is a terminating error, and an
+# unmapped keyboard is exactly the case where the value is absent. The registry
+# key object answers with $null instead.
+$currentMap = (Get-Item -LiteralPath $kbLayoutKey).GetValue('Scancode Map')
+
+if ($currentMap -and -not (Compare-Object $currentMap $capsToF13 -SyncWindow 0)) {
+    Info 'scancode   Caps Lock -> F13 already mapped'
+} else {
+    if ($currentMap) {
+        # Preserve a map we did not write rather than dropping remaps someone
+        # set up deliberately. Merging two of them is not something to guess
+        # at, so the old bytes are kept beside ours to be restored by hand.
+        Write-Warning @'
+[zfiles] A 'Scancode Map' already exists and is not ours. Replacing it, with
+  the old bytes saved to the 'Scancode Map.zfiles-bak' value beside it. Any
+  other remaps it set up are off until you merge them back by hand.
+'@
+    }
+
+    # HKLM needs elevation and bootstrap.sh does not run this script elevated,
+    # so shell out through RunAs. One UAC prompt, on the run that changes
+    # something -- the no-op branch above is what every later run takes.
+    $writeMap = @"
+`$key = '$kbLayoutKey'
+`$old = (Get-Item -LiteralPath `$key).GetValue('Scancode Map')
+if (`$old) {
+    Set-ItemProperty -LiteralPath `$key -Name 'Scancode Map.zfiles-bak' -Value `$old -Type Binary
+}
+Set-ItemProperty -LiteralPath `$key -Name 'Scancode Map' ``
+                 -Value ([byte[]]@($($capsToF13 -join ','))) -Type Binary
+"@
+
+    $encoded = [Convert]::ToBase64String([System.Text.Encoding]::Unicode.GetBytes($writeMap))
+    $elevated = Start-Process `
+        -FilePath (Join-Path $env:SystemRoot 'System32\WindowsPowerShell\v1.0\powershell.exe') `
+        -ArgumentList '-NoProfile', '-EncodedCommand', $encoded `
+        -Verb RunAs -Wait -PassThru -WindowStyle Hidden
+
+    if ($elevated.ExitCode -ne 0) {
+        Write-Warning @'
+[zfiles] Could not write the Caps Lock scancode map -- UAC declined, most
+  likely. Caps Lock stays a real toggle key and caps.ahk's SetCapsLockState
+  fallback is all that holds it off. Re-run bootstrap.sh and accept the
+  prompt.
+'@
+    } else {
+        Info 'scancode   Caps Lock -> F13 written'
+        Write-Warning '[zfiles] Reboot for the Caps Lock scancode map to take effect.'
+    }
+}
+
 # --- Caps Lock: tap = Escape, hold = Super -----------------------------------
 # AutoHotkey rather than kanata: kanata's only winget source is its GitHub
 # release, and Zscaler 403s that download on the AMD network. See the header of

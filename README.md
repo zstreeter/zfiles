@@ -182,6 +182,24 @@ keybinding matcher tests whether *any* listed key is held, not just real
 modifiers. So `f14+h` in `windows/glazewm/config.yaml` is what `SUPER+H` is on
 Omarchy. See [The Windows side](#the-windows-side).
 
+**There is no Caps Lock key.** `install.ps1` writes a `Scancode Map` to
+`HKLM\SYSTEM\CurrentControlSet\Control\Keyboard Layout` turning scancode `0x3A`
+into `0x64` (F13) in the keyboard driver, so Windows never sees a Caps Lock key
+and the lock state cannot latch. This is not tidiness: `caps.ahk` used to hold
+the lock off from userspace with `SetCapsLockState "AlwaysOff"`, which leaves a
+hole exactly the width of the process not running — during logon before the
+task fires, and during every restart after an edit to the script — and one
+press in that window latched it for real. The remap holds whether or not
+AutoHotkey is up. It needs elevation (one UAC prompt, only on the run that
+changes something) and a reboot to load; until then `caps.ahk` still hooks
+`CapsLock` alongside `F13` as a bridge.
+
+F13 in the driver, F14 out of the script, and they have to differ: GlazeWM
+installs its own low-level keyboard hook, hook order between two
+logon-started processes is not pinnable, and a *physical* F14 that reached
+GlazeWM before `caps.ahk` suppressed it would fire every binding twice.
+Nothing is bound to `f13`, so the physical key is inert to the WM.
+
 ### The Windows side
 
 Bootstrap step 15 runs `windows/install.ps1` on the WSL target. It is
@@ -189,7 +207,7 @@ idempotent — bootstrap re-runs it every time, and it only acts on what differs
 
 | component | state |
 |-----------|-------|
-| Caps Lock | working, via AutoHotkey — `windows/autohotkey/caps.ahk` |
+| Caps Lock | working, via AutoHotkey — `windows/autohotkey/caps.ahk`, on a driver-level Caps→F13 remap |
 | WezTerm   | working — `windows/wezterm/wezterm.lua` is the source of truth |
 | GlazeWM   | configured — `windows/glazewm/config.yaml`, mapped from Omarchy's Hyprland bindings |
 | Navigation | `herdr-navd` — nvim splits → herdr panes → GlazeWM windows |

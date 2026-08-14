@@ -10,6 +10,15 @@
 ; keyboard never reaches the Linux side as raw input, it arrives pre-cooked
 ; through ConPTY -- so the remap has to happen on the Windows host.
 ;
+; The key does not send CapsLock at all. windows/install.ps1 writes a Scancode
+; Map to HKLM that turns scancode 0x3A into 0x64 (F13) in the keyboard driver,
+; so Windows has no Caps Lock key to toggle and the lock state can never latch.
+; That is a driver-level fact, not something this script maintains: it holds
+; while AutoHotkey is starting, while it is being restarted after an edit, and
+; if it dies outright. Forcing the state from userspace (SetCapsLockState
+; "AlwaysOff", which this script used to do) cannot make that promise -- every
+; moment the process was not running was a moment one press latched the lock.
+;
 ; Why not Super, the way keyd does it:
 ; Windows itself owns a large slice of Super (Win+E, Win+R, Win+number, the
 ; Start menu on bare press...), so a Caps-as-Super chord collides constantly.
@@ -29,12 +38,21 @@
 ; and its separate "reject if extra modifiers are held" pass only covers the
 ; Shift/Ctrl/Alt/Win groups, which F13/F14 are not in.
 ;
-; Why F13 is never actually SENT:
-; Holding Caps re-enters the hotkey via OS auto-repeat, so emitting a real
-; held F13 would fire a stream of F13 keydowns at whatever has focus. In a
+; Why the key arrives as F13 but chords go out as F14:
+; They must be different. GlazeWM installs its own WH_KEYBOARD_LL hook, and
+; hook order between two logon-started processes is not something either can
+; pin down. If the physical key produced F14, a race where GlazeWM sees it
+; before this script suppresses it would fire every f14 binding TWICE -- once
+; from the physical chord, once from the synthesized one. Nothing in
+; glazewm/config.yaml is on f13, so the physical key is inert over there no
+; matter which hook runs first.
+;
+; Why F13 is never RE-SENT:
+; Holding the key re-enters the hotkey via OS auto-repeat, so passing it
+; through would fire a stream of F13 keydowns at whatever has focus. In a
 ; terminal that is a stream of `\e[25~` escape sequences dumped into the
-; shell. So the hold is tracked as AHK state instead, and only the resolved
-; chord is synthesized -- nothing leaks to the focused window either way.
+; shell. The hotkeys below have no `~` prefix, so the native key is swallowed;
+; the hold is tracked as AHK state and only the resolved chord is synthesized.
 ;
 ; Why AutoHotkey and not kanata (windows/kanata/kanata.kbd, kept for reference):
 ; kanata is the closer equivalent, but its only winget source is the GitHub
@@ -44,8 +62,12 @@
 ; interception tool of exactly the shape endpoint security flags. AutoHotkey is
 ; the long-standing standard for this on Windows and installs without a fight.
 
-; The physical toggle is never wanted -- without this, chords like Caps+q would
-; flip the Caps Lock state on the way past.
+; Fallback for a machine where the Scancode Map has not landed: the HKLM write
+; needs elevation and only takes effect at boot, so between a first bootstrap
+; and the next restart the key really is still CapsLock. Both halves below are
+; dead weight once it has -- there is no CapsLock key left to force off or to
+; hook -- and they are kept precisely because "once it has" is not something
+; this script can verify.
 SetCapsLockState "AlwaysOff"
 
 ; Matches kanata's tap-repress-timeout/hold-timeout. Past this, a press with no
@@ -210,8 +232,11 @@ Navigate(hotkeyName) {
 }
 
 ; The * prefix fires regardless of which other modifiers are already held, so
-; Ctrl+Caps and friends still route through here.
-*CapsLock:: {
+; Ctrl+Caps and friends still route through here. F13 is what the key actually
+; sends; the CapsLock label is the pre-reboot fallback described at the top.
+*F13::
+*CapsLock::
+{
     global capsDownAt, capsHeld
     ; Held keys auto-repeat and re-enter this hotkey; keep the first timestamp
     ; so a long hold doesn't keep looking freshly pressed.
@@ -220,14 +245,16 @@ Navigate(hotkeyName) {
     capsHeld := true
 }
 
-*CapsLock up:: {
+*F13 up::
+*CapsLock up::
+{
     global capsDownAt, capsHeld
     held := A_TickCount - capsDownAt
     capsDownAt := 0
     capsHeld := false
 
-    ; A_PriorKey is still CapsLock only if nothing else was pressed in between,
-    ; which is what separates a bare tap from Caps-as-a-modifier.
-    if (A_PriorKey = "CapsLock") && (held < TAP_MS)
+    ; A_PriorKey is still the key itself only if nothing else was pressed in
+    ; between, which is what separates a bare tap from Caps-as-a-modifier.
+    if (A_PriorKey = "F13" || A_PriorKey = "CapsLock") && (held < TAP_MS)
         Send "{Escape}"
 }
