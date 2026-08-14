@@ -76,17 +76,44 @@ window_behavior:
       maximized: false
       shown_on_top: false
 
+# Each workspace has a home monitor, so 1-5 always mean the primary screen and
+# 6-0 always mean the second one. Unbound (the previous state), a workspace
+# lands on whichever monitor happened to have focus when it was first
+# activated, which is why a fresh dock could leave, say, an empty '6' sitting on
+# the second screen with no reliable key to reach it.
+#
+# `bind_to_monitor` is an INDEX, and GlazeWM orders monitors left-to-right by
+# their x coordinate -- not by Windows' display numbering, and with no notion of
+# a vertical stack. On the current dock the two screens are stacked, so the
+# indices come down to a 15px x-offset: DISPLAY3 (Windows primary, at 0,0) sorts
+# to 0 and DISPLAY2 (above it, x=15) to 1. Re-check with `glazewm query
+# monitors` after rearranging displays in Windows settings; that offset is the
+# only thing keeping the order stable.
+#
+# Undocking is safe: a workspace bound to an index that doesn't exist falls back
+# to the focused monitor (verified against 3.10.1 with a deliberately bogus
+# index), so the laptop on its own still gets all ten.
 workspaces:
   - name: '1'
+    bind_to_monitor: 0
   - name: '2'
+    bind_to_monitor: 0
   - name: '3'
+    bind_to_monitor: 0
   - name: '4'
+    bind_to_monitor: 0
   - name: '5'
+    bind_to_monitor: 0
   - name: '6'
+    bind_to_monitor: 1
   - name: '7'
+    bind_to_monitor: 1
   - name: '8'
+    bind_to_monitor: 1
   - name: '9'
+    bind_to_monitor: 1
   - name: '0'
+    bind_to_monitor: 1
 
 window_rules:
   - commands: ['ignore']
@@ -210,15 +237,44 @@ keybindings:
     bindings: ['f14+ctrl+tab']
 
   # === Monitors ==========================================================
-  # Omarchy's SUPER+SHIFT+ALT+<arrow>.
+  # Omarchy's SUPER+SHIFT+ALT+<arrow>. Moves the whole workspace to the next
+  # monitor in that direction; hjkl aliases match every other binding here.
   - commands: ['move-workspace --direction left']
-    bindings: ['f14+shift+alt+left']
+    bindings: ['f14+shift+alt+left', 'f14+shift+alt+h']
   - commands: ['move-workspace --direction right']
-    bindings: ['f14+shift+alt+right']
+    bindings: ['f14+shift+alt+right', 'f14+shift+alt+l']
   - commands: ['move-workspace --direction up']
-    bindings: ['f14+shift+alt+up']
+    bindings: ['f14+shift+alt+up', 'f14+shift+alt+k']
   - commands: ['move-workspace --direction down']
-    bindings: ['f14+shift+alt+down']
+    bindings: ['f14+shift+alt+down', 'f14+shift+alt+j']
+
+  # Directional focus that goes straight to the window manager, skipping the
+  # terminal's inner layers. Bare f14+hjkl can't do this job: caps.ahk sends
+  # those to herdr-navd first, so from a terminal with stacked panes you have
+  # to walk every pane before the move falls through to the WM and crosses to
+  # the other screen. Holding alt makes caps.ahk's `bare` test false, so the
+  # chord is forwarded to GlazeWM untouched (see caps.ahk's Navigate).
+  #
+  # Direction, not monitor index, so this keeps working whatever the display
+  # arrangement is -- GlazeWM crosses to the adjacent monitor once there's no
+  # window left in that direction on the current one.
+  - commands: ['focus --direction left']
+    bindings: ['f14+alt+h', 'f14+alt+left']
+  - commands: ['focus --direction down']
+    bindings: ['f14+alt+j', 'f14+alt+down']
+  - commands: ['focus --direction up']
+    bindings: ['f14+alt+k', 'f14+alt+up']
+  - commands: ['focus --direction right']
+    bindings: ['f14+alt+l', 'f14+alt+right']
+
+  # Absolute monitor jumps, for when "the other screen" is faster to think
+  # about than a direction. `focus --monitor` takes ONLY an index in 3.10.1 --
+  # next/prev/left/right are all rejected by the CLI parser -- so these are the
+  # same indices the workspace bindings above use.
+  - commands: ['focus --monitor 0']
+    bindings: ['f14+alt+1']
+  - commands: ['focus --monitor 1']
+    bindings: ['f14+alt+2']
 
   # === Applications ======================================================
   # SUPER+RETURN terminal. WezTerm launches straight into WSL -- see
@@ -226,7 +282,14 @@ keybindings:
   - commands: ['shell-exec C:/Program Files/WezTerm/wezterm-gui.exe']
     bindings: ['f14+enter']
   # SUPER+W browser, per zfilesbindings.conf.
-  - commands: ['shell-exec cmd /c start "" "https://www.google.com"']
+  #
+  # `--new-window`, not `cmd /c start ""`. `start` hands the URL to the default
+  # browser, and Chrome already running turns that into a new TAB in whichever
+  # window it last used -- on a multi-monitor setup that means Caps+W silently
+  # does nothing on the screen you're looking at, because the tab opened in the
+  # Chrome window parked on the other monitor. A genuine new window is what
+  # GlazeWM can then tile onto the focused workspace.
+  - commands: ['shell-exec C:/Program Files/Google/Chrome/Application/chrome.exe --new-window https://www.google.com']
     bindings: ['f14+w']
   # Chromeless app windows, the equivalent of omarchy-launch-webapp.
   - commands: ['shell-exec C:/Program Files/Google/Chrome/Application/chrome.exe --app=https://claude.ai']
