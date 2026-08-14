@@ -172,9 +172,14 @@ keybindings:
     bindings: ['f14+shift+oem_plus']
 
   # === Window actions ====================================================
-  # SUPER+Q closes, per zfilesbindings.conf's override of Omarchy's SUPER+W.
-  - commands: ['close']
-    bindings: ['f14+q']
+  # SUPER+Q closes -- but NOT from here. `close` does not work in 3.10.1 on
+  # this machine: `glazewm command --id <id> close` returns success: true and
+  # the window stays, for a plain Notepad as readily as for a WSLg RAIL
+  # window, while `f14+t` on the same window flips it to floating. So the
+  # chord arrives fine and this one command is dead. caps.ahk handles Caps+Q
+  # itself with WinClose, which posts the WM_CLOSE that closes all of them on
+  # the first try. A `close` binding here would be config that looks
+  # load-bearing and is not; see caps.ahk's CloseWindow.
   - commands: ['toggle-fullscreen']
     bindings: ['f14+f']
   - commands: ['toggle-floating --centered']

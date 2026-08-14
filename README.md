@@ -240,9 +240,11 @@ Remote Desktop client. Measured on GlazeWM 3.10.1:
   window rule cannot tell a PDF viewer from an image viewer.
 - They arrive `fullscreen` regardless of `initial_state: tiling`, because
   GlazeWM reads the initial state off the geometry RDP hands over.
-- **Nothing can close them.** `glazewm command close` returns success and the
-  window stays; so does a direct `WM_CLOSE`. A stale RAIL window can outlive
-  the Linux process that owned it.
+- **Nothing can close them.** Neither `glazewm command close` nor a direct
+  `WM_CLOSE` does anything, so a stale RAIL window can outlive the Linux
+  process that owned it. (`close` turned out to be broken for *every* window
+  on this machine — see below — but RAIL windows survive `WM_CLOSE` too, which
+  ordinary windows do not.)
 
 The Windows build of the same program has none of that. Native sioyek is
 `processName: sioyek`, class `Qt5152QWindowIcon`, arrives tiling, and closes.
@@ -256,6 +258,21 @@ format differs between targets — a file under `windows/<name>/`. sioyek is the
 worked example. Note that `ahrm.sioyek` is a *portable* package: it reads its
 config from the directory holding the exe, which is version-stamped, so a
 sioyek upgrade starts with empty configs until the next bootstrap run.
+
+#### Caps+Q does not go through GlazeWM
+
+`close` is broken in GlazeWM 3.10.1 on this machine, for every window rather
+than for any particular kind. `glazewm command --id <id> close` returns
+`success: true` and the window is still there — Notepad, a native Qt window, a
+WSLg RAIL window, all the same. It is not the keybinding channel: `f14+t` on
+the same Notepad flips it to floating, so the chord arrives and only this one
+command is dead.
+
+So `caps.ahk` handles Caps+Q itself with `WinClose`, which posts the `WM_CLOSE`
+that closes all of them on the first try, and `config.yaml` has no `f14+q`
+binding at all. Only a *bare* Caps+Q closes; Caps+Shift+Q and friends fall
+through to the f14 channel and stay inert, so there is no second, undocumented
+way to close the focused window by accident.
 
 Configs are **copied** to the Windows side, not symlinked across
 `\\wsl.localhost`: the logon tasks run when the distro may not be up, and a UNC

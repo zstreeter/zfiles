@@ -97,7 +97,7 @@ NAVD_URL := "http://127.0.0.1:6224/"
 ; deliberately broad so adding a GlazeWM binding never means editing this file.
 WM_KEYS := [
     "a", "b", "c", "d", "e", "f", "g", "i", "m", "n", "o", "p",
-    "q", "r", "s", "t", "u", "v", "w", "x", "y", "z",
+    "r", "s", "t", "u", "v", "w", "x", "y", "z",
     "0", "1", "2", "3", "4", "5", "6", "7", "8", "9",
     "Left", "Right", "Up", "Down", "Enter", "Tab", "Backspace",
     ",", ".", "/", "\", "-", "=", ";", "'", "[", "]"
@@ -106,6 +106,20 @@ WM_KEYS := [
 ; h/j/k/l are absent from WM_KEYS on purpose -- they arbitrate against the
 ; terminal first. Values are the direction word herdr-navd expects.
 NAV_KEYS := Map("h", "left", "j", "down", "k", "up", "l", "right")
+
+; q is absent from WM_KEYS for a third reason: GlazeWM's `close` command does
+; not work on this machine. Measured on 3.10.1, and it is not specific to any
+; window type -- `glazewm command --id <id> close` returns success: true and
+; the window is still there afterwards, for Notepad, for a native Qt window
+; and for a WSLg RAIL window alike. The f14 channel itself is fine: the same
+; test with `f14+t` flips Notepad to floating, so the chord reaches the WM and
+; only this one command is dead.
+;
+; WM_CLOSE, which is what `close` is supposed to amount to, kills every one of
+; those windows on the first try. WinClose sends exactly that, so Caps+Q is
+; handled here rather than proxied. windows/glazewm/config.yaml has no f14+q
+; binding for the same reason -- leaving one there would be config that looks
+; load-bearing and is not.
 
 ; Space is absent from WM_KEYS for a different reason: it is the app launcher,
 ; Omarchy's SUPER+SPACE. GlazeWM cannot host this one -- it has no "send a
@@ -132,6 +146,7 @@ for key in WM_KEYS
 for key, direction in NAV_KEYS
     Hotkey "*" key, Navigate
 Hotkey "*Space", LaunchApps
+Hotkey "*q", CloseWindow
 HotIf
 
 ; Synthesize the private AHK -> GlazeWM channel. {Blind} keeps any real
@@ -229,6 +244,28 @@ Navigate(hotkeyName) {
     if (bare && WinActive(TERM_EXE) && AskNavd("nav/" NAV_KEYS[key]) != "")
         return
     SendToWm(key)
+}
+
+; Omarchy's SUPER+Q. WinClose posts WM_CLOSE and returns immediately -- it does
+; not wait for the window to go away, which matters because a program with
+; unsaved work answers the message with a save prompt rather than by exiting,
+; and blocking here would freeze the keyboard until that prompt was dismissed.
+;
+; Only a BARE Caps+Q closes. Caps+Shift+Q and friends are unbound in
+; glazewm/config.yaml, so they should stay inert rather than becoming a second,
+; undocumented way to close the focused window by accident; they fall through
+; to the f14 channel where the WM swallows them.
+CloseWindow(*) {
+    bare := !GetKeyState("Shift", "P")
+         && !GetKeyState("Ctrl", "P")
+         && !GetKeyState("Alt", "P")
+    if (!bare) {
+        SendToWm("q")
+        return
+    }
+    ; "A" rather than a saved handle: the active window is whatever has focus
+    ; at the moment the chord completes, which is the whole intent.
+    try WinClose "A"
 }
 
 ; The * prefix fires regardless of which other modifiers are already held, so
