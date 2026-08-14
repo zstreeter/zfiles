@@ -41,9 +41,9 @@ Reboot after installation for keyd to take effect.
   cura/sioyek/xdg/wireplumber, docker.
 - **WSL** (`/proc/version` mentions Microsoft) — core packages via apt + mise
   (`pkglist-ubuntu.txt`; neovim/yazi/go/rust/bun/opencode via mise since noble
-  is stale or missing them) and pinentry-curses. The Windows side runs from
-  `windows/install.ps1` (bootstrap step 15) — see [The Windows
-  side](#the-windows-side).
+  is stale or missing them) and pinentry-curses, plus `sioyek`/`xdg` so PDFs
+  open in sioyek under WSLg. The Windows side runs from `windows/install.ps1`
+  (bootstrap step 15) — see [The Windows side](#the-windows-side).
 - **Package manager** (pacman vs apt) — picks the install branch in step 1.
   Forced to `none` on remote.
 
@@ -62,7 +62,9 @@ Core packages on every target:
 
 Skipped without Omarchy: Hyprland source, keyd, theme-set hook,
 mirador/himalaya email tools, docker, and the desktop/hardware packages
-(cura, sioyek, xdg, wireplumber).
+(cura, wireplumber). `sioyek` and `xdg` are also stowed on WSL — the theme-set
+hook is Omarchy-only, so sioyek falls back to a static `prefs_user.config`
+there.
 
 Remote gets `shell`, `bash`, and `yazi` only — no zsh, no herdr, no pi, no
 desktop anything.

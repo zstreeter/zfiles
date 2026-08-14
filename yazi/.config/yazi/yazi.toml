@@ -24,6 +24,14 @@ play = [
 archive = [
 	{ run = 'unar "$1"', desc = "Extract here" },
 ]
+# Named explicitly rather than left to the generic `open` (xdg-open): outside a
+# full desktop session — WSLg, a bare Hyprland shell — xdg-open's fallback chain
+# is the flaky part of the path. `sioyek` here resolves to the ~/.local/bin
+# wrapper (custom color mode). orphan so the viewer outlives the yazi process;
+# `open` stays as the second choice for targets with no sioyek (press O).
+pdf = [
+	{ run = 'sioyek "$@"', orphan = true, desc = "Open in sioyek" },
+]
 
 [open]
 rules = [
@@ -34,6 +42,8 @@ rules = [
 	{ mime = "video/*", use = [ "play", "reveal" ] },
 	{ mime = "audio/*", use = [ "play", "reveal" ] },
 	{ mime = "inode/x-empty", use = [ "edit", "reveal" ] },
+
+	{ mime = "application/pdf",  use = [ "pdf", "open", "reveal" ] },
 
 	{ mime = "application/json", use = [ "edit", "reveal" ] },
 	{ mime = "*/javascript",     use = [ "edit", "reveal" ] },

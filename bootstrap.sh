@@ -49,12 +49,15 @@ fi
 CORE_PACKAGES=(shell zsh bash yazi scripts opencode pi herdr)
 # Omarchy/desktop-specific packages — only stowed when OMARCHY=true.
 # `omarchy` ships user template overrides at ~/.config/omarchy/themed/ that
-# Omarchy's template engine renders on every theme switch. cura/sioyek/xdg/
-# wireplumber are desktop- or hardware-bound, so they ride with Omarchy too.
+# Omarchy's template engine renders on every theme switch. cura and wireplumber
+# are desktop- or hardware-bound, so they ride with Omarchy too.
 OMARCHY_PACKAGES=(hypr himalaya mirador omarchy cura sioyek xdg wireplumber)
 # WSL-specific packages (wezterm, windows-side configs) land here as the
 # Windows keybinding/terminal design settles.
-WSL_PACKAGES=()
+# sioyek/xdg: WSLg runs GUI apps, so PDFs opened from yazi should land in
+# sioyek here exactly as they do on Omarchy. `xdg` carries the mimeapps
+# defaults; entries naming .desktop files this box doesn't have just no-op.
+WSL_PACKAGES=(sioyek xdg)
 # Remote servers get exactly the three things worth having in an ssh pane:
 # the bash prompt (shell+bash), yazi, and neovim (cloned in step 6, not stowed).
 # No zsh — those are bash terminals — and nothing desktop-, agent- or mail-bound.
@@ -695,6 +698,34 @@ if command -v ya &>/dev/null; then
     fi
 else
     warn "Yazi (ya) binary not found, skipping plugin setup."
+fi
+
+# 11b. Static sioyek colors on non-Omarchy targets — same idea as the yazi
+# flavor slot above. ~/.local/bin/sioyek always launches in custom color mode,
+# and Omarchy's theme-set hook (§13) is what normally symlinks
+# prefs_user.config at the rendered theme. WSL has no theme engine, so pin the
+# same Catppuccin Mocha palette the yazi flavor falls back to. Never clobber:
+# sioyek itself writes to this file when settings change in the UI.
+if ! $OMARCHY && ! $REMOTE && [[ -d "$HOME/.config/sioyek" ]]; then
+    SIOYEK_PREFS="$HOME/.config/sioyek/prefs_user.config"
+    if [[ -e "$SIOYEK_PREFS" ]]; then
+        info "Sioyek prefs already present at ${SIOYEK_PREFS/#$HOME/\~} — leaving it alone."
+    else
+        info "Writing static sioyek colors (Catppuccin Mocha)..."
+        cat > "$SIOYEK_PREFS" << 'EOF'
+# Static fallback written by bootstrap.sh — no theme engine on this target.
+# Catppuccin Mocha, matching the yazi flavor fallback. Sioyek wants each
+# channel as a float in [0.0, 1.0]. On Omarchy this file is instead a symlink
+# to the theme-set hook's rendered sioyek-prefs.config.
+background_color 0.118 0.118 0.180
+custom_background_color 0.118 0.118 0.180
+custom_text_color 0.804 0.839 0.957
+text_highlight_color 0.976 0.886 0.686
+synctex_highlight_color 0.537 0.706 0.980
+link_highlight_color 0.537 0.706 0.980
+search_highlight_color 0.345 0.357 0.439
+EOF
+    fi
 fi
 
 # 12. Configure Hyprland to source zfiles bindings (omarchy-only)
