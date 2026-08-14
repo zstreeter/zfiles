@@ -113,6 +113,24 @@ window_rules:
       # AutoHotkey's own tray/dialog windows are never tiling candidates.
       - window_process: { equals: 'AutoHotkey64' }
 
+  # WSLg apps -- sioyek opened from yazi, or anything else with a GUI launched
+  # on the Linux side. As far as Windows is concerned they are not their own
+  # processes at all: WSLg publishes them over RDP RemoteApp, so every one of
+  # them arrives as a RAIL_WINDOW belonging to msrdc.exe, the Remote Desktop
+  # client. `glazewm query windows` shows them that way too, which is worth
+  # knowing before hunting for a process named after the app.
+  #
+  # They come up in fullscreen state and stay there, ignoring `initial_state:
+  # tiling` above, because GlazeWM decides the initial state from the window's
+  # geometry at creation and RDP hands it over already sized to the monitor.
+  # The state has to be corrected after the fact instead, which is what a
+  # window rule is for. Without this, a PDF opened from yazi covers the whole
+  # screen rather than tiling next to the terminal it was opened from.
+  - commands: ['set-tiling']
+    match:
+      - window_process: { equals: 'msrdc' }
+        window_class: { equals: 'RAIL_WINDOW' }
+
 keybindings:
   # === Window focus (vim-style) ==========================================
   # The bare hjkl chords normally never reach GlazeWM when WezTerm is

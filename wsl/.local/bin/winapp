@@ -1,0 +1,132 @@
+#!/bin/bash
+# Run a Windows-native program from inside WSL, with path arguments translated.
+#
+#   winapp sioyek.exe ~/paper.pdf
+#   winapp <exe-name> [args...]
+#
+# THE RULE THIS IMPLEMENTS
+# Anything with a GUI runs as the Windows build on this target, and the Linux
+# side is a router rather than a second installation. WSL entry points -- the
+# ~/.local/bin wrappers, yazi's openers, xdg-open -- keep their Linux names and
+# hand the work across.
+#
+# Not a preference. WSLg publishes Linux GUI apps to Windows over RDP
+# RemoteApp, so every one of them arrives at the Windows compositor as a
+# RAIL_WINDOW belonging to msrdc.exe, the Remote Desktop client -- not as its
+# own process, and not as its own window class. Measured consequences on this
+# box (GlazeWM 3.10.1):
+#
+#   * `glazewm query windows` reports processName msrdc for all of them, so
+#     window rules cannot tell a PDF viewer from an image viewer.
+#   * They arrive in fullscreen state regardless of `initial_state: tiling`,
+#     because GlazeWM reads the initial state off the geometry RDP hands over.
+#   * Nothing on the Windows side can close them. `glazewm command close`
+#     reports success and the window stays; so does a direct WM_CLOSE.
+#     A stale RAIL window outlives the Linux process that owned it.
+#
+# The Windows build of the same program has none of that. Native sioyek is
+# processName `sioyek`, class `Qt5152QWindowIcon`, arrives tiling, and closes.
+#
+# Install side: windows/install.ps1 fetches each of these via winget and copies
+# its config in, the same way it does for GlazeWM and WezTerm. This script only
+# finds and runs what is already there.
+
+set -u
+
+if [[ $# -lt 1 ]]; then
+    echo "usage: winapp <exe-name> [args...]" >&2
+    exit 2
+fi
+
+if ! grep -qi microsoft /proc/version 2>/dev/null; then
+    echo "winapp: not running under WSL — no Windows side to route to" >&2
+    exit 1
+fi
+
+exe_name=$1
+shift
+
+# %LOCALAPPDATA% as a WSL path. cmd.exe is the only reliable source -- WSL
+# exports no equivalent of $USERPROFILE, and guessing /mnt/c/Users/$USER is
+# wrong the moment the Windows and Linux account names differ, which is the
+# normal case on a domain-joined machine.
+#
+# It costs a process spawn, so the answer is cached. The value is per-machine
+# and never changes; a stale cache would mean the Windows profile moved, and
+# the miss below re-resolves it anyway.
+win_local_appdata() {
+    local cache="${XDG_CACHE_HOME:-$HOME/.cache}/zfiles/localappdata"
+    local value
+    if [[ -r $cache ]]; then
+        value=$(<"$cache")
+        [[ -d $value ]] && { printf '%s\n' "$value"; return 0; }
+    fi
+
+    # cd out of the WSL filesystem first: cmd.exe cannot set a UNC working
+    # directory and prints a warning to stderr before falling back to
+    # C:\Windows. The result is the same either way, but the warning is noise
+    # on every launch.
+    local raw
+    raw=$(cd /mnt/c && cmd.exe /c 'echo %LOCALAPPDATA%' 2>/dev/null | tr -d '\r\n')
+    [[ -n $raw && $raw != '%LOCALAPPDATA%' ]] || return 1
+
+    value=$(wslpath -u "$raw" 2>/dev/null) || return 1
+    [[ -d $value ]] || return 1
+
+    mkdir -p "${cache%/*}" && printf '%s\n' "$value" > "$cache"
+    printf '%s\n' "$value"
+}
+
+# Resolution order, cheapest first.
+find_exe() {
+    local name=$1 appdata candidate
+
+    # 1. Already on PATH. True when /etc/wsl.conf leaves appendWindowsPath on
+    #    AND the distro has been restarted since the installer edited the
+    #    Windows PATH -- neither is guaranteed, hence the fallbacks.
+    candidate=$(command -v "$name" 2>/dev/null) && [[ -x $candidate ]] && {
+        printf '%s\n' "$candidate"; return 0
+    }
+
+    appdata=$(win_local_appdata) || return 1
+
+    # 2. winget's shim directory. Every `winget install` that declares a
+    #    command alias drops a link here, and the path is stable across package
+    #    upgrades in a way the versioned Packages\ directory is not.
+    candidate="$appdata/Microsoft/WinGet/Links/$name"
+    [[ -x $candidate ]] && { printf '%s\n' "$candidate"; return 0; }
+
+    # 3. Per-user Programs, for installers that skip the shim.
+    candidate="$appdata/Programs/$name"
+    [[ -x $candidate ]] && { printf '%s\n' "$candidate"; return 0; }
+
+    return 1
+}
+
+exe=$(find_exe "$exe_name") || {
+    cat >&2 <<EOF
+winapp: '$exe_name' not found on the Windows side.
+  Re-run bootstrap.sh (it installs these via windows/install.ps1), or install
+  it by hand with: winget install <id>
+EOF
+    exit 127
+}
+
+# Translate anything that names a real path; leave flags and command arguments
+# alone. The existence test is the whole heuristic: a flag that also happens to
+# be an existing filename would be rewritten, but no Windows program takes one.
+#
+# Files under the WSL filesystem come out as \\wsl.localhost\<distro>\... UNC
+# paths. Windows programs open those fine -- it is the same share Explorer
+# uses -- but every read crosses the 9p/virtiofs boundary, so a large file is
+# noticeably slower than the same file under /mnt/c.
+args=()
+for arg in "$@"; do
+    if [[ -e $arg ]]; then
+        args+=("$(wslpath -w "$arg")")
+    else
+        args+=("$arg")
+    fi
+done
+
+exec "$exe" "${args[@]}"

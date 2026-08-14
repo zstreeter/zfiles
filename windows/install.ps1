@@ -657,4 +657,70 @@ if (-not (Test-Path -LiteralPath $wslConfig)) {
 Copy-IfChanged (Join-Path $WindowsDir 'wezterm\wezterm.lua') `
                (Join-Path $env:USERPROFILE '.wezterm.lua') | Out-Null
 
+# --- sioyek ------------------------------------------------------------------
+# The PDF reader, installed on the Windows side rather than inside WSL. That is
+# the general rule for anything with a window on this target -- see
+# wsl/.local/bin/winapp, which is what routes `sioyek foo.pdf` in a WSL shell
+# to the exe installed here. Measured reason, on GlazeWM 3.10.1: a Linux GUI
+# app reaches Windows through WSLg's RDP RemoteApp channel, so it arrives as a
+# RAIL_WINDOW owned by msrdc.exe -- indistinguishable from every other WSLg
+# app, opened fullscreen regardless of `initial_state: tiling`, and immune to
+# both `glazewm command close` and a direct WM_CLOSE. The Windows build is an
+# ordinary Win32 window that tiles and closes.
+#
+# ahrm.sioyek ships as a PORTABLE zip, which decides where the config lives:
+# sioyek prints its own paths on startup and they are all inside the extracted
+# directory, not %APPDATA%. Emptying or deleting the shipped prefs_user.config
+# does not move them -- it was tried. So the configs go next to the exe, and
+# the exe lives under a version-stamped winget Packages\ path, which means a
+# sioyek upgrade lands in a fresh directory with empty configs. Re-running
+# bootstrap.sh puts them back; nothing here can prevent the gap.
+function Get-SioyekDir {
+    $root = Join-Path $env:LOCALAPPDATA 'Microsoft\WinGet\Packages'
+    if (-not (Test-Path -LiteralPath $root)) { return $null }
+
+    $exe = Get-ChildItem -LiteralPath $root -Directory -Filter 'ahrm.sioyek*' `
+                         -ErrorAction SilentlyContinue |
+           ForEach-Object {
+               Get-ChildItem -LiteralPath $_.FullName -Recurse -Filter 'sioyek.exe' `
+                             -ErrorAction SilentlyContinue
+           } | Select-Object -First 1
+
+    if ($exe) { return $exe.DirectoryName }
+    return $null
+}
+
+$sioyekDir = Get-SioyekDir
+if (-not $sioyekDir) {
+    Info 'sioyek not installed - fetching ahrm.sioyek via winget'
+    # Non-terminating, as with AutoHotkey and GlazeWM above: a PDF reader that
+    # failed to install should not take the rest of the Windows setup with it.
+    try {
+        winget install --id ahrm.sioyek --exact --silent `
+                       --accept-package-agreements --accept-source-agreements
+    } catch {
+        Write-Warning "[zfiles] winget install failed: $_"
+    }
+    $sioyekDir = Get-SioyekDir
+}
+
+if (-not $sioyekDir) {
+    Write-Warning @'
+[zfiles] sioyek unavailable - PDFs opened from WSL will have nowhere to land.
+  Install ahrm.sioyek by hand and re-run bootstrap.sh; this script is idempotent.
+'@
+} else {
+    Info "sioyek     $sioyekDir"
+
+    # The keymap is not duplicated into windows/: it is identical on both
+    # targets, so the Linux package's copy is the single source. The prefs are
+    # NOT shared -- on Omarchy that file is a symlink the theme engine rewrites
+    # on every theme switch, which is meaningless here.
+    $repoDir = Split-Path -Parent $WindowsDir
+    Copy-IfChanged (Join-Path $repoDir 'sioyek\.config\sioyek\keys_user.config') `
+                   (Join-Path $sioyekDir 'keys_user.config') | Out-Null
+    Copy-IfChanged (Join-Path $WindowsDir 'sioyek\prefs_user.config') `
+                   (Join-Path $sioyekDir 'prefs_user.config') | Out-Null
+}
+
 Info 'done'

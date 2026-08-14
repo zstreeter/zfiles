@@ -6,6 +6,25 @@
 # Uses absolute /usr/bin/sioyek to avoid recursing into this wrapper, which
 # shadows the system binary via ~/.local/bin appearing earlier in PATH.
 
+# On WSL this is a router, not a launcher: the PDF goes to the Windows build of
+# sioyek. See wsl/.local/bin/winapp for why every GUI program on this target is
+# the native Windows one -- the short version is that a Linux sioyek reaches
+# the Windows compositor as an msrdc RAIL window that GlazeWM cannot tile
+# predictably and nothing can close.
+#
+# Everything upstream of here is unchanged: yazi's `pdf` opener, xdg-open and
+# the .desktop file all still call plain `sioyek`, and this file decides where
+# that lands. Custom color mode is handled Windows-side by `startup_commands
+# toggle_custom_color` in windows/sioyek/prefs_user.config, which is strictly
+# better than the --execute-command trick below: startup commands only run for
+# a genuinely new instance, so the "don't flip the running one" problem the
+# pidof check exists to solve cannot arise there at all.
+if grep -qi microsoft /proc/version 2>/dev/null; then
+    WINAPP="$HOME/.local/bin/winapp"
+    [[ -x $WINAPP ]] || WINAPP=winapp
+    exec "$WINAPP" sioyek.exe "$@"
+fi
+
 SIOYEK=/usr/bin/sioyek
 
 # If a sioyek instance is already running, this invocation just hands the

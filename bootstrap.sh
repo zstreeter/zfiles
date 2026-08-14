@@ -54,10 +54,14 @@ CORE_PACKAGES=(shell zsh bash yazi scripts opencode pi herdr)
 OMARCHY_PACKAGES=(hypr himalaya mirador omarchy cura sioyek xdg wireplumber)
 # WSL-specific packages (wezterm, windows-side configs) land here as the
 # Windows keybinding/terminal design settles.
-# sioyek/xdg: WSLg runs GUI apps, so PDFs opened from yazi should land in
-# sioyek here exactly as they do on Omarchy. `xdg` carries the mimeapps
-# defaults; entries naming .desktop files this box doesn't have just no-op.
-WSL_PACKAGES=(sioyek xdg)
+# sioyek/xdg: PDFs opened from yazi should land in sioyek here exactly as they
+# do on Omarchy. `xdg` carries the mimeapps defaults; entries naming .desktop
+# files this box doesn't have just no-op.
+# wsl: the Linux->Windows routing layer. Anything with a GUI is installed as
+# the Windows build on this target and reached through `winapp`, because WSLg
+# publishes Linux windows over RDP RemoteApp and the window manager cannot
+# tile or close what comes back. See wsl/.local/bin/winapp.
+WSL_PACKAGES=(sioyek xdg wsl)
 # Remote servers get exactly the three things worth having in an ssh pane:
 # the bash prompt (shell+bash), yazi, and neovim (cloned in step 6, not stowed).
 # No zsh — those are bash terminals — and nothing desktop-, agent- or mail-bound.
@@ -703,10 +707,16 @@ fi
 # 11b. Static sioyek colors on non-Omarchy targets — same idea as the yazi
 # flavor slot above. ~/.local/bin/sioyek always launches in custom color mode,
 # and Omarchy's theme-set hook (§13) is what normally symlinks
-# prefs_user.config at the rendered theme. WSL has no theme engine, so pin the
-# same Catppuccin Mocha palette the yazi flavor falls back to. Never clobber:
-# sioyek itself writes to this file when settings change in the UI.
-if ! $OMARCHY && ! $REMOTE && [[ -d "$HOME/.config/sioyek" ]]; then
+# prefs_user.config at the rendered theme. A target with no theme engine gets
+# the same Catppuccin Mocha palette the yazi flavor falls back to. Never
+# clobber: sioyek itself writes to this file when settings change in the UI.
+#
+# Not on WSL. There is no Linux sioyek to configure there — ~/.local/bin/sioyek
+# routes to the Windows build, whose prefs are a portable-install file next to
+# the exe that windows/install.ps1 writes from windows/sioyek/prefs_user.config.
+# Writing a Linux prefs file here would only be a decoy for the next person
+# wondering why editing it changes nothing.
+if ! $OMARCHY && ! $REMOTE && ! $WSL && [[ -d "$HOME/.config/sioyek" ]]; then
     SIOYEK_PREFS="$HOME/.config/sioyek/prefs_user.config"
     if [[ -e "$SIOYEK_PREFS" ]]; then
         info "Sioyek prefs already present at ${SIOYEK_PREFS/#$HOME/\~} — leaving it alone."

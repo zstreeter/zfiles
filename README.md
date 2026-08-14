@@ -145,6 +145,7 @@ zfiles/
 ├── zsh/                  # zsh-only config
 ├── bash/                 # bash-only config (rc.sh, prompt.sh)
 ├── herdr/                # Terminal workspace manager + herdr-navd (WSL)
+├── wsl/                  # Linux→Windows routing layer (winapp)
 ├── windows/              # WSL host-side configs + install.ps1 (bootstrap §15)
 └── cura/                 # 3D printing slicer config
 ```
@@ -182,17 +183,26 @@ keybinding matcher tests whether *any* listed key is held, not just real
 modifiers. So `f14+h` in `windows/glazewm/config.yaml` is what `SUPER+H` is on
 Omarchy. See [The Windows side](#the-windows-side).
 
-**There is no Caps Lock key.** `install.ps1` writes a `Scancode Map` to
-`HKLM\SYSTEM\CurrentControlSet\Control\Keyboard Layout` turning scancode `0x3A`
-into `0x64` (F13) in the keyboard driver, so Windows never sees a Caps Lock key
-and the lock state cannot latch. This is not tidiness: `caps.ahk` used to hold
-the lock off from userspace with `SetCapsLockState "AlwaysOff"`, which leaves a
-hole exactly the width of the process not running — during logon before the
-task fires, and during every restart after an edit to the script — and one
-press in that window latched it for real. The remap holds whether or not
-AutoHotkey is up. It needs elevation (one UAC prompt, only on the run that
-changes something) and a reboot to load; until then `caps.ahk` still hooks
-`CapsLock` alongside `F13` as a bridge.
+**The intent is that there is no Caps Lock key.** `install.ps1` writes a
+`Scancode Map` to `HKLM\SYSTEM\CurrentControlSet\Control\Keyboard Layout`
+turning scancode `0x3A` into `0x64` (F13) in the keyboard driver, so Windows
+would never see a Caps Lock key and the lock state could not latch. This is not
+tidiness: `caps.ahk` used to hold the lock off from userspace with
+`SetCapsLockState "AlwaysOff"`, which leaves a hole exactly the width of the
+process not running — during logon before the task fires, and during every
+restart after an edit to the script — and one press in that window latched it
+for real. A driver remap would hold whether or not AutoHotkey is up. It needs
+elevation (one UAC prompt, only on the run that changes something) and a reboot
+to load, so `caps.ahk` hooks `CapsLock` alongside `F13` as a bridge.
+
+> **Known bug on the current laptop: the remap is not taking effect.** The
+> value is byte-correct (`3A 00 64 00`), was written at 09:38 and the machine
+> booted at 09:59, `kbdclass` is the only keyboard filter driver — and an
+> AutoHotkey `InputHook` still logs the physical key as `CapsLock`, never as
+> `F13`. So the lock can still latch, and the bridge hooks are load-bearing
+> rather than transitional. Under diagnosis; the keyboard is a USB device
+> (`VID_29EA`) rather than the laptop's built-in one, which is the next thing
+> to rule out.
 
 F13 in the driver, F14 out of the script, and they have to differ: GlazeWM
 installs its own low-level keyboard hook, hook order between two
@@ -211,6 +221,41 @@ idempotent — bootstrap re-runs it every time, and it only acts on what differs
 | WezTerm   | working — `windows/wezterm/wezterm.lua` is the source of truth |
 | GlazeWM   | configured — `windows/glazewm/config.yaml`, mapped from Omarchy's Hyprland bindings |
 | Navigation | `herdr-navd` — nvim splits → herdr panes → GlazeWM windows |
+| sioyek    | Windows build via winget, configs in `windows/sioyek/` — see below |
+
+#### GUI programs are the Windows build
+
+**Rule for this target: anything with a window is installed as the Windows
+program, and the Linux side routes to it.** WSL entry points keep their Linux
+names — `sioyek foo.pdf` in a shell, yazi's openers, `xdg-open` — and
+`wsl/.local/bin/winapp` finds the `.exe` and re-runs it with every path
+argument translated through `wslpath -w`.
+
+The alternative is WSLg, and it does not work with a tiling window manager.
+WSLg publishes Linux GUI apps to Windows over RDP RemoteApp, so each one
+arrives at the Windows compositor as a `RAIL_WINDOW` owned by `msrdc.exe`, the
+Remote Desktop client. Measured on GlazeWM 3.10.1:
+
+- `glazewm query windows` reports `processName: msrdc` for all of them, so a
+  window rule cannot tell a PDF viewer from an image viewer.
+- They arrive `fullscreen` regardless of `initial_state: tiling`, because
+  GlazeWM reads the initial state off the geometry RDP hands over.
+- **Nothing can close them.** `glazewm command close` returns success and the
+  window stays; so does a direct `WM_CLOSE`. A stale RAIL window can outlive
+  the Linux process that owned it.
+
+The Windows build of the same program has none of that. Native sioyek is
+`processName: sioyek`, class `Qt5152QWindowIcon`, arrives tiling, and closes.
+`config.yaml` keeps a `set-tiling` rule matching `msrdc` + `RAIL_WINDOW` as a
+fallback for anything still coming through WSLg.
+
+Adding a program to this scheme is three steps: a winget install plus a
+`Copy-IfChanged` for its config in `install.ps1`, a `winapp <name>.exe` branch
+in whatever `~/.local/bin` wrapper already exists for it, and — if its config
+format differs between targets — a file under `windows/<name>/`. sioyek is the
+worked example. Note that `ahrm.sioyek` is a *portable* package: it reads its
+config from the directory holding the exe, which is version-stamped, so a
+sioyek upgrade starts with empty configs until the next bootstrap run.
 
 Configs are **copied** to the Windows side, not symlinked across
 `\\wsl.localhost`: the logon tasks run when the distro may not be up, and a UNC
