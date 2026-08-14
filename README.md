@@ -183,26 +183,28 @@ keybinding matcher tests whether *any* listed key is held, not just real
 modifiers. So `f14+h` in `windows/glazewm/config.yaml` is what `SUPER+H` is on
 Omarchy. See [The Windows side](#the-windows-side).
 
-**The intent is that there is no Caps Lock key.** `install.ps1` writes a
-`Scancode Map` to `HKLM\SYSTEM\CurrentControlSet\Control\Keyboard Layout`
-turning scancode `0x3A` into `0x64` (F13) in the keyboard driver, so Windows
-would never see a Caps Lock key and the lock state could not latch. This is not
-tidiness: `caps.ahk` used to hold the lock off from userspace with
-`SetCapsLockState "AlwaysOff"`, which leaves a hole exactly the width of the
-process not running — during logon before the task fires, and during every
-restart after an edit to the script — and one press in that window latched it
-for real. A driver remap would hold whether or not AutoHotkey is up. It needs
-elevation (one UAC prompt, only on the run that changes something) and a reboot
-to load, so `caps.ahk` hooks `CapsLock` alongside `F13` as a bridge.
+**There is no Caps Lock key.** `install.ps1` writes a `Scancode Map` to
+`HKLM\SYSTEM\CurrentControlSet\Control\Keyboard Layout` turning scancode `0x3A`
+into `0x64` (F13) in the keyboard driver, so Windows never sees a Caps Lock key
+and the lock state cannot latch. This is not tidiness: `caps.ahk` used to hold
+the lock off from userspace with `SetCapsLockState "AlwaysOff"`, which leaves a
+hole exactly the width of the process not running — during logon before the
+task fires, and during every restart after an edit to the script — and one
+press in that window latched it for real. The driver remap holds whether or not
+AutoHotkey is up. It needs elevation (one UAC prompt, only on the run that
+changes something) and a reboot to load, so `caps.ahk` hooks `CapsLock`
+alongside `F13` as a bridge until then.
 
-> **Known bug on the current laptop: the remap is not taking effect.** The
-> value is byte-correct (`3A 00 64 00`), was written at 09:38 and the machine
-> booted at 09:59, `kbdclass` is the only keyboard filter driver — and an
-> AutoHotkey `InputHook` still logs the physical key as `CapsLock`, never as
-> `F13`. So the lock can still latch, and the bridge hooks are load-bearing
-> rather than transitional. Under diagnosis; the keyboard is a USB device
-> (`VID_29EA`) rather than the laptop's built-in one, which is the next thing
-> to rule out.
+> **The mapping DWORD puts the SOURCE scancode in the high word**, so a
+> Caps→F13 map is the bytes `64 00 3A 00`, target first. zfiles wrote them the
+> other way round (`3A 00 64 00`) until Aug 2026, which is a map of F13 →
+> Caps Lock: `kbdclass` accepted it, remapped a key no keyboard on this machine
+> emits, and left Caps Lock alone. The failure is silent — the only symptom is
+> Caps Lock going on latching, which is indistinguishable from the value never
+> having been applied. It took an AutoHotkey `InputHook` still logging
+> `sc=0x3A` after a reboot with the value in place to tell the two apart.
+> Check any new mapping against Microsoft's worked example, which documents
+> `0x003A001D` as "CAPS LOCK → Left CTRL (0x3A → 0x1D)".
 
 F13 in the driver, F14 out of the script, and they have to differ: GlazeWM
 installs its own low-level keyboard hook, hook order between two

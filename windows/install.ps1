@@ -213,17 +213,41 @@ if ($progman -eq [IntPtr]::Zero) {
 # could reach GlazeWM before caps.ahk suppressed it and fire every binding
 # twice. Nothing is bound to f13, so the physical key is inert to the WM.
 #
-# Scancode Map layout (REG_BINARY, all little-endian DWORDs): header 0,
-# version 0, count 2 (one mapping plus the null terminator), then each mapping
-# as (target << 16) | source -- 0x0064003A being 0x3A Caps Lock -> 0x64 F13 --
-# then a zero DWORD closing the list.
+# Scancode Map layout (REG_BINARY, all little-endian DWORDs): version 0, flags
+# 0, count 2 (one mapping plus the null terminator), then each mapping as
+# (source << 16) | target, then a zero DWORD closing the list.
+#
+# THE SOURCE IS THE HIGH WORD -- it reads backwards from the arrow you say out
+# loud, and getting it round the wrong way is silent. kbdclass accepts the
+# value either way and simply maps a key nothing on the keyboard emits, leaving
+# the real one alone. This shipped reversed once (0x0064003A, F13 -> Caps Lock)
+# and the only symptom was Caps Lock going on latching, which looks exactly
+# like the map not having been applied at all. What settled it was an
+# AutoHotkey InputHook still logging sc=0x3A after a reboot with the value in
+# place. Microsoft's own worked example is the thing to check a new mapping
+# against: 0x003A001D is documented as "CAPS LOCK -> Left CTRL (0x3A -> 0x1D)".
+#
+# Little-endian, so the DWORD 0x003A0064 lands on disk as the bytes
+# 64 00 3A 00 -- target first. `reg query` prints them in that order too.
 $kbLayoutKey = 'HKLM:\SYSTEM\CurrentControlSet\Control\Keyboard Layout'
 $capsToF13 = [byte[]]@(
-    0x00,0x00,0x00,0x00,   # header
     0x00,0x00,0x00,0x00,   # version
+    0x00,0x00,0x00,0x00,   # flags
     0x02,0x00,0x00,0x00,   # entry count, terminator included
-    0x3A,0x00,0x64,0x00,   # 0x3A Caps Lock -> 0x64 F13
+    0x64,0x00,0x3A,0x00,   # 0x003A0064: 0x3A Caps Lock -> 0x64 F13
     0x00,0x00,0x00,0x00    # terminator
+)
+
+# The reversed value this script wrote before the fix above. Recognised by name
+# so the "someone else's map" warning below does not fire on our own old
+# mistake and stash it in a .zfiles-bak value as though it were a deliberate
+# remap worth restoring by hand.
+$capsToF13Reversed = [byte[]]@(
+    0x00,0x00,0x00,0x00,
+    0x00,0x00,0x00,0x00,
+    0x02,0x00,0x00,0x00,
+    0x3A,0x00,0x64,0x00,   # 0x0064003A: F13 -> Caps Lock, which is not the job
+    0x00,0x00,0x00,0x00
 )
 
 # GetValue, not Get-ItemProperty: under Set-StrictMode -Version Latest, reading
@@ -235,7 +259,9 @@ $currentMap = (Get-Item -LiteralPath $kbLayoutKey).GetValue('Scancode Map')
 if ($currentMap -and -not (Compare-Object $currentMap $capsToF13 -SyncWindow 0)) {
     Info 'scancode   Caps Lock -> F13 already mapped'
 } else {
-    if ($currentMap) {
+    if ($currentMap -and -not (Compare-Object $currentMap $capsToF13Reversed -SyncWindow 0)) {
+        Info 'scancode   replacing the old reversed map (was F13 -> Caps Lock)'
+    } elseif ($currentMap) {
         # Preserve a map we did not write rather than dropping remaps someone
         # set up deliberately. Merging two of them is not something to guess
         # at, so the old bytes are kept beside ours to be restored by hand.
@@ -252,7 +278,8 @@ if ($currentMap -and -not (Compare-Object $currentMap $capsToF13 -SyncWindow 0))
     $writeMap = @"
 `$key = '$kbLayoutKey'
 `$old = (Get-Item -LiteralPath `$key).GetValue('Scancode Map')
-if (`$old) {
+`$reversed = [byte[]]@($($capsToF13Reversed -join ','))
+if (`$old -and (Compare-Object `$old `$reversed -SyncWindow 0)) {
     Set-ItemProperty -LiteralPath `$key -Name 'Scancode Map.zfiles-bak' -Value `$old -Type Binary
 }
 Set-ItemProperty -LiteralPath `$key -Name 'Scancode Map' ``
