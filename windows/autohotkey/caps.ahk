@@ -59,13 +59,14 @@ TAP_MS := 200
 TERM_EXE := "ahk_exe wezterm-gui.exe"
 
 ; herdr-navd, the arbitration daemon inside WSL (herdr/.local/bin/herdr-navd).
-; It walks nvim splits -> herdr panes -> GlazeWM and reports which layer took
-; the move. Windows reaches a WSL loopback listener in both NAT and mirrored
-; networking modes, so this call works regardless of .wslconfig; only the
-; daemon's own hop out to GlazeWM needs mirrored.
+; `nav/<dir>` walks nvim splits -> herdr panes -> GlazeWM and reports which
+; layer took the move; `launch` claims the next new window for the workspace
+; that is focused right now. Windows reaches a WSL loopback listener in both
+; NAT and mirrored networking modes, so these calls work regardless of
+; .wslconfig; only the daemon's own hop out to GlazeWM needs mirrored.
 ; 6224, not 6124: under mirrored networking a WSL listener shares Windows'
 ; 127.0.0.1, and 6124 belongs to Zebar. See herdr-navd's header.
-NAVD_URL := "http://127.0.0.1:6224/nav/"
+NAVD_URL := "http://127.0.0.1:6224/"
 
 ; Keys the window-manager layer owns while Caps is held. Each is consumed here
 ; and re-emitted as F14+<key>. Whether a chord actually does anything is
@@ -132,7 +133,17 @@ ProxyToWm(hotkeyName) {
 ; Consuming Space here also suppresses the tap-Escape on release: the CapsLock
 ; up handler only emits Escape when A_PriorKey is still CapsLock, and Space
 ; having been pressed in between is exactly what makes it not.
+;
+; The daemon call first, and it matters. PT Run is a tool window GlazeWM cannot
+; manage, so closing it hands foreground back to the top app window in the
+; Z-order -- on the other monitor, if the workspace you launched from is empty
+; -- and the app then opens over there. /launch claims the next window GlazeWM
+; manages for the workspace focused right now, which has to be read BEFORE the
+; launcher opens and takes the focus with it. See herdr-navd's "Launcher
+; claims" section. If the daemon is down this returns "" and Caps+Space is
+; exactly what it always was.
 LaunchApps(*) {
+    AskNavd("launch")
     Send LAUNCHER_CHORD
 }
 
@@ -147,24 +158,25 @@ LaunchApps(*) {
 ; the keyboard while WinHTTP waits out a default 30-second timeout.
 navdHttp := ""
 
-; Returns the layer that consumed the move ("nvim"/"herdr"/"wm"), or "" if the
-; daemon is unreachable or nothing took it.
-AskNavd(direction) {
+; `path` is a route on the daemon: "nav/left", "launch". Returns the body --
+; the layer that consumed a move, the workspace a launch was claimed for -- or
+; "" if the daemon is unreachable or had nothing to report.
+AskNavd(path) {
     global navdHttp
     try {
         if (!IsObject(navdHttp))
             navdHttp := ComObject("WinHttp.WinHttpRequest.5.1")
         navdHttp.SetTimeouts(200, 200, 200, 400)
-        navdHttp.Open("GET", NAVD_URL direction, false)
+        navdHttp.Open("GET", NAVD_URL path, false)
         navdHttp.Send()
         if (navdHttp.Status != 200)
             return ""
-        layer := Trim(navdHttp.ResponseText, " `t`r`n")
+        body := Trim(navdHttp.ResponseText, " `t`r`n")
         ; "none" also covers the case where only the daemon's GlazeWM hop is
         ; broken -- .wslconfig still on NAT, say -- while GlazeWM itself is
         ; perfectly reachable from this side. Falling through to the f14
         ; channel makes the outermost hop work either way.
-        return layer = "none" ? "" : layer
+        return body = "none" ? "" : body
     } catch {
         navdHttp := ""
         return ""
@@ -192,7 +204,7 @@ Navigate(hotkeyName) {
     bare := !GetKeyState("Shift", "P")
          && !GetKeyState("Ctrl", "P")
          && !GetKeyState("Alt", "P")
-    if (bare && WinActive(TERM_EXE) && AskNavd(NAV_KEYS[key]) != "")
+    if (bare && WinActive(TERM_EXE) && AskNavd("nav/" NAV_KEYS[key]) != "")
         return
     SendToWm(key)
 }

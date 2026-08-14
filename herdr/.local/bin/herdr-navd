@@ -41,6 +41,7 @@ same 127.0.0.1 as Windows', so binding 6124 here beat Zebar to its own port and
 Zebar rendered this server's 404 body as the bar. Keep this well clear of 612x.
 
   GET /nav/{left,down,up,right}   arbitrate and move focus
+  GET /launch                     claim the next new window for this workspace
   GET /health                     liveness probe
 
 The reply body names the layer that consumed the move (nvim / herdr / wm /
@@ -54,6 +55,8 @@ import socket
 import struct
 import subprocess
 import sys
+import threading
+import time
 from base64 import b64encode
 from http.server import BaseHTTPRequestHandler, HTTPServer
 
@@ -70,6 +73,17 @@ TIMEOUT = 1.0
 
 # nvim's `wincmd` argument for each direction.
 WINCMD = {"left": "h", "down": "j", "up": "k", "right": "l"}
+
+# How long a /launch claim stays live. Long enough for a cold Outlook -- 2.7s
+# from the launcher closing to its window existing, measured -- with room for
+# something slower, and short enough that an abandoned launcher (Escape, or a
+# search that matched nothing) can't capture an unrelated window that happens
+# to appear a minute later.
+LAUNCH_CLAIM_SECONDS = 15.0
+
+# Backoff after the event stream drops. GlazeWM restarts are routine; the
+# watcher is not on any keypress path, so it can afford to be patient.
+WATCH_RETRY_SECONDS = 2.0
 
 # Moves the cursor and reports whether it actually went anywhere -- one round
 # trip instead of a query, a move, and another query. pcall so a window-local
@@ -211,13 +225,14 @@ class GlazeWm:
             elif opcode == 0x8:  # close
                 raise OSError("GlazeWM sent a close frame")
 
-    def command(self, args):
-        """Run a GlazeWM CLI command over IPC. True if it succeeded.
+    def request(self, args):
+        """Send one CLI line and return the parsed reply, or None.
 
         The wire format is the CLI's own argument line -- wm-cli joins argv[1..]
         with spaces and sends that -- so "command focus --direction left" here
         is exactly `glazewm command focus --direction left` there, minus the
-        ~290ms of spawning glazewm.exe through interop.
+        ~290ms of spawning glazewm.exe through interop. "query workspaces"
+        works the same way.
 
         Retries once on a dead socket: GlazeWM restarts (a crash, wm-exit and
         relaunch, a logon) are routine and shouldn't cost the user a keypress.
@@ -227,18 +242,45 @@ class GlazeWm:
                 if self.sock is None:
                     self._connect()
                 self._send_text(args)
-                reply = json.loads(self._recv_text())
+                return json.loads(self._recv_text())
             except (OSError, ValueError) as exc:
                 self.close()
                 if attempt == 2:
                     log(f"GlazeWM unreachable: {exc}")
-                    return False
-                continue
+                    return None
+        return None
 
-            if not reply.get("success", False):
-                log(f"GlazeWM rejected {args!r}: {reply.get('error')}")
-                return False
-            return True
+    def command(self, args):
+        """Run a GlazeWM CLI command over IPC. True if it succeeded."""
+        reply = self.request(args)
+        if reply is None:
+            return False
+        if not reply.get("success", False):
+            log(f"GlazeWM rejected {args!r}: {reply.get('error')}")
+            return False
+        return True
+
+    def subscribe(self, events):
+        """Turn this connection into an event stream and block on it forever.
+
+        A subscription can't share a socket with requests -- replies and events
+        would interleave and each reader would take the other's frame -- so a
+        subscriber is always its own GlazeWm instance, and issues any commands
+        it needs through a second one.
+
+        The timeout goes away with it. A partial frame interrupted by a socket
+        timeout would desync the stream with no way to resynchronize, and there
+        is nothing useful to do on a quiet stream anyway; a dead connection
+        still raises, which is the only wake-up that matters.
+        """
+        self.close()
+        self._connect()
+        self.sock.settimeout(None)
+        self._send_text("sub --events " + " ".join(events))
+
+    def next_event(self):
+        """Next message from a subscribed connection. Raises if it dies."""
+        return json.loads(self._recv_text())
 
 
 # --- The three layers --------------------------------------------------------
@@ -313,6 +355,115 @@ def navigate(direction):
     return "none"
 
 
+# --- Launcher claims ---------------------------------------------------------
+# GlazeWM inserts a new window next to whatever container it currently has
+# focused, which is the right rule and still puts the window on the wrong
+# screen every time it is launched onto an EMPTY workspace from PowerToys Run.
+#
+# An empty workspace has no OS-level focus anchor. GlazeWM's focused container
+# is the workspace, but Windows' foreground window is still whatever was up
+# last -- GlazeWM can only "focus the desktop" when there is no window to focus
+# (sync_focus in its platform_sync.rs). PT Run's window is a tool window, so
+# GlazeWM never manages it and never reacts to it taking foreground. But when
+# it closes, Windows hands foreground back to the top app window in the global
+# Z-order, which lives on the other monitor, and THAT one is managed. GlazeWM
+# reads it as a manual focus change and follows -- its own override for
+# OS-initiated focus only covers the 100ms after a managed window closes
+# (should_override_focus in handle_window_focused.rs), and a tool window closing
+# is not that. Two seconds later the launched app appears next to the wrong
+# focused container.
+#
+# So: don't fight over focus, claim the window. Caps+Space asks for a claim
+# before it opens the launcher, and the next window GlazeWM manages goes to the
+# workspace the claim was made on. That is immune to how long the app takes to
+# start, and an app that was already running produces no `window_managed` event
+# at all -- so activating an existing window still behaves normally instead of
+# being yanked away from its own workspace.
+_claim_lock = threading.Lock()
+_claim = {"workspace": None, "expires": 0.0}
+
+
+def claim_next_window():
+    """Arm a claim for the focused workspace. Returns its name, or "none"."""
+    reply = WM.request("query workspaces")
+    name = None
+    if reply and reply.get("success"):
+        for workspace in reply.get("data", {}).get("workspaces", []):
+            # Only the top-level entries are workspaces; a focused window
+            # inside one carries hasFocus too and must not be mistaken for it.
+            if workspace.get("hasFocus"):
+                name = workspace.get("name")
+                break
+    if name is None:
+        return "none"
+
+    with _claim_lock:
+        _claim["workspace"] = name
+        _claim["expires"] = time.monotonic() + LAUNCH_CLAIM_SECONDS
+    return name
+
+
+def take_claim():
+    """Consume the claim if one is live. One window per claim, never two."""
+    with _claim_lock:
+        name = _claim["workspace"]
+        _claim["workspace"] = None
+        if name is None or time.monotonic() > _claim["expires"]:
+            return None
+        return name
+
+
+def workspace_of(cli, window_id):
+    """Name of the workspace holding a window, or None if it isn't found."""
+
+    def holds(container):
+        if container.get("id") == window_id:
+            return True
+        return any(holds(child) for child in container.get("children", []))
+
+    reply = cli.request("query workspaces")
+    if not reply or not reply.get("success"):
+        return None
+    for workspace in reply.get("data", {}).get("workspaces", []):
+        if any(holds(child) for child in workspace.get("children", [])):
+            return workspace.get("name")
+    return None
+
+
+def watch_for_claimed_windows():
+    """Move each newly managed window to the workspace that claimed it."""
+    events = GlazeWm()
+    mover = GlazeWm()
+    while True:
+        try:
+            if events.sock is None:
+                events.subscribe(["window_managed"])
+            message = events.next_event()
+        except (OSError, ValueError) as exc:
+            events.close()
+            log(f"launch watcher lost GlazeWM: {exc}")
+            time.sleep(WATCH_RETRY_SECONDS)
+            continue
+
+        data = message.get("data") or {}
+        if data.get("eventType") != "window_managed":
+            continue
+
+        window_id = (data.get("managedWindow") or {}).get("id")
+        if not window_id:
+            continue
+
+        workspace = take_claim()
+        if workspace is None:
+            continue
+        if workspace_of(mover, window_id) == workspace:
+            continue
+
+        log(f"launcher claim: moving new window to workspace {workspace}")
+        mover.command(f"command --id {window_id} move --workspace {workspace}")
+        mover.command(f"command focus --workspace {workspace}")
+
+
 class Handler(BaseHTTPRequestHandler):
     # BaseHTTPRequestHandler defaults to HTTP/1.0, which closes the connection
     # after every response; the caller is a keypress and reconnecting per move
@@ -347,6 +498,9 @@ class Handler(BaseHTTPRequestHandler):
         if self.path == "/health":
             self.reply(200, "ok\n")
             return
+        if self.path == "/launch":
+            self.reply(200, claim_next_window() + "\n")
+            return
         if self.path.startswith("/nav/"):
             direction = self.path[len("/nav/") :]
             if direction not in WINCMD:
@@ -354,7 +508,7 @@ class Handler(BaseHTTPRequestHandler):
                 return
             self.reply(200, navigate(direction) + "\n")
             return
-        self.reply(404, "usage: GET /nav/{left,down,up,right}\n")
+        self.reply(404, "usage: GET /nav/{left,down,up,right} | /launch\n")
 
     # One line per keypress on stderr -- i.e. in the journal -- is noise, and
     # the interesting failures already log through log().
@@ -367,6 +521,11 @@ def main():
         # Not fatal: the WM hop still works, so Caps+hjkl keeps moving windows.
         # Worth saying out loud, though, since panes silently never match.
         log("herdr not on PATH — pane arbitration will always fall through")
+
+    # The launch watcher blocks on its own GlazeWM connection, so it can't live
+    # in the request loop. A daemon thread because it holds no state worth
+    # draining: an unconsumed claim is one keystroke's worth of intent.
+    threading.Thread(target=watch_for_claimed_windows, daemon=True).start()
 
     # Serial on purpose. Focus is a single global thing; two moves racing each
     # other would interleave on the WebSocket and land somewhere neither asked
