@@ -34,7 +34,6 @@ media/clipboard/tiling-v2/utilities + `~/.config/hypr/bindings.conf` +
 | Caps+T | toggle floating | `f14+t` |
 | Caps+Shift+A | Claude webapp | `f14+shift+a` → chrome `--app=claude.ai` |
 | Caps+Shift+Alt+A | Gemini webapp | `f14+shift+alt+a` → chrome `--app` |
-| Caps+Shift+E | email: nvim +Himalaya | `f14+shift+e` → WezTerm → wsl nvim +Himalaya — **see Gaps** |
 | Caps+Ctrl+L | lock | `f14+ctrl+l` → `LockWorkStation` (Win+L is winlogon-reserved) |
 
 ## Substituted — different chord, Windows-native feature
@@ -78,7 +77,7 @@ media/clipboard/tiling-v2/utilities + `~/.config/hypr/bindings.conf` +
 | Caps+Shift+F (nautilus) | Win+E / Explorer |
 | Caps+Shift+M/Alt+M (music), Shift+G/Alt+G/Ctrl+G (messengers), Shift+P (photos), Shift+Y (youtube), Shift+/ (1password) | personal apps — not for the work laptop |
 | Caps+Shift+N (editor), Caps+Shift+T (btop), Caps+Shift+D (lazydocker) | run them in a WezTerm/WSL pane instead |
-| Caps+Alt+Return (tmux) | stale on Omarchy too — tmux was replaced by herdr (9f0a6e6); should be unbound there, not ported |
+| Caps+Shift+E (email: nvim +Himalaya) | himalaya is Omarchy-only (excluded from `wsl/pkglist.txt` at charting) — work email is Outlook on the Windows side |
 
 ## Windows-only — no Omarchy counterpart
 
@@ -92,9 +91,5 @@ media/clipboard/tiling-v2/utilities + `~/.config/hypr/bindings.conf` +
 
 ## Known gaps
 
-- **Caps+Shift+E launches `nvim +Himalaya`, but himalaya is not in
-  `wsl/pkglist.txt`** — email was excluded from the WSL target at charting.
-  Either the binding goes, or himalaya gets installed after all. Until
-  decided, the chord opens nvim with a failing plugin. (Tracked on the map.)
 - WezTerm nightly (needed for kitty-graphics fixes) is a manual install —
   `install.ps1` only copies configs.

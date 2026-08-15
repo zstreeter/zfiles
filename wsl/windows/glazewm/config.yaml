@@ -313,9 +313,8 @@ keybindings:
     bindings: ['f14+shift+a']
   - commands: ['shell-exec C:/Program Files/Google/Chrome/Application/chrome.exe --app=https://gemini.google.com']
     bindings: ['f14+shift+alt+a']
-  # Omarchy opens nvim+Himalaya in a terminal; same idea through WSL.
-  - commands: ['shell-exec C:/Program Files/WezTerm/wezterm-gui.exe start -- wsl.exe -- nvim +Himalaya']
-    bindings: ['f14+shift+e']
+  # No f14+shift+e email binding: himalaya is Omarchy-only (not in
+  # wsl/pkglist.txt) -- work email lives in Outlook on the Windows side.
 
   # === System ============================================================
   # Windows' own snipping overlay -- Omarchy binds PRINT to a screenshot.
