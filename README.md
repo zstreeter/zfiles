@@ -16,12 +16,41 @@ This overlay extends Omarchy with:
 - **Neovim** - Personal config synced with Omarchy themes
 - **Additional tools** - herdr, yazi, sioyek, cura
 
+## Layout
+
+One directory per OS target, each owning its stow packages, its package list,
+and its setup steps; `common/` is shared by all of them.
+
+```
+zfiles/
+├── bootstrap.sh          # thin dispatcher: facts → packages → stow → setup
+├── common/               # every machine
+│   ├── setup.sh          # gpg, zsh/zap, bash hook, ble.sh, nvim, herdr, pi…
+│   └── stow/             # shell zsh bash yazi herdr opencode pi scripts sioyek xdg
+├── omarchy/              # Arch + Omarchy desktop (Hyprland)
+│   ├── setup.sh          # pacman/AUR, keyd, email tools, theme hooks, docker
+│   ├── pkglist.txt
+│   ├── hooks/            # Omarchy theme-set / post-update hooks
+│   ├── root_etc/         # /etc/keyd/default.conf (Caps → Esc/Super)
+│   └── stow/             # hypr himalaya mirador omarchy cura wireplumber
+├── wsl/                  # WSL Ubuntu work laptop
+│   ├── setup.sh          # apt + mise, herdr-navd, Windows-side dispatch
+│   ├── pkglist.txt
+│   ├── stow/             # wsl (the Linux→Windows routing layer: winapp)
+│   └── windows/          # Windows host configs + install.ps1 — see below
+└── remote/               # root-less work servers reached over ssh
+    ├── setup.sh
+    └── install.sh        # curl-able entry point
+```
+
+Any other Linux box falls back to a plain `linux` target: common packages
+only, core CLI tools backfilled via mise.
+
 ## Installation
 
 ```bash
 git clone https://github.com/zstreeter/zfiles.git ~/zfiles
 cd ~/zfiles
-chmod +x bootstrap.sh
 ./bootstrap.sh
 ```
 
@@ -29,7 +58,9 @@ Reboot after installation for keyd to take effect.
 
 ### Targets
 
-`bootstrap.sh` gates every step on four orthogonal facts:
+`bootstrap.sh` detects four orthogonal facts, picks ONE target directory from
+them, and sources that directory's `setup.sh` (which defines
+`target_packages()` and `target_setup()` around the shared steps):
 
 - **Remote** (`--remote` flag or `ZFILES_TARGET=remote`) — the only one that
   can't be sniffed, so it's explicit. A work server you `ssh` into from a herdr
@@ -37,37 +68,35 @@ Reboot after installation for keyd to take effect.
   `$HOME`: **never sudo, never a package manager, never `chsh`**. See
   [Remote servers](#remote-servers) below.
 - **Omarchy** (`~/.config/omarchy/` or `~/.local/share/omarchy/` exists) —
-  full overlay: core + Hyprland bindings, keyd, theme hooks, himalaya/mirador,
-  cura/sioyek/xdg/wireplumber, docker.
-- **WSL** (`/proc/version` mentions Microsoft) — core packages via apt + mise
-  (`pkglist-ubuntu.txt`; neovim/yazi/go/rust/bun/opencode via mise since noble
-  is stale or missing them) and pinentry-curses, plus `sioyek`/`xdg` so PDFs
-  open in sioyek under WSLg. The Windows side runs from `windows/install.ps1`
-  (bootstrap step 15) — see [The Windows side](#the-windows-side).
-- **Package manager** (pacman vs apt) — picks the install branch in step 1.
-  Forced to `none` on remote.
+  full overlay: common + Hyprland bindings, keyd, theme hooks, himalaya/mirador,
+  cura/wireplumber, docker.
+- **WSL** (`/proc/version` mentions Microsoft) — common packages via apt + mise
+  (`wsl/pkglist.txt`; neovim/yazi/go/rust/bun/opencode via mise since noble
+  is stale or missing them) and pinentry-curses. The Windows side runs from
+  `wsl/windows/install.ps1` — see [The Windows side](#the-windows-side).
+- **Package manager** (pacman vs apt) — forced to `none` on remote, or with
+  `ZFILES_SKIP_PKG=1` (cheap re-runs: re-stow and reconfigure without the
+  minutes-long package step).
 
-Core packages on every target:
+Packages are auto-discovered: everything under `common/stow/` plus the
+target's `stow/` gets stowed — `ls <dir>/stow` IS the package list. Common
+packages on every target:
 
 | Package    | Purpose                            |
 |------------|------------------------------------|
 | `shell`    | Shell-agnostic config sourced by **both** zsh and bash: `env.sh`, `aliases.sh`, `commands.sh`, `git-prompt.sh` |
 | `zsh`      | zsh-only bits (`.zshrc`, prompt, zap plugins) |
 | `bash`     | bash-only bits (`rc.sh`, prompt) — see [The bash hook](#the-bash-hook) |
-| `yazi`     | File manager                       |
+| `yazi`     | File manager (plugins vendored in-repo) |
 | `herdr`    | Terminal workspace manager + `herdr-navd` (WSL only; see [Seamless navigation](#seamless-navigation)) |
 | `opencode` | opencode agent config              |
 | `pi`       | pi agent config                    |
 | `scripts`  | `new-research-project`, `publish-post` helpers + vault template |
+| `sioyek`   | PDF viewer config — theme-rendered on Omarchy, static Catppuccin fallback elsewhere, Windows build on WSL |
+| `xdg`      | mimeapps defaults; entries naming absent `.desktop` files just no-op |
 
-Skipped without Omarchy: Hyprland source, keyd, theme-set hook,
-mirador/himalaya email tools, docker, and the desktop/hardware packages
-(cura, wireplumber). `sioyek` and `xdg` are also stowed on WSL — the theme-set
-hook is Omarchy-only, so sioyek falls back to a static `prefs_user.config`
-there.
-
-Remote gets `shell`, `bash`, and `yazi` only — no zsh, no herdr, no pi, no
-desktop anything.
+Remote stows `shell`, `bash`, and `yazi` only (`STOW_ONLY` in
+`remote/setup.sh`) — no zsh, no herdr, no pi, no desktop anything.
 
 ### Remote servers
 
@@ -81,8 +110,9 @@ curl -fsSL https://raw.githubusercontent.com/zstreeter/zfiles/main/remote/instal
 
 What it does:
 
-1. Blobless **sparse** clone of only `shell bash yazi remote` into `~/.zfiles`
-   (falls back to a shallow full clone on git < 2.25 — still small).
+1. Blobless **sparse** clone of only the `shell`/`bash`/`yazi` packages plus
+   `remote/` into `~/.zfiles` (falls back to a shallow full clone on
+   git < 2.25 — still small).
 2. `exec ~/.zfiles/bootstrap.sh --remote`, which:
    - appends a guarded hook to `~/.bashrc` (never replaces it),
    - installs `neovim yazi fd ripgrep fzf zoxide bat eza` via **mise** into
@@ -93,8 +123,8 @@ What it does:
 Nothing herdr-related ships to the server; herdr stays local and the server is
 just what's running inside one of its panes.
 
-To re-run later, `zfiles-update` (defined in `shell/commands.sh`) pulls and
-re-bootstraps whichever checkout it finds.
+To re-run later, `zfiles-update` (defined in the `shell` package's
+`commands.sh`) pulls and re-bootstraps whichever checkout it finds.
 
 ### The bash hook
 
@@ -119,42 +149,17 @@ Each package directory is independent. To install just one:
 
 ```bash
 cd ~/zfiles
-stow --target=$HOME sioyek      # symlinks .config/sioyek/ into $HOME
-stow --target=$HOME zsh         # etc.
+stow -d common/stow  --no-folding --target=$HOME sioyek
+stow -d omarchy/stow --no-folding --target=$HOME hypr
 ```
 
 Bootstrap is just the orchestrator — `stow` itself is per-package.
-
-## Structure
-
-```
-zfiles/
-├── bootstrap.sh          # Main installer (--remote for servers)
-├── pkglist.txt           # Packages to install
-├── remote/
-│   └── install.sh        # curl-able entry point for work servers
-├── hooks/
-│   └── theme-set         # Generates theme configs when Omarchy theme changes
-├── root_etc/
-│   └── keyd/
-│       └── default.conf  # Caps Lock remapping
-├── hypr/                 # Hyprland custom bindings
-├── yazi/                 # File manager config
-├── sioyek/               # PDF viewer config
-├── shell/                # Shell-agnostic config (zsh + bash both source it)
-├── zsh/                  # zsh-only config
-├── bash/                 # bash-only config (rc.sh, prompt.sh)
-├── herdr/                # Terminal workspace manager + herdr-navd (WSL)
-├── wsl/                  # Linux→Windows routing layer (winapp)
-├── windows/              # WSL host-side configs + install.ps1 (bootstrap §15)
-└── cura/                 # 3D printing slicer config
-```
 
 ## Customization
 
 ### Hyprland Keybindings
 
-Edit `hypr/.config/hypr/zfilesbindings.conf` to add your own bindings:
+Edit `omarchy/stow/hypr/.config/hypr/zfilesbindings.conf` to add your own bindings:
 
 ```bash
 # Example: Vim-style window focus
@@ -168,19 +173,19 @@ These are loaded after Omarchy's defaults, so you can override or extend them.
 
 ### Caps Lock Behavior
 
-The keyd config (`root_etc/keyd/default.conf`) maps Caps Lock to:
+The keyd config (`omarchy/root_etc/keyd/default.conf`) maps Caps Lock to:
 - **Tap** → Escape
 - **Hold** → Super (for Hyprland bindings)
 
 On WSL the same remap has to happen on the Windows host — WSL2 has no
-`/dev/input`, so keyd can never see the keyboard. `windows/autohotkey/caps.ahk`
+`/dev/input`, so keyd can never see the keyboard. `wsl/windows/autohotkey/caps.ahk`
 reproduces it, with one difference: **hold → `F14`, not Super**. Windows itself
 owns a large slice of Super (Win+E, Win+R, Win+number, the Start menu on bare
 press), so Caps-as-Super collides constantly. `F14` is a private channel — no
 physical key emits it, nothing binds it, and it carries no modifier semantics
 that could leak into an app. GlazeWM can still match on it because its
 keybinding matcher tests whether *any* listed key is held, not just real
-modifiers. So `f14+h` in `windows/glazewm/config.yaml` is what `SUPER+H` is on
+modifiers. So `f14+h` in `wsl/windows/glazewm/config.yaml` is what `SUPER+H` is on
 Omarchy. See [The Windows side](#the-windows-side).
 
 **There is no Caps Lock key.** `install.ps1` writes a `Scancode Map` to
@@ -214,23 +219,23 @@ Nothing is bound to `f13`, so the physical key is inert to the WM.
 
 ### The Windows side
 
-Bootstrap step 15 runs `windows/install.ps1` on the WSL target. It is
+Bootstrap step 15 runs `wsl/windows/install.ps1` on the WSL target. It is
 idempotent — bootstrap re-runs it every time, and it only acts on what differs.
 
 | component | state |
 |-----------|-------|
-| Caps Lock | working, via AutoHotkey — `windows/autohotkey/caps.ahk`, on a driver-level Caps→F13 remap |
-| WezTerm   | working — `windows/wezterm/wezterm.lua` is the source of truth |
-| GlazeWM   | configured — `windows/glazewm/config.yaml`, mapped from Omarchy's Hyprland bindings |
+| Caps Lock | working, via AutoHotkey — `wsl/windows/autohotkey/caps.ahk`, on a driver-level Caps→F13 remap |
+| WezTerm   | working — `wsl/windows/wezterm/wezterm.lua` is the source of truth |
+| GlazeWM   | configured — `wsl/windows/glazewm/config.yaml`, mapped from Omarchy's Hyprland bindings |
 | Navigation | `herdr-navd` — nvim splits → herdr panes → GlazeWM windows |
-| sioyek    | Windows build via winget, configs in `windows/sioyek/` — see below |
+| sioyek    | Windows build via winget, configs in `wsl/windows/sioyek/` — see below |
 
 #### GUI programs are the Windows build
 
 **Rule for this target: anything with a window is installed as the Windows
 program, and the Linux side routes to it.** WSL entry points keep their Linux
 names — `sioyek foo.pdf` in a shell, yazi's openers, `xdg-open` — and
-`wsl/.local/bin/winapp` finds the `.exe` and re-runs it with every path
+`wsl/stow/wsl/.local/bin/winapp` finds the `.exe` and re-runs it with every path
 argument translated through `wslpath -w`.
 
 The alternative is WSLg, and it does not work with a tiling window manager.
@@ -257,7 +262,7 @@ fallback for anything still coming through WSLg.
 Adding a program to this scheme is three steps: a winget install plus a
 `Copy-IfChanged` for its config in `install.ps1`, a `winapp <name>.exe` branch
 in whatever `~/.local/bin` wrapper already exists for it, and — if its config
-format differs between targets — a file under `windows/<name>/`. sioyek is the
+format differs between targets — a file under `wsl/windows/<name>/`. sioyek is the
 worked example. Note that `ahrm.sioyek` is a *portable* package: it reads its
 config from the directory holding the exe, which is version-stamped, so a
 sioyek upgrade starts with empty configs until the next bootstrap run.
@@ -321,7 +326,7 @@ not, which is exactly the failure the old note misdiagnosed.
 Configs are **copied** to the Windows side, not symlinked across
 `\\wsl.localhost`: the logon tasks run when the distro may not be up, and a UNC
 path there would either fail or force the distro to boot just to read a config.
-So editing `windows/*` takes a bootstrap re-run to reach Windows. An unmanaged
+So editing `wsl/windows/*` takes a bootstrap re-run to reach Windows. An unmanaged
 file already at the destination is backed up once to `<name>.zfiles-bak`.
 
 Both the Caps Lock remap (`zfiles-caps`) and GlazeWM (`zfiles-glazewm`) run as
@@ -333,7 +338,7 @@ restart, so windows stay where they are.
 
 #### Seamless navigation
 
-On Omarchy, `SUPER+hjkl` runs `hypr/.config/hypr/scripts/herdr-nav`, which walks
+On Omarchy, `SUPER+hjkl` runs `omarchy/stow/hypr/.config/hypr/scripts/herdr-nav`, which walks
 outward — nvim splits, then herdr panes, then Hyprland windows — and stops at
 the first layer that can take the move. Reproducing that on WSL takes two
 pieces, because the keyboard is on the Windows side and the panes and splits are
@@ -343,7 +348,7 @@ on the Linux side:
   system-wide hook would swallow `f14+h` before WezTerm ever saw it. Instead
   `caps.ahk` arbitrates: outside the terminal it forwards to the WM as usual,
   and inside the terminal it asks the daemon first.
-- **`herdr-navd`** (`herdr/.local/bin/herdr-navd`) is a small Python 3 stdlib
+- **`herdr-navd`** (`common/stow/herdr/.local/bin/herdr-navd`) is a small Python 3 stdlib
   daemon on `127.0.0.1:6224`, run from a stowed systemd user unit. `GET
   /nav/{left,down,up,right}` does the arbitration and replies with the layer
   that consumed the move (`nvim` / `herdr` / `wm` / `none`), which is the whole
@@ -367,7 +372,7 @@ always moves *something*, it just stops seeing inside the terminal.
 
 Python rather than a bash port of `herdr-nav` for one concrete reason: that
 script leans on `jq`, which isn't installed on WSL and isn't in
-`pkglist-ubuntu.txt`. The stdlib `json` module makes the gap moot instead of
+`wsl/pkglist.txt`. The stdlib `json` module makes the gap moot instead of
 adding a dependency.
 
 #### Launching onto the focused workspace
@@ -398,7 +403,7 @@ abandoned launcher can't capture something unrelated a minute later. Daemon
 down, and `Caps+Space` is exactly the plain launcher chord it always was.
 
 **Why AutoHotkey and not kanata.** kanata is the closer analogue to keyd, and
-`windows/kanata/kanata.kbd` is kept as the reference the `.ahk` was ported from,
+`wsl/windows/kanata/kanata.kbd` is kept as the reference the `.ahk` was ported from,
 but nothing installs it: its only winget source is the GitHub release, and
 Zscaler 403s that download (the direct URL and the `api.github.com` asset
 endpoint both redirect to the same CDN; msstore doesn't carry it). Unrelated
@@ -411,7 +416,7 @@ does one-to-one remaps only, with no notion of tap versus hold.
 
 When you change Omarchy's theme, the `theme-set` hook automatically generates configs for:
 - Sioyek — appends a `# zfiles-theme` block to `~/.config/sioyek/prefs_user.config`
-- Yazi — `yazi/theme.toml` always selects a flavor named `zfiles`; each target
+- Yazi — the stowed yazi `theme.toml` always selects a flavor named `zfiles`; each target
   decides what fills `~/.config/yazi/flavors/zfiles.yazi/`. On Omarchy it's a
   symlink to the rendered theme, so yazi follows theme switches. On WSL and
   remote it's static Catppuccin Mocha (`ya pkg add yazi-rs/flavors:catppuccin-mocha`).
@@ -432,27 +437,30 @@ The bootstrap script clones [my neovim config](https://github.com/zstreeter/nvim
 
 ## What Bootstrap Does
 
-1. Installs packages from `pkglist.txt` (or mise-only on remote)
-2. Configures keyd and enables the service
-3. Sets up zsh with XDG directories
-4. Appends the guarded zfiles block to `~/.bashrc` and fixes the login chain
-5. Clones neovim config and symlinks Omarchy theme
-6. Backs up any file `stow` would collide with, then stows all packages
-7. Adds `zfilesbindings.conf` source to Hyprland config
-8. Installs the theme-set hook for sioyek/yazi
-9. Enables `herdr-navd` on WSL (§14b)
-10. Runs `windows/install.ps1` on WSL (§15) — AutoHotkey, GlazeWM, WezTerm,
-    `.wslconfig`
+1. Detects the target (remote / omarchy / wsl / linux) and sources its
+   `setup.sh`
+2. Runs the target's package step (pacman/AUR, apt + mise, or mise-only on
+   remote), then backfills the core CLI tools via mise on every target
+3. Backs up any file `stow` would collide with, then stows every package under
+   `common/stow/` and the target's `stow/` (`--no-folding`, adopt-and-revert)
+4. Runs `common/setup.sh`: GPG agent, zsh + Zap, the bash hook, ble.sh,
+   neovim clone, herdr + agent integrations, pi, XDG hygiene, yazi plugins,
+   research workspace
+5. Runs the target's `target_setup()`: keyd/Hyprland/theme hooks/email/docker
+   on Omarchy; `herdr-navd` and `wsl/windows/install.ps1` (AutoHotkey, GlazeWM,
+   WezTerm, `.wslconfig`) on WSL
 
 ## Adding More Packages
 
-To stow additional configs, add a directory with the proper structure:
+Drop a directory with the proper structure into the right `stow/` dir —
+`common/stow/` for every machine, `<target>/stow/` for one target:
 
 ```
-newpkg/
+common/stow/newpkg/
 └── .config/
     └── newpkg/
         └── config.toml
 ```
 
-Then add `newpkg` to `STOW_PACKAGES` in `bootstrap.sh`.
+No arrays to edit — bootstrap auto-discovers it on the next run. (Remote is
+the one exception: its whitelist is `STOW_ONLY` in `remote/setup.sh`.)

@@ -21,9 +21,10 @@ REPO_URL="${ZFILES_REPO_URL:-https://github.com/zstreeter/zfiles.git}"
 REPO_DIR="${ZFILES_DIR:-$HOME/.zfiles}"
 BRANCH="${ZFILES_BRANCH:-main}"
 
-# The stow packages a remote needs. Cone-mode sparse-checkout always includes
-# top-level files too, so bootstrap.sh and .stow-local-ignore come along free.
-SPARSE_DIRS="shell bash yazi remote"
+# The stow packages a remote needs, plus this target dir. Cone-mode
+# sparse-checkout always includes the top-level files of every ancestor
+# directory, so bootstrap.sh and common/setup.sh come along free.
+SPARSE_DIRS="common/stow/shell common/stow/bash common/stow/yazi remote"
 
 info() { printf '\033[1;34m>>>\033[0m %s\n' "$1"; }
 warn() { printf '\033[1;33m!!!\033[0m %s\n' "$1"; }

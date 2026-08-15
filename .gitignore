@@ -1,14 +1,13 @@
 .zsh_history
-tmux/.config/tmux/plugins/
 **/.zcompdump
-yazi/.config/yazi/package.toml
-cura/.local/share/cura/.sentry-native/
-cura/.local/share/cura/stderr.log
-cura/.local/share/cura/stdout.log
+common/stow/yazi/.config/yazi/package.toml
+omarchy/stow/cura/.local/share/cura/.sentry-native/
+omarchy/stow/cura/.local/share/cura/stderr.log
+omarchy/stow/cura/.local/share/cura/stdout.log
 
 # API keys. secrets.env is the real path (~/.config/shell/secrets.env, created
-# by bootstrap outside the repo); the other two are historical/mistyped names
-# that have shown up in-tree before. Ignore all of them everywhere — a folded
+# by bootstrap outside the repo); the other name is a historical/mistyped one
+# that has shown up in-tree before. Ignore all of them everywhere — a folded
 # stow symlink is all it takes for one to land inside the repo.
 **/secrets.env
 **/secrets.sh
@@ -18,23 +17,23 @@ cura/.local/share/cura/stdout.log
 
 # pi runtime data — secrets, sessions, and migration artifacts.
 # The directory itself is stowed; these specific files must never be tracked.
-pi/.config/pi/agent/auth.json
-pi/.config/pi/agent/auth.json.migrated
-pi/.config/pi/agent/oauth.json
-pi/.config/pi/agent/oauth.json.migrated
-pi/.config/pi/agent/sessions/
-pi/.config/pi/agent/*.jsonl
+common/stow/pi/.config/pi/agent/auth.json
+common/stow/pi/.config/pi/agent/auth.json.migrated
+common/stow/pi/.config/pi/agent/oauth.json
+common/stow/pi/.config/pi/agent/oauth.json.migrated
+common/stow/pi/.config/pi/agent/sessions/
+common/stow/pi/.config/pi/agent/*.jsonl
 
 # Defense-in-depth: yazi's theme is a runtime symlink at ~/.config/yazi/
 # flavors/zfiles.yazi, never inside the package. If either shows up here it
 # means stow folded the directory and the symlink landed in-tree — which
-# bootstrap's NO_FOLD_PACKAGES is supposed to prevent.
-yazi/.config/yazi/omarchy-theme.toml
-yazi/.config/yazi/flavors/
+# bootstrap's blanket --no-folding is supposed to prevent.
+common/stow/yazi/.config/yazi/omarchy-theme.toml
+common/stow/yazi/.config/yazi/flavors/
 
 # Zap installs zsh plugins to ~/.local/share/zap, never in-tree. A copy here
 # is fallout from the same folding bug.
-zsh/.config/zsh/zsh-syntax-highlighting/
+common/stow/zsh/.config/zsh/zsh-syntax-highlighting/
 
 # herdr-navd is an extensionless Python script, so importing or running it in
 # place leaves bytecode next to the stowed original.

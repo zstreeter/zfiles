@@ -1,0 +1,546 @@
+#!/usr/bin/env python3
+"""Unified vim-style focus movement for the WSL target.
+
+This is the WSL counterpart to hypr/.config/hypr/scripts/herdr-nav. Same
+precedence for a direction:
+
+  1. If the current herdr pane runs nvim -> ask nvim to move between its
+     splits. If nvim actually moved, stop.
+  2. Else if herdr has a pane in that direction -> focus it.
+  3. Else -> move window focus in the tiling WM.
+
+Two things force it to be a resident daemon here rather than a script, and to
+be written in Python rather than as the bash/jq port it looks like it wants to
+be:
+
+  * The caller lives on the WINDOWS side. windows/autohotkey/caps.ahk owns
+    Caps+hjkl and hands it here only when WezTerm is focused, so step 0 of
+    herdr-nav (is the focused window the terminal?) has already happened by the
+    time we are called. Reaching into WSL through interop -- `wsl.exe -- ...`
+    -- measured at ~290ms per invocation, which is unusable for focus movement.
+    A localhost HTTP request into an already-running process is sub-millisecond
+    plus whatever the arbitration itself costs.
+
+  * Step 3 talks to GlazeWM's IPC server, a WebSocket on ws://127.0.0.1:6123,
+    and this holds that connection open across keypresses. That address only
+    means the Windows host from inside WSL when .wslconfig sets
+    networkingMode=mirrored; windows/install.ps1 arranges that.
+
+Python because it is already here (WSL ships 3.12) and because `jq` is not --
+herdr-nav leans on it heavily and it is absent from pkglist-ubuntu.txt. The
+stdlib json module makes that gap moot rather than adding a dependency.
+
+Listens on 127.0.0.1:6224. Windows can reach a WSL loopback listener in both
+NAT and mirrored networking modes, so this direction works either way; only the
+GlazeWM hop below needs mirrored.
+
+NOT 6124, which is the obvious choice for sitting next to GlazeWM's 6123 and is
+wrong: 612x is glzr.io's own block and 6124 is Zebar, the status bar GlazeWM
+launches. Under networkingMode=mirrored a WSL loopback listener occupies the
+same 127.0.0.1 as Windows', so binding 6124 here beat Zebar to its own port and
+Zebar rendered this server's 404 body as the bar. Keep this well clear of 612x.
+
+  GET /nav/{left,down,up,right}   arbitrate and move focus
+  GET /launch                     claim the next new window for this workspace
+  GET /health                     liveness probe
+
+The reply body names the layer that consumed the move (nvim / herdr / wm /
+none), which is the whole debugging story when a keypress does nothing.
+"""
+
+import json
+import os
+import shutil
+import socket
+import struct
+import subprocess
+import sys
+import threading
+import time
+from base64 import b64encode
+from http.server import BaseHTTPRequestHandler, HTTPServer
+
+HOST = "127.0.0.1"
+PORT = int(os.environ.get("HERDR_NAVD_PORT", "6224"))
+
+GLAZEWM_HOST = "127.0.0.1"
+GLAZEWM_PORT = int(os.environ.get("GLAZEWM_PORT", "6123"))
+
+# Every hop is a local socket or a short-lived local process. A direction that
+# takes longer than this is a hung herdr/nvim, and blocking the keyboard on it
+# is worse than dropping the move.
+TIMEOUT = 1.0
+
+# nvim's `wincmd` argument for each direction.
+WINCMD = {"left": "h", "down": "j", "up": "k", "right": "l"}
+
+# How long a /launch claim stays live. Long enough for a cold Outlook -- 2.7s
+# from the launcher closing to its window existing, measured -- with room for
+# something slower, and short enough that an abandoned launcher (Escape, or a
+# search that matched nothing) can't capture an unrelated window that happens
+# to appear a minute later.
+LAUNCH_CLAIM_SECONDS = 15.0
+
+# Backoff after the event stream drops. GlazeWM restarts are routine; the
+# watcher is not on any keypress path, so it can afford to be patient.
+WATCH_RETRY_SECONDS = 2.0
+
+# Moves the cursor and reports whether it actually went anywhere -- one round
+# trip instead of a query, a move, and another query. pcall so a window-local
+# autocmd that throws can't take the whole expression down with it.
+NVIM_EXPR = (
+    "luaeval('(function()"
+    " local a=vim.api.nvim_get_current_win()"
+    ' pcall(vim.cmd,"wincmd {win}")'
+    " return a~=vim.api.nvim_get_current_win() and 1 or 0"
+    " end)()')"
+)
+
+
+def log(message):
+    print(f"[herdr-navd] {message}", file=sys.stderr, flush=True)
+
+
+def run_json(argv):
+    """Run a command that prints JSON; None on any failure at all.
+
+    Every caller's fallback is "assume this layer declined the move and try the
+    next one", which is also the right behavior when herdr isn't running, so a
+    failure here never needs to be distinguished from a decline.
+    """
+    try:
+        out = subprocess.run(
+            argv, capture_output=True, text=True, timeout=TIMEOUT
+        ).stdout
+        return json.loads(out) if out.strip() else None
+    except (OSError, subprocess.SubprocessError, ValueError):
+        return None
+
+
+# --- GlazeWM IPC -------------------------------------------------------------
+# A hand-rolled WebSocket client, because the stdlib has no client and a
+# dependency for ~60 lines of framing isn't worth it on a machine where `pip
+# install` goes through a corporate proxy. Only what GlazeWM's server actually
+# uses: one masked text frame out, one unmasked frame back.
+
+
+class GlazeWm:
+    """Persistent connection to GlazeWM's IPC server, reconnecting on demand.
+
+    Held open across keypresses: the TCP + HTTP-upgrade handshake is most of
+    the cost of a command, and paying it per focus move would be noticeable.
+    """
+
+    def __init__(self):
+        self.sock = None
+
+    def close(self):
+        if self.sock is not None:
+            try:
+                self.sock.close()
+            except OSError:
+                pass
+            self.sock = None
+
+    def _connect(self):
+        sock = socket.create_connection((GLAZEWM_HOST, GLAZEWM_PORT), TIMEOUT)
+        sock.settimeout(TIMEOUT)
+        # Focus moves are tiny and latency-bound; buffering them serves nothing.
+        sock.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
+
+        key = b64encode(os.urandom(16)).decode()
+        sock.sendall(
+            (
+                "GET / HTTP/1.1\r\n"
+                f"Host: {GLAZEWM_HOST}:{GLAZEWM_PORT}\r\n"
+                "Upgrade: websocket\r\n"
+                "Connection: Upgrade\r\n"
+                f"Sec-WebSocket-Key: {key}\r\n"
+                "Sec-WebSocket-Version: 13\r\n"
+                "\r\n"
+            ).encode()
+        )
+
+        # Read exactly up to the end of the handshake response and no further,
+        # so a server that pipelines a frame behind it doesn't lose it.
+        buf = b""
+        while b"\r\n\r\n" not in buf:
+            chunk = sock.recv(1)
+            if not chunk:
+                raise OSError("GlazeWM closed the connection during handshake")
+            buf += chunk
+        if b" 101 " not in buf.split(b"\r\n", 1)[0]:
+            raise OSError(f"GlazeWM refused the upgrade: {buf.splitlines()[:1]}")
+
+        self.sock = sock
+
+    def _recv_exactly(self, count):
+        buf = b""
+        while len(buf) < count:
+            chunk = self.sock.recv(count - len(buf))
+            if not chunk:
+                raise OSError("GlazeWM closed the connection")
+            buf += chunk
+        return buf
+
+    def _send_text(self, text):
+        payload = text.encode()
+        header = bytearray([0x81])  # FIN, opcode 1 (text)
+        n = len(payload)
+        # Client frames MUST be masked (RFC 6455 §5.3); tungstenite, which
+        # GlazeWM's server is built on, drops the connection if they aren't.
+        if n < 126:
+            header.append(0x80 | n)
+        elif n < 1 << 16:
+            header.append(0x80 | 126)
+            header += struct.pack(">H", n)
+        else:
+            header.append(0x80 | 127)
+            header += struct.pack(">Q", n)
+        mask = os.urandom(4)
+        header += mask
+        masked = bytes(b ^ mask[i % 4] for i, b in enumerate(payload))
+        self.sock.sendall(bytes(header) + masked)
+
+    def _recv_text(self):
+        """Next text frame's payload. Answers pings and skips other frames."""
+        while True:
+            first, second = self._recv_exactly(2)
+            opcode = first & 0x0F
+            n = second & 0x7F
+            if n == 126:
+                n = struct.unpack(">H", self._recv_exactly(2))[0]
+            elif n == 127:
+                n = struct.unpack(">Q", self._recv_exactly(8))[0]
+            # Servers never mask, but honor the bit rather than desync if one does.
+            mask = self._recv_exactly(4) if second & 0x80 else None
+            payload = self._recv_exactly(n) if n else b""
+            if mask:
+                payload = bytes(b ^ mask[i % 4] for i, b in enumerate(payload))
+
+            if opcode == 0x1:  # text
+                return payload.decode(errors="replace")
+            if opcode == 0x9:  # ping -> pong, same payload
+                self.sock.sendall(bytes([0x8A, 0x80]) + os.urandom(4))
+            elif opcode == 0x8:  # close
+                raise OSError("GlazeWM sent a close frame")
+
+    def request(self, args):
+        """Send one CLI line and return the parsed reply, or None.
+
+        The wire format is the CLI's own argument line -- wm-cli joins argv[1..]
+        with spaces and sends that -- so "command focus --direction left" here
+        is exactly `glazewm command focus --direction left` there, minus the
+        ~290ms of spawning glazewm.exe through interop. "query workspaces"
+        works the same way.
+
+        Retries once on a dead socket: GlazeWM restarts (a crash, wm-exit and
+        relaunch, a logon) are routine and shouldn't cost the user a keypress.
+        """
+        for attempt in (1, 2):
+            try:
+                if self.sock is None:
+                    self._connect()
+                self._send_text(args)
+                return json.loads(self._recv_text())
+            except (OSError, ValueError) as exc:
+                self.close()
+                if attempt == 2:
+                    log(f"GlazeWM unreachable: {exc}")
+                    return None
+        return None
+
+    def command(self, args):
+        """Run a GlazeWM CLI command over IPC. True if it succeeded."""
+        reply = self.request(args)
+        if reply is None:
+            return False
+        if not reply.get("success", False):
+            log(f"GlazeWM rejected {args!r}: {reply.get('error')}")
+            return False
+        return True
+
+    def subscribe(self, events):
+        """Turn this connection into an event stream and block on it forever.
+
+        A subscription can't share a socket with requests -- replies and events
+        would interleave and each reader would take the other's frame -- so a
+        subscriber is always its own GlazeWm instance, and issues any commands
+        it needs through a second one.
+
+        The timeout goes away with it. A partial frame interrupted by a socket
+        timeout would desync the stream with no way to resynchronize, and there
+        is nothing useful to do on a quiet stream anyway; a dead connection
+        still raises, which is the only wake-up that matters.
+        """
+        self.close()
+        self._connect()
+        self.sock.settimeout(None)
+        self._send_text("sub --events " + " ".join(events))
+
+    def next_event(self):
+        """Next message from a subscribed connection. Raises if it dies."""
+        return json.loads(self._recv_text())
+
+
+# --- The three layers --------------------------------------------------------
+
+
+def nvim_moved(direction):
+    """True if nvim consumed the move between its own splits.
+
+    nvim needs no plugin for this: its built-in server socket lives at
+    $XDG_RUNTIME_DIR/nvim.<pid>.0, and herdr knows the pid of whatever is in
+    the foreground of the current pane.
+    """
+    info = run_json(["herdr", "pane", "process-info", "--current"])
+    if not info:
+        return False
+
+    procs = (
+        info.get("result", {}).get("process_info", {}).get("foreground_processes")
+        or []
+    )
+    pid = next((p.get("pid") for p in procs if p.get("name") == "nvim"), None)
+    if pid is None:
+        return False
+
+    runtime = os.environ.get("XDG_RUNTIME_DIR") or f"/run/user/{os.getuid()}"
+    sock = os.path.join(runtime, f"nvim.{pid}.0")
+    if not os.path.exists(sock):
+        return False
+
+    try:
+        out = subprocess.run(
+            [
+                "nvim",
+                "--server",
+                sock,
+                "--remote-expr",
+                NVIM_EXPR.format(win=WINCMD[direction]),
+            ],
+            capture_output=True,
+            text=True,
+            timeout=TIMEOUT,
+        ).stdout
+    except (OSError, subprocess.SubprocessError):
+        return False
+
+    return out.strip() == "1"
+
+
+def herdr_moved(direction):
+    """True if herdr had a pane in that direction and focused it."""
+    result = run_json(
+        ["herdr", "pane", "focus", "--direction", direction, "--current"]
+    )
+    if not result:
+        return False
+    return bool(result.get("result", {}).get("focus", {}).get("changed"))
+
+
+# --- HTTP front end ----------------------------------------------------------
+
+WM = GlazeWm()
+
+
+def navigate(direction):
+    """Walk the layers outward and report which one took the move."""
+    if nvim_moved(direction):
+        return "nvim"
+    if herdr_moved(direction):
+        return "herdr"
+    if WM.command(f"command focus --direction {direction}"):
+        return "wm"
+    return "none"
+
+
+# --- Launcher claims ---------------------------------------------------------
+# GlazeWM inserts a new window next to whatever container it currently has
+# focused, which is the right rule and still puts the window on the wrong
+# screen every time it is launched onto an EMPTY workspace from PowerToys Run.
+#
+# An empty workspace has no OS-level focus anchor. GlazeWM's focused container
+# is the workspace, but Windows' foreground window is still whatever was up
+# last -- GlazeWM can only "focus the desktop" when there is no window to focus
+# (sync_focus in its platform_sync.rs). PT Run's window is a tool window, so
+# GlazeWM never manages it and never reacts to it taking foreground. But when
+# it closes, Windows hands foreground back to the top app window in the global
+# Z-order, which lives on the other monitor, and THAT one is managed. GlazeWM
+# reads it as a manual focus change and follows -- its own override for
+# OS-initiated focus only covers the 100ms after a managed window closes
+# (should_override_focus in handle_window_focused.rs), and a tool window closing
+# is not that. Two seconds later the launched app appears next to the wrong
+# focused container.
+#
+# So: don't fight over focus, claim the window. Caps+Space asks for a claim
+# before it opens the launcher, and the next window GlazeWM manages goes to the
+# workspace the claim was made on. That is immune to how long the app takes to
+# start, and an app that was already running produces no `window_managed` event
+# at all -- so activating an existing window still behaves normally instead of
+# being yanked away from its own workspace.
+_claim_lock = threading.Lock()
+_claim = {"workspace": None, "expires": 0.0}
+
+
+def claim_next_window():
+    """Arm a claim for the focused workspace. Returns its name, or "none"."""
+    reply = WM.request("query workspaces")
+    name = None
+    if reply and reply.get("success"):
+        for workspace in reply.get("data", {}).get("workspaces", []):
+            # Only the top-level entries are workspaces; a focused window
+            # inside one carries hasFocus too and must not be mistaken for it.
+            if workspace.get("hasFocus"):
+                name = workspace.get("name")
+                break
+    if name is None:
+        return "none"
+
+    with _claim_lock:
+        _claim["workspace"] = name
+        _claim["expires"] = time.monotonic() + LAUNCH_CLAIM_SECONDS
+    return name
+
+
+def take_claim():
+    """Consume the claim if one is live. One window per claim, never two."""
+    with _claim_lock:
+        name = _claim["workspace"]
+        _claim["workspace"] = None
+        if name is None or time.monotonic() > _claim["expires"]:
+            return None
+        return name
+
+
+def workspace_of(cli, window_id):
+    """Name of the workspace holding a window, or None if it isn't found."""
+
+    def holds(container):
+        if container.get("id") == window_id:
+            return True
+        return any(holds(child) for child in container.get("children", []))
+
+    reply = cli.request("query workspaces")
+    if not reply or not reply.get("success"):
+        return None
+    for workspace in reply.get("data", {}).get("workspaces", []):
+        if any(holds(child) for child in workspace.get("children", [])):
+            return workspace.get("name")
+    return None
+
+
+def watch_for_claimed_windows():
+    """Move each newly managed window to the workspace that claimed it."""
+    events = GlazeWm()
+    mover = GlazeWm()
+    while True:
+        try:
+            if events.sock is None:
+                events.subscribe(["window_managed"])
+            message = events.next_event()
+        except (OSError, ValueError) as exc:
+            events.close()
+            log(f"launch watcher lost GlazeWM: {exc}")
+            time.sleep(WATCH_RETRY_SECONDS)
+            continue
+
+        data = message.get("data") or {}
+        if data.get("eventType") != "window_managed":
+            continue
+
+        window_id = (data.get("managedWindow") or {}).get("id")
+        if not window_id:
+            continue
+
+        workspace = take_claim()
+        if workspace is None:
+            continue
+        if workspace_of(mover, window_id) == workspace:
+            continue
+
+        log(f"launcher claim: moving new window to workspace {workspace}")
+        mover.command(f"command --id {window_id} move --workspace {workspace}")
+        mover.command(f"command focus --workspace {workspace}")
+
+
+class Handler(BaseHTTPRequestHandler):
+    # BaseHTTPRequestHandler defaults to HTTP/1.0, which closes the connection
+    # after every response; the caller is a keypress and reconnecting per move
+    # is pure latency.
+    protocol_version = "HTTP/1.1"
+
+    # The other half of keep-alive on a single-threaded server. socketserver
+    # applies this to the connection, so an idle client that holds one open
+    # without sending anything is dropped instead of blocking the accept loop
+    # forever -- which takes /health down with it and makes a live daemon look
+    # hung. Generous because it bounds idleness between keypresses, not the
+    # arbitration, which has its own TIMEOUT.
+    timeout = 5
+
+    # Not a micro-optimization -- without it every response after the first
+    # costs ~45ms flat. end_headers() flushes the header block and the body
+    # goes out as a second write, so on a kept-alive connection Nagle holds the
+    # body until the peer's delayed ACK for the headers arrives. Measured at
+    # 45ms on a request that does no work at all, which is worse than the
+    # arbitration it was hiding.
+    disable_nagle_algorithm = True
+
+    def reply(self, code, body):
+        payload = body.encode()
+        self.send_response(code)
+        self.send_header("Content-Type", "text/plain")
+        self.send_header("Content-Length", str(len(payload)))
+        self.end_headers()
+        self.wfile.write(payload)
+
+    def do_GET(self):
+        if self.path == "/health":
+            self.reply(200, "ok\n")
+            return
+        if self.path == "/launch":
+            self.reply(200, claim_next_window() + "\n")
+            return
+        if self.path.startswith("/nav/"):
+            direction = self.path[len("/nav/") :]
+            if direction not in WINCMD:
+                self.reply(400, f"unknown direction: {direction}\n")
+                return
+            self.reply(200, navigate(direction) + "\n")
+            return
+        self.reply(404, "usage: GET /nav/{left,down,up,right} | /launch\n")
+
+    # One line per keypress on stderr -- i.e. in the journal -- is noise, and
+    # the interesting failures already log through log().
+    def log_message(self, *_args):
+        pass
+
+
+def main():
+    if shutil.which("herdr") is None:
+        # Not fatal: the WM hop still works, so Caps+hjkl keeps moving windows.
+        # Worth saying out loud, though, since panes silently never match.
+        log("herdr not on PATH — pane arbitration will always fall through")
+
+    # The launch watcher blocks on its own GlazeWM connection, so it can't live
+    # in the request loop. A daemon thread because it holds no state worth
+    # draining: an unconsumed claim is one keystroke's worth of intent.
+    threading.Thread(target=watch_for_claimed_windows, daemon=True).start()
+
+    # Serial on purpose. Focus is a single global thing; two moves racing each
+    # other would interleave on the WebSocket and land somewhere neither asked
+    # for. Arbitration is bounded by TIMEOUT and idle connections by
+    # Handler.timeout, which together are what keep serial from meaning stuck.
+    server = HTTPServer((HOST, PORT), Handler)
+    log(f"listening on {HOST}:{PORT}")
+    try:
+        server.serve_forever()
+    except KeyboardInterrupt:
+        pass
+    finally:
+        WM.close()
+        server.server_close()
+
+
+if __name__ == "__main__":
+    main()
