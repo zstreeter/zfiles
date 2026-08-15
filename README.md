@@ -230,6 +230,9 @@ idempotent — bootstrap re-runs it every time, and it only acts on what differs
 | Navigation | `herdr-navd` — nvim splits → herdr panes → GlazeWM windows |
 | sioyek    | Windows build via winget, configs in `wsl/windows/sioyek/` — see below |
 
+The full Omarchy→Windows binding map — every chord mapped, substituted, or
+explicitly dropped, with reasons — is `wsl/windows/PARITY.md`.
+
 #### GUI programs are the Windows build
 
 **Rule for this target: anything with a window is installed as the Windows
