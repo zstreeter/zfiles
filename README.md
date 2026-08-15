@@ -231,7 +231,8 @@ idempotent — bootstrap re-runs it every time, and it only acts on what differs
 | sioyek    | Windows build via winget, configs in `wsl/windows/sioyek/` — see below |
 
 The full Omarchy→Windows binding map — every chord mapped, substituted, or
-explicitly dropped, with reasons — is `wsl/windows/PARITY.md`.
+explicitly dropped, with reasons — is `wsl/windows/PARITY.md`. The from-scratch
+setup recipe for the laptop (or its replacement) is `wsl/INSTALL.md`.
 
 #### GUI programs are the Windows build
 
