@@ -159,17 +159,28 @@ Bootstrap is just the orchestrator — `stow` itself is per-package.
 
 ### Hyprland Keybindings
 
-Edit `omarchy/stow/hypr/.config/hypr/zfilesbindings.conf` to add your own bindings:
+Omarchy 4 configures Hyprland in Lua: `~/.config/hypr/hyprland.lua` loads
+Omarchy's defaults, then `require`s your `hypr.monitors`, `hypr.bindings` and
+`hypr.autostart` modules. The stowed `omarchy/stow/hypr/.config/hypr/*.lua`
+files *are* those modules — no `source =` line to wire up.
 
-```bash
-# Example: Vim-style window focus
-bindd = SUPER, H, Focus left, movefocus, l
-bindd = SUPER, J, Focus down, movefocus, d
-bindd = SUPER, K, Focus up, movefocus, u
-bindd = SUPER, L, Focus right, movefocus, r
+Edit `omarchy/stow/hypr/.config/hypr/bindings.lua` to add your own bindings.
+Unbind a default before rebinding its key:
+
+```lua
+hl.unbind("SUPER + J")                       -- was: toggle window split
+o.bind("SUPER + J", "Focus down", nav .. "d") -- string = exec, or hl.dsp.* for a dispatcher
+o.bind("SUPER + SHIFT + A", "Claude", { webapp = "https://claude.ai" })
 ```
 
-These are loaded after Omarchy's defaults, so you can override or extend them.
+`omarchy menu keybindings --print` lists what's currently bound. The
+old `.conf` files are not loaded at all on Omarchy 4.
+
+> **After an Omarchy update**, `omarchy/hooks/post-update` checks that every
+> stowed `hypr/*.lua` is still a symlink into the repo and that the overlay's
+> binds are actually loaded. If a migration dropped a real file in its place
+> (the 4.0 `.conf` → `.lua` move did exactly that), you get a critical
+> notification — re-run `bootstrap.sh` to restow.
 
 ### Caps Lock Behavior
 
@@ -418,15 +429,18 @@ does one-to-one remaps only, with no notion of tap versus hold.
 
 ### Theme Integration
 
-When you change Omarchy's theme, the `theme-set` hook automatically generates configs for:
-- Sioyek — appends a `# zfiles-theme` block to `~/.config/sioyek/prefs_user.config`
+Omarchy renders the active theme into `~/.local/state/omarchy/current/theme/`
+(user templates in `~/.config/omarchy/themed/*.tpl` are rendered there too —
+zfiles stows one for yazi). On every theme switch the `theme-set` hook adds:
+- Sioyek — writes `sioyek-prefs.config` into the rendered theme dir;
+  `~/.config/sioyek/prefs_user.config` is a symlink to it.
+- Opencode — maps the Omarchy theme name onto `~/.config/opencode/tui.json`.
 - Yazi — the stowed yazi `theme.toml` always selects a flavor named `zfiles`; each target
   decides what fills `~/.config/yazi/flavors/zfiles.yazi/`. On Omarchy it's a
   symlink to the rendered theme, so yazi follows theme switches. On WSL and
   remote it's static Catppuccin Mocha (`ya pkg add yazi-rs/flavors:catppuccin-mocha`).
 
-Sioyek's prefs_user.config is overwritten between `# zfiles-theme` markers — keep
-non-color customizations above that marker.
+Notifications are Omarchy's own shell (mako is gone as of 4.0).
 
 ### Neovim
 
