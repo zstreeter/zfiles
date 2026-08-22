@@ -38,7 +38,16 @@ focus_pane_right = "prefix+l"
 
 fullscreen  = "prefix+f"        # fullscreen the focused pane (tmux: bind f)
 resize_mode = "prefix+r"        # herdr default; resize mode, then hjkl to nudge
-copy_mode   = "prefix+space"    # tmux: bind Space copy-mode
+copy_mode   = "prefix+space"    # tmux: bind Space copy-mode (host scrollback only)
+
+# prefix+u: pane scrollback in nvim, INCLUDING alt-screen history (opencode,
+# claude...). copy_mode/prefix+e can't see alt-screen rows; see herdr-scrollback.
+[[keys.command]]
+key     = "prefix+u"
+type    = "popup"
+command = "herdr-scrollback"
+width   = "95%"
+height  = "95%"
 
 # Launch-in-pane commands (temp pane, closes when the command exits).
 # prefix+y avoids the zsh ^o run_yazi binding (cwd-on-exit) — different job:
