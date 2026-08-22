@@ -17,8 +17,8 @@ REPO_USER_TPL="$HOME/.config/omarchy/themed"
 UPSTREAM_TPL="$HOME/.local/share/omarchy/default/themed"
 
 # 1. Re-render the active theme — picks up template-engine and color changes.
-if [[ -f "$HOME/.config/omarchy/current/theme.name" ]]; then
-    THEME=$(cat "$HOME/.config/omarchy/current/theme.name")
+if [[ -f "$HOME/.local/state/omarchy/current/theme.name" ]]; then
+    THEME=$(cat "$HOME/.local/state/omarchy/current/theme.name")
     echo "zfiles post-update: re-rendering theme '$THEME'"
     omarchy-theme-set "$THEME" >/dev/null
 fi

@@ -38,3 +38,6 @@ common/stow/zsh/.config/zsh/zsh-syntax-highlighting/
 # herdr-navd is an extensionless Python script, so importing or running it in
 # place leaves bytecode next to the stowed original.
 **/__pycache__/
+
+# Claude Code agent worktrees — scratch, never part of the dotfiles
+.claude/worktrees/

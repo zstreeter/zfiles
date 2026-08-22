@@ -49,7 +49,7 @@ media/clipboard/tiling-v2/utilities + `~/.config/hypr/bindings.conf` +
 | Alt+Tab | cycle windows | Windows' own Alt+Tab; plus `f14+c` (`wm-cycle-focus`) |
 | Ctrl+Alt+Tab | focus other monitor | `f14+alt+1/2` (absolute) and `f14+alt+hjkl` (directional, skips terminal layers) |
 | Caps+Ctrl+A/B/W | audio/bluetooth/wifi panels | Win+A quick settings |
-| Caps+, family | notifications (mako) | Win+N notification center |
+| Caps+, family | notifications (omarchy-shell) | Win+N notification center |
 | Caps+Ctrl+Z | cursor zoom | Magnifier (Win+`=`) |
 | Caps+Ctrl+X / F9 | dictation (voxtype) | Win+H voice typing |
 | Caps+R / Caps+Shift+R | screen-record toggle (zfiles) | Game Bar (Win+Alt+R) |

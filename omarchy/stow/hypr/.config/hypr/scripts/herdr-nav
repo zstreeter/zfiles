@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Unified vim-style focus movement across nvim splits, herdr panes, and
-# Hyprland windows. Bound to SUPER+h/j/k/l in zfilesbindings.conf.
+# Hyprland windows. Bound to SUPER+h/j/k/l in bindings.lua.
 #
 # Order of precedence for a direction:
 #   1. If the focused window is the herdr terminal AND its current pane runs

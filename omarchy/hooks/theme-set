@@ -1,7 +1,7 @@
 #!/bin/bash
 # Omarchy theme-set hook for zfiles.
 #
-# Most theme outputs (yazi, mako) live as Omarchy user templates under
+# Most theme outputs (yazi) live as Omarchy user templates under
 # omarchy/.config/omarchy/themed/*.tpl and are rendered by Omarchy's own
 # template engine — no logic here required for them.
 #
@@ -10,7 +10,7 @@
 #     template engine only emits hex / decimal-RGB.
 #   - opencode: needs an Omarchy-theme → opencode-theme name mapping.
 #
-# Output files are written to ~/.config/omarchy/current/theme/, the same
+# Output files are written to ~/.local/state/omarchy/current/theme/, the same
 # place Omarchy's templates render to. Consuming configs symlink into that
 # dir (see bootstrap.sh).
 #
@@ -19,7 +19,7 @@
 set -e
 
 THEME_NAME="$1"
-THEME_DIR="$HOME/.config/omarchy/current/theme"
+THEME_DIR="$HOME/.local/state/omarchy/current/theme"
 COLORS_FILE="$THEME_DIR/colors.toml"
 
 if [[ ! -f "$COLORS_FILE" ]]; then

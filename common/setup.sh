@@ -218,7 +218,7 @@ else
 fi
 
 # Symlink Omarchy theme to neovim plugins
-OMARCHY_THEME="$HOME/.config/omarchy/current/theme/neovim.lua"
+OMARCHY_THEME="$HOME/.local/state/omarchy/current/theme/neovim.lua"
 NVIM_THEME_LINK="$NVIM_DIR/lua/plugins/omarchy-theme.lua"
 
 if [[ -f "$OMARCHY_THEME" ]]; then

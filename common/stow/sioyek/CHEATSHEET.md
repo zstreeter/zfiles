@@ -94,6 +94,6 @@ or `prefs_user.config`, fully quit and relaunch sioyek.
 ## Files
 
 - `~/.config/sioyek/keys_user.config` — symlink to `zfiles/sioyek/.config/sioyek/keys_user.config` (this overlay)
-- `~/.config/sioyek/prefs_user.config` — symlink to `~/.config/omarchy/current/theme/sioyek-prefs.config` (rendered per-theme by the omarchy hook)
+- `~/.config/sioyek/prefs_user.config` — symlink to `~/.local/state/omarchy/current/theme/sioyek-prefs.config` (rendered per-theme by the omarchy hook)
 - `/etc/sioyek/keys.config` — system defaults (read-only reference)
 - `/etc/sioyek/prefs.config` — system pref defaults (read-only reference)

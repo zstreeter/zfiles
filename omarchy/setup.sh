@@ -75,28 +75,20 @@ target_setup() {
     systemctl --user enable --now mirador@gmail 2>/dev/null || true
     systemctl --user enable --now mirador@work 2>/dev/null || true
 
-    # Hyprland: source zfiles bindings after Omarchy's defaults
-    info "Configuring Hyprland..."
-    local hypr_conf="$HOME/.config/hypr/hyprland.conf"
-    local zfiles_source='source = ~/.config/hypr/zfilesbindings.conf'
-
-    if [[ -f "$hypr_conf" ]]; then
-        if ! grep -qF "$zfiles_source" "$hypr_conf"; then
-            echo -e "\n# zfiles overlay\n$zfiles_source" >> "$hypr_conf"
-            info "Added zfilesbindings.conf to hyprland.conf"
-        else
-            info "zfilesbindings.conf already sourced in hyprland.conf"
-        fi
-    else
-        warn "hyprland.conf not found, skipping"
-    fi
+    # Hyprland (Omarchy 4, Lua config): hyprland.lua already requires
+    # hypr.monitors / hypr.bindings / hypr.autostart — the stowed
+    # omarchy/stow/hypr/.config/hypr/*.lua files ARE those modules. Nothing to
+    # wire; Omarchy's migration drops template copies of them, which the
+    # stow conflict backup stashes aside.
+    info "Reloading Hyprland..."
+    hyprctl reload >/dev/null 2>&1 || true
 
     # Omarchy theme hooks + consumers
     #
     # Theme architecture (see omarchy/hooks/theme-set for full detail):
     #   Templates:   omarchy/stow/omarchy/.config/omarchy/themed/*.tpl (stowed)
-    #   Rendered:    ~/.config/omarchy/current/theme/<file>  (Omarchy's engine)
-    #   Hook output: ~/.config/omarchy/current/theme/sioyek-prefs.config (our hook)
+    #   Rendered:    ~/.local/state/omarchy/current/theme/<file>  (Omarchy's engine)
+    #   Hook output: ~/.local/state/omarchy/current/theme/sioyek-prefs.config (our hook)
     #   Consumers:   user configs symlink into the rendered dir; on theme
     #                switch, Omarchy's `mv next-theme current` swaps everything
     #                atomically and the hook regenerates sioyek/opencode.
@@ -125,14 +117,13 @@ target_setup() {
     # and replaces any prior real file (e.g., a stale frozen copy from a
     # previous broken setup).
     info "Linking theme consumers to rendered theme dir..."
-    local theme_dir="$HOME/.config/omarchy/current/theme"
-    mkdir -p "$HOME/.config/mako" "$HOME/.config/yazi/flavors/zfiles.yazi" "$HOME/.config/sioyek"
+    local theme_dir="$HOME/.local/state/omarchy/current/theme"
+    mkdir -p "$HOME/.config/yazi/flavors/zfiles.yazi" "$HOME/.config/sioyek"
     # yazi 25.12.29 removed `$include`; selection now goes through the flavor
     # system. theme.toml names the flavor "zfiles" on every target — here that
     # name resolves to the rendered Omarchy theme, so yazi follows theme-set.
     rm -f "$HOME/.config/yazi/omarchy-theme.toml"
     rm -rf "$HOME/.config/yazi/flavors/omarchy.yazi"
-    ln -snf "$theme_dir/mako.ini"                 "$HOME/.config/mako/config"
     ln -snf "$theme_dir/yazi-omarchy-theme.toml"  "$HOME/.config/yazi/flavors/zfiles.yazi/flavor.toml"
     ln -snf "$theme_dir/sioyek-prefs.config"      "$HOME/.config/sioyek/prefs_user.config"
     # herdr config is a plain stowed dotfile (common/stow/herdr), not a theme template.
@@ -140,9 +131,9 @@ target_setup() {
     # Trigger a full theme re-set so Omarchy renders our user templates and
     # our hook generates its outputs. The theme name lives in theme.name
     # (not in the `current` symlink itself, which points to a real dir).
-    if [[ -f "$HOME/.config/omarchy/current/theme.name" ]]; then
+    if [[ -f "$HOME/.local/state/omarchy/current/theme.name" ]]; then
         local current_theme
-        current_theme=$(cat "$HOME/.config/omarchy/current/theme.name")
+        current_theme=$(cat "$HOME/.local/state/omarchy/current/theme.name")
         info "Re-rendering theme: $current_theme"
         omarchy-theme-set "$current_theme" || warn "omarchy-theme-set failed; templates may be stale until next theme switch"
     fi
