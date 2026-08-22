@@ -58,7 +58,17 @@ export PATH="$CARGO_HOME/bin:$PATH"
 # Omarchy environment (mirrors omarchy/default/bash/envs so SSH/non-omarchy
 # zsh sessions get the same baseline). Only prepend Omarchy's bin where it
 # actually exists (not on WSL/servers).
-export OMARCHY_PATH="$XDG_DATA_HOME/omarchy"
+# Omarchy 4 installs to /usr/share/omarchy (~/.local/share/omarchy is a
+# compat symlink). Never clobber a value the session already exported: the
+# shell's menu runs actions via `bash -lc`, and `qs ipc` finds the running
+# shell by *path* — a different spelling of the same dir reads as "not running".
+if [[ -z "$OMARCHY_PATH" ]]; then
+    if [[ -d /usr/share/omarchy ]]; then
+        export OMARCHY_PATH=/usr/share/omarchy
+    else
+        export OMARCHY_PATH="$XDG_DATA_HOME/omarchy"
+    fi
+fi
 export SUDO_EDITOR="$EDITOR"
 export BAT_THEME=ansi
 export PATH="$PATH:$HOME/.local/bin"
