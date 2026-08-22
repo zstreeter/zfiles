@@ -13,12 +13,15 @@
 # $XDG_RUNTIME_DIR/nvim.<pid>.0, and one --remote-expr both moves and reports
 # whether it was already at the edge.
 #
-# ponytail: assumes a single ghostty window and that ghostty == herdr (true on
-# this box). Each keypress spawns a few short-lived queries; latency is a few
+# ponytail: assumes a single terminal window and that terminal == herdr (true
+# on this box). Omarchy 4 ships foot; ghostty kept for pre-4 installs. Each keypress spawns a few short-lived queries; latency is a few
 # tens of ms over local sockets — fine for interactive focus.
 set -euo pipefail
 
-TERM_CLASS="com.mitchellh.ghostty"
+TERM_CLASSES="foot com.mitchellh.ghostty"
+
+# Omarchy 4 routes hyprctl dispatch through Lua; the old bare form is rejected.
+movefocus() { exec hyprctl dispatch "hl.dsp.focus({ direction = \"$1\" })"; }
 
 hdir="$1"                       # l | r | u | d  (Hyprland movefocus arg)
 case "$hdir" in
@@ -30,9 +33,10 @@ case "$hdir" in
 esac
 
 # Focused window not the terminal? Plain Hyprland focus move.
-if [ "$(hyprctl activewindow -j | jq -r '.class')" != "$TERM_CLASS" ]; then
-  exec hyprctl dispatch movefocus "$hdir"
-fi
+case " $TERM_CLASSES " in
+  *" $(hyprctl activewindow -j | jq -r '.class') "*) ;;
+  *) movefocus "$hdir" ;;
+esac
 
 # In the terminal: if the current herdr pane runs nvim, let nvim move first.
 nvim_pid=$(herdr pane process-info --current 2>/dev/null \
@@ -54,4 +58,4 @@ changed=$(herdr pane focus --direction "$herdr" --current 2>/dev/null \
 [ "$changed" = "true" ] && exit 0
 
 # herdr also at its edge: cross into the next Hyprland window.
-exec hyprctl dispatch movefocus "$hdir"
+movefocus "$hdir"
