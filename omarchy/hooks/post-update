@@ -45,3 +45,19 @@ for user_tpl in "$REPO_USER_TPL"/*.tpl; do
         echo "    cp $upstream $seen"
     fi
 done
+
+# 3. Overlay sanity. An Omarchy migration that replaces a stowed file with a
+# real one (e.g. the 4.0 .conf -> .lua move) fails silently otherwise: Hyprland
+# happily loads Omarchy's template and the zfiles bindings just vanish.
+REPO_HYPR="$(cd "$(dirname "$(readlink -f "$0")")/.." && pwd)/stow/hypr/.config/hypr"
+broken=()
+for f in "$REPO_HYPR"/*.lua; do
+    name=$(basename "$f")
+    [[ "$(readlink -f "$HOME/.config/hypr/$name")" == "$f" ]] || broken+=("$name")
+done
+hyprctl binds 2>/dev/null | grep -q herdr-nav || broken+=("bindings not loaded")
+if (( ${#broken[@]} )); then
+    msg="zfiles overlay broken after update: ${broken[*]} — re-run bootstrap.sh"
+    echo "zfiles post-update: $msg"
+    notify-send -u critical "zfiles" "$msg" 2>/dev/null || true
+fi
