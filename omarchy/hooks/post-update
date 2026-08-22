@@ -55,7 +55,7 @@ for f in "$REPO_HYPR"/*.lua; do
     name=$(basename "$f")
     [[ "$(readlink -f "$HOME/.config/hypr/$name")" == "$f" ]] || broken+=("$name")
 done
-hyprctl binds 2>/dev/null | grep -q herdr-nav || broken+=("bindings not loaded")
+hyprctl binds 2>/dev/null | grep -q 'description: Focus left' || broken+=("bindings not loaded")
 if (( ${#broken[@]} )); then
     msg="zfiles overlay broken after update: ${broken[*]} — re-run bootstrap.sh"
     echo "zfiles post-update: $msg"
