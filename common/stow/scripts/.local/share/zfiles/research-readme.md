@@ -166,10 +166,9 @@ quarto publish gh-pages
 
 ## Theming
 
-Sioyek's colors track the active Omarchy theme — switching themes runs the
-`~/.config/omarchy/hooks/theme-set` hook, which rewrites the `# zfiles-theme` block in
-`~/.config/sioyek/prefs_user.config`. Edit your non-color sioyek prefs *above* that
-marker; everything below is auto-generated.
+Sioyek's colors track the active Omarchy theme. Switching themes runs the
+`theme-set.d/zfiles` hook and regenerates the file targeted by
+`~/.config/sioyek/prefs_user.config`.
 
 ## Troubleshooting
 
@@ -177,7 +176,7 @@ marker; everything below is auto-generated.
 |---------|-------|
 | `@citekey` autocomplete missing | `~/Zotero/zotero.sqlite` exists and `zotcite` plugin loaded for buffer's filetype |
 | BBT `references.bib` stale | Zotero → BBT → Auto-Export → set "On change" |
-| Sioyek colors look wrong | Re-run hook: `~/.config/omarchy/hooks/theme-set "$(basename "$(readlink -f ~/.config/omarchy/current)")"` |
+| Sioyek colors look wrong | Re-apply the current theme: `omarchy theme set "$(cat ~/.local/state/omarchy/current/theme.name)"` |
 | Blog post missing after publish | Did you `quarto publish gh-pages`? The `publish-post` helper only copies the file. |
 | `[[wikilink]]` won't follow | Buffer must be inside a vault under `~/research/`; obsidian.nvim auto-detects via the workspace path |
 

@@ -2,6 +2,7 @@
 # stow; expects REPO_DIR, OMARCHY, WSL, REMOTE, PINENTRY and info/warn/error.
 # Steps a work server must not run (gpg, zsh/chsh, pi, $HOME rearranging)
 # guard themselves on $REMOTE.
+# shellcheck shell=bash
 
 # GPG agent — skipped on remote: a work server's gpg setup is the server's
 # business, and relocating GNUPGHOME under someone else's machine is exactly
@@ -107,7 +108,7 @@ fi  # ! $REMOTE
 # Hook bash into the zfiles config. Deliberately an *append* to whatever
 # ~/.bashrc already exists rather than a stowed file: on a work server that
 # file carries site setup (lmod, `module`, conda init) we must not clobber, and
-# on this side it means `stow --adopt` can never swallow the machine's bashrc.
+# on this side it keeps the machine's bashrc outside Stow ownership.
 # Same pattern as the generated ~/.zshenv above. Idempotent via the marker.
 ensure_bash_hook() {
     local target="$1" body="$2"
@@ -138,6 +139,8 @@ ensure_login_chain() {
     done
 
     if [[ -z "$first" ]]; then
+        # Write these variables literally for login time.
+        # shellcheck disable=SC2016
         ensure_bash_hook "$HOME/.bash_profile" \
             '[ -f "$HOME/.bashrc" ] && . "$HOME/.bashrc"'
         return
@@ -150,11 +153,15 @@ ensure_login_chain() {
 
     # $BASH_VERSION guard: ~/.profile is also read by /bin/sh, which would
     # choke on bashrc's shopt/bind/[[ ]].
+    # Write these variables literally for login time.
+    # shellcheck disable=SC2016
     ensure_bash_hook "$first" \
         '[ -n "$BASH_VERSION" ] && [ -f "$HOME/.bashrc" ] && . "$HOME/.bashrc"'
 }
 
 info "Hooking bash into zfiles config..."
+# Write these variables literally for shell startup.
+# shellcheck disable=SC2016
 ensure_bash_hook "$HOME/.bashrc" \
     '[ -f "$HOME/.config/bash/rc.sh" ] && . "$HOME/.config/bash/rc.sh"'
 ensure_login_chain
@@ -219,11 +226,14 @@ fi
 
 # Symlink Omarchy theme to neovim plugins
 OMARCHY_THEME="$HOME/.local/state/omarchy/current/theme/neovim.lua"
-NVIM_THEME_LINK="$NVIM_DIR/lua/plugins/omarchy-theme.lua"
+NVIM_THEME_LINK="$NVIM_DIR/lua/plugins/theme.lua"
+LEGACY_NVIM_THEME_LINK="$NVIM_DIR/lua/plugins/omarchy-theme.lua"
+
+[[ -L "$LEGACY_NVIM_THEME_LINK" ]] && rm "$LEGACY_NVIM_THEME_LINK"
 
 if [[ -f "$OMARCHY_THEME" ]]; then
     mkdir -p "$(dirname "$NVIM_THEME_LINK")"
-    ln -sf "$OMARCHY_THEME" "$NVIM_THEME_LINK"
+    ln -sfn "$OMARCHY_THEME" "$NVIM_THEME_LINK"
     info "Symlinked Omarchy theme to neovim plugins"
 else
     info "No Omarchy theme here — neovim uses its own default colorscheme."

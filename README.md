@@ -12,7 +12,7 @@ This overlay extends Omarchy with:
 - **Zsh** - Shell configuration (Omarchy uses bash by default)
 - **Keyd** - Caps Lock → Escape (tap) / Super (hold)
 - **Hyprland bindings** - Custom keybindings layered on top of Omarchy's defaults
-- **Theme integration** - herdr, Sioyek and Yazi follow Omarchy's theme automatically
+- **Theme integration** - Sioyek, Yazi, Neovim and opencode follow Omarchy's theme automatically
 - **Neovim** - Personal config synced with Omarchy themes
 - **Additional tools** - herdr, yazi, sioyek, cura
 
@@ -28,11 +28,11 @@ zfiles/
 │   ├── setup.sh          # gpg, zsh/zap, bash hook, ble.sh, nvim, herdr, pi…
 │   └── stow/             # shell zsh bash yazi herdr opencode pi scripts sioyek xdg
 ├── omarchy/              # Arch + Omarchy desktop (Hyprland)
-│   ├── setup.sh          # pacman/AUR, keyd, email tools, theme hooks, docker
+│   ├── setup.sh          # pacman/AUR, keyd, email tools, Quattro reconciliation
 │   ├── pkglist.txt
-│   ├── hooks/            # Omarchy theme-set / post-update hooks
+│   ├── config/hypr/      # source for deployed, Omarchy-managed Lua modules
 │   ├── root_etc/         # /etc/keyd/default.conf (Caps → Esc/Super)
-│   └── stow/             # hypr himalaya mirador omarchy cura wireplumber
+│   └── stow/             # hypr himalaya carillon omarchy cura wireplumber
 ├── wsl/                  # WSL Ubuntu work laptop
 │   ├── setup.sh          # apt + mise, herdr-navd, Windows-side dispatch
 │   ├── pkglist.txt
@@ -56,9 +56,12 @@ cd ~/zfiles
 
 Reboot after installation for keyd to take effect.
 
+After an `omarchy upgrade-to-quattro`, re-run `bootstrap.sh`; the one-time
+upgrade does not dispatch the normal `post-update` hooks.
+
 ### Targets
 
-`bootstrap.sh` detects four orthogonal facts, picks ONE target directory from
+`bootstrap.sh` detects three environment facts, picks ONE target directory from
 them, and sources that directory's `setup.sh` (which defines
 `target_packages()` and `target_setup()` around the shared steps):
 
@@ -68,15 +71,15 @@ them, and sources that directory's `setup.sh` (which defines
   `$HOME`: **never sudo, never a package manager, never `chsh`**. See
   [Remote servers](#remote-servers) below.
 - **Omarchy** (`~/.config/omarchy/` or `~/.local/share/omarchy/` exists) —
-  full overlay: common + Hyprland bindings, keyd, theme hooks, himalaya/mirador,
-  cura/wireplumber, docker.
+  full overlay: common + Hyprland bindings, keyd, theme hooks, himalaya/carillon,
+  cura/wireplumber, and Docker socket activation.
 - **WSL** (`/proc/version` mentions Microsoft) — common packages via apt + mise
   (`wsl/pkglist.txt`; neovim/yazi/go/rust/bun/opencode via mise since noble
   is stale or missing them) and pinentry-curses. The Windows side runs from
   `wsl/windows/install.ps1` — see [The Windows side](#the-windows-side).
-- **Package manager** (pacman vs apt) — forced to `none` on remote, or with
-  `ZFILES_SKIP_PKG=1` (cheap re-runs: re-stow and reconfigure without the
-  minutes-long package step).
+
+Set `ZFILES_SKIP_PKG=1` for cheap re-runs that re-stow and reconcile the target
+without repeating the minutes-long package installation step.
 
 Packages are auto-discovered: everything under `common/stow/` plus the
 target's `stow/` gets stowed — `ls <dir>/stow` IS the package list. Common
@@ -138,7 +141,7 @@ block:
 ```
 
 so a server's site setup (lmod, `module`, conda init) survives untouched, and
-`stow --adopt` can never swallow a pre-existing `~/.bashrc` into the repo. If
+Stow can never swallow a pre-existing `~/.bashrc` into the repo. If
 the login chain (`.bash_profile` → `.bash_login` → `.profile`) doesn't already
 reach `~/.bashrc`, bootstrap wires that up too. Anything it overwrites or
 displaces first lands in `~/.local/state/zfiles/backup/`.
@@ -150,7 +153,7 @@ Each package directory is independent. To install just one:
 ```bash
 cd ~/zfiles
 stow -d common/stow  --no-folding --target=$HOME sioyek
-stow -d omarchy/stow --no-folding --target=$HOME hypr
+stow -d omarchy/stow --no-folding --target=$HOME carillon
 ```
 
 Bootstrap is just the orchestrator — `stow` itself is per-package.
@@ -161,10 +164,12 @@ Bootstrap is just the orchestrator — `stow` itself is per-package.
 
 Omarchy 4 configures Hyprland in Lua: `~/.config/hypr/hyprland.lua` loads
 Omarchy's defaults, then `require`s your `hypr.monitors`, `hypr.bindings` and
-`hypr.autostart` modules. The stowed `omarchy/stow/hypr/.config/hypr/*.lua`
-files *are* those modules — no `source =` line to wire up.
+`hypr.autostart` modules. Bootstrap deploys these from `omarchy/config/hypr/`
+as regular files because Omarchy refreshes and migrations manage those paths;
+repository symlinks would let those commands overwrite tracked source.
 
-Edit `omarchy/stow/hypr/.config/hypr/bindings.lua` to add your own bindings.
+Edit `omarchy/config/hypr/bindings.lua` to add your own bindings, then re-run
+`bootstrap.sh`.
 Unbind a default before rebinding its key:
 
 ```lua
@@ -176,11 +181,10 @@ o.bind("SUPER + SHIFT + A", "Claude", { webapp = "https://claude.ai" })
 `omarchy menu keybindings --print` lists what's currently bound. The
 old `.conf` files are not loaded at all on Omarchy 4.
 
-> **After an Omarchy update**, `omarchy/hooks/post-update` checks that every
-> stowed `hypr/*.lua` is still a symlink into the repo and that the overlay's
-> binds are actually loaded. If a migration dropped a real file in its place
-> (the 4.0 `.conf` → `.lua` move did exactly that), you get a critical
-> notification — re-run `bootstrap.sh` to restow.
+> **After an Omarchy update**, the stowed `post-update.d/zfiles` hook compares
+> the deployed Lua modules with their repository sources and confirms the
+> overlay's bindings are loaded. Drift produces a critical notification;
+> re-run `bootstrap.sh` to redeploy.
 
 ### Caps Lock Behavior
 
@@ -434,13 +438,15 @@ Omarchy renders the active theme into `~/.local/state/omarchy/current/theme/`
 zfiles stows one for yazi). On every theme switch the `theme-set` hook adds:
 - Sioyek — writes `sioyek-prefs.config` into the rendered theme dir;
   `~/.config/sioyek/prefs_user.config` is a symlink to it.
-- Opencode — maps the Omarchy theme name onto `~/.config/opencode/tui.json`.
+- Opencode — maps the Omarchy theme name onto `~/.config/opencode/tui.json`;
+  active agent sessions are not re-signalled, so they pick it up on next launch.
 - Yazi — the stowed yazi `theme.toml` always selects a flavor named `zfiles`; each target
   decides what fills `~/.config/yazi/flavors/zfiles.yazi/`. On Omarchy it's a
   symlink to the rendered theme, so yazi follows theme switches. On WSL and
   remote it's static Catppuccin Mocha (`ya pkg add yazi-rs/flavors:catppuccin-mocha`).
 
-Notifications are Omarchy's own shell (mako is gone as of 4.0).
+Notifications are Omarchy's own shell (mako is gone as of 4.0). Carillon watches
+the Himalaya accounts and sends new-mail events to it through `notify-send`.
 
 ### Neovim
 
@@ -459,12 +465,13 @@ The bootstrap script clones [my neovim config](https://github.com/zstreeter/nvim
    `setup.sh`
 2. Runs the target's package step (pacman/AUR, apt + mise, or mise-only on
    remote), then backfills the core CLI tools via mise on every target
-3. Backs up any file `stow` would collide with, then stows every package under
-   `common/stow/` and the target's `stow/` (`--no-folding`, adopt-and-revert)
+3. Moves aside any file `stow` would collide with, removes retired targets from
+   the previous manifest, then stows every package under `common/stow/` and the
+   target's `stow/` (`--no-folding`, never `--adopt`)
 4. Runs `common/setup.sh`: GPG agent, zsh + Zap, the bash hook, ble.sh,
    neovim clone, herdr + agent integrations, pi, XDG hygiene, yazi plugins,
    research workspace
-5. Runs the target's `target_setup()`: keyd/Hyprland/theme hooks/email/docker
+5. Runs the target's `target_setup()`: keyd/Hyprland/theme hooks/email/services
    on Omarchy; `herdr-navd` and `wsl/windows/install.ps1` (AutoHotkey, GlazeWM,
    WezTerm, `.wslconfig`) on WSL
 
@@ -480,5 +487,6 @@ common/stow/newpkg/
         └── config.toml
 ```
 
-No arrays to edit — bootstrap auto-discovers it on the next run. (Remote is
+No arrays to edit — bootstrap auto-discovers it on the next run and removes
+retired target links using its state manifest. (Remote is
 the one exception: its whitelist is `STOW_ONLY` in `remote/setup.sh`.)

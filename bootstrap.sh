@@ -36,17 +36,8 @@ fi
 WSL=false
 ! $REMOTE && grep -qi microsoft /proc/version 2>/dev/null && WSL=true
 
-# ZFILES_SKIP_PKG=1 forces the "no package manager" branch. The package step is
-# the only part that needs sudo and the only part that takes minutes; skipping
-# it makes re-runs (fixing a config, re-stowing after an edit) cheap.
-PKG=none
-if $REMOTE || [[ -n "${ZFILES_SKIP_PKG:-}" ]]; then
-    PKG=none
-elif command -v pacman &>/dev/null; then
-    PKG=pacman
-elif command -v apt-get &>/dev/null; then
-    PKG=apt
-fi
+# The package step is the slow, privileged part. ZFILES_SKIP_PKG=1 leaves the
+# overlay and setup reconciliation active while skipping package installation.
 
 TARGET=linux
 $WSL && TARGET=wsl
@@ -77,18 +68,23 @@ install_mise_stack() {
 # Each <target>/setup.sh defines target_packages() and target_setup(), and may
 # override PINENTRY (consumed by common/setup.sh for gpg-agent) or STOW_ONLY
 # (a package whitelist — remote stows a subset of common).
-PINENTRY=/usr/bin/pinentry-gtk
+export PINENTRY=/usr/bin/pinentry-gtk
 STOW_ONLY=()
 target_packages() {
     warn "Plain Linux — no package step. Core CLI tools are backfilled via mise below."
 }
 target_setup() { :; }
+# shellcheck source=/dev/null
 [[ -f "$TARGET/setup.sh" ]] && source "$TARGET/setup.sh"
 
 info "Target: $TARGET"
 
 # 1. Target packages
-target_packages
+if [[ -n "${ZFILES_SKIP_PKG:-}" ]]; then
+    info "Skipping package installation (ZFILES_SKIP_PKG is set)."
+else
+    target_packages
+fi
 
 # 1b. Core CLI backfill.
 #
@@ -116,9 +112,11 @@ if ((${#missing_tools[@]})); then
     for bin in "${!CORE_CLI_TOOLS[@]}"; do
         command -v "$bin" &>/dev/null || still_missing+=("$bin")
     done
-    ((${#still_missing[@]})) \
-        && warn "Still unavailable after mise: ${still_missing[*]} — yazi's z/Z and search bindings will not work." \
-        || info "All core CLI tools present."
+    if ((${#still_missing[@]})); then
+        warn "Still unavailable after mise: ${still_missing[*]} — yazi's z/Z and search bindings will not work."
+    else
+        info "All core CLI tools present."
+    fi
 else
     info "All core CLI tools present."
 fi
@@ -130,36 +128,53 @@ fi
 info "Stowing dotfiles..."
 command -v stow &>/dev/null || error "stow not installed — rerun the package step or install it manually."
 
-# Never tree-fold. By default stow links the deepest directory it can — and
-# most packages here have `.config/<name>/` as their only child, so they fold:
-# `~/.config/foo` becomes a symlink to `repo/.../foo`, and anything written to
-# ~/.config/foo/ afterwards lands *inside the repo*. That is where this repo's
-# stray secrets.sh, .zcompdump, zsh-syntax-highlighting/ and vendored yazi
-# plugins all came from. Blanket, not a list — an allowlist is one forgotten
-# entry away from reintroducing the bug. The cost is that a *newly added* file
-# in an existing package needs a re-stow to appear.
-STOW_FLAGS=(--adopt --no-folding --target="$HOME")
-
-# `stow --adopt` silently absorbs an existing real file into the repo, and the
-# revert below then throws its contents away. That is how a machine's
-# pre-zfiles ~/.bashrc would vanish. So: ask stow what it *would* refuse to
-# overwrite (a plain simulation, no --adopt), and stash those aside first.
-STOW_BACKUP_DIR="${XDG_STATE_HOME:-$HOME/.local/state}/zfiles/backup/$(date +%Y%m%d%H%M%S)"
+# Never tree-fold or adopt. Folding lets runtime files land in the repository;
+# adoption lets pre-existing machine config overwrite tracked source files.
+STOW_FLAGS=(--no-folding --target="$HOME")
+STOW_BACKUP_DIR="${XDG_STATE_HOME:-$HOME/.local/state}/zfiles/backup/$(date +%Y%m%d%H%M%S).$$"
+BACKED_UP=()
+RETIRED=()
+declare -A PRESENT_STOW_TARGETS=()
 
 backup_stow_conflicts() {
     local stow_dir="$1" pkg="$2" rel conflicts
-    # stow reports conflicts on stderr as:
-    #   * existing target is neither a link nor a directory: .bashrc
     conflicts=$(stow -n -v -d "$stow_dir" --target="$HOME" "$pkg" 2>&1 \
         | sed -n 's/.*existing target is [^:]*: //p' || true)
     [[ -n "$conflicts" ]] || return 0
 
     while IFS= read -r rel; do
-        [[ -n "$rel" && -e "$HOME/$rel" ]] || continue
+        [[ -n "$rel" && ( -e "$HOME/$rel" || -L "$HOME/$rel" ) ]] || continue
         mkdir -p "$STOW_BACKUP_DIR/$(dirname "$rel")"
-        cp -a "$HOME/$rel" "$STOW_BACKUP_DIR/$rel"
+        mv "$HOME/$rel" "$STOW_BACKUP_DIR/$rel"
+        BACKED_UP+=("$rel")
         warn "Backed up pre-existing ~/$rel → $STOW_BACKUP_DIR/$rel"
     done <<< "$conflicts"
+}
+
+restore_stow_state() {
+    local rel
+
+    for rel in "${!CURRENT_STOW_TARGETS[@]}"; do
+        [[ ${PRESENT_STOW_TARGETS[$rel]+present} ]] && continue
+        target="$HOME/$rel"
+        if [[ -L "$target" && "$(readlink -m "$target")" == "$REPO_DIR/"* ]]; then
+            rm "$target"
+        fi
+    done
+
+    for rel in "${BACKED_UP[@]}"; do
+        [[ -e "$STOW_BACKUP_DIR/$rel" || -L "$STOW_BACKUP_DIR/$rel" ]] || continue
+        rm -f "$HOME/$rel"
+        mkdir -p "$HOME/$(dirname "$rel")"
+        mv "$STOW_BACKUP_DIR/$rel" "$HOME/$rel"
+    done
+
+    for rel in "${RETIRED[@]}"; do
+        [[ -L "$STOW_BACKUP_DIR/retired/$rel" ]] || continue
+        mkdir -p "$HOME/$(dirname "$rel")"
+        mv "$STOW_BACKUP_DIR/retired/$rel" "$HOME/$rel"
+    done
+    warn "Stow failed; restored the previous target state."
 }
 
 stow_selected() {
@@ -167,51 +182,61 @@ stow_selected() {
     [[ " ${STOW_ONLY[*]} " == *" $1 "* ]]
 }
 
-# Collect (stow dir, package) pairs and their repo-relative paths.
+# Collect packages and the target paths they currently own.
 STOW_DIRS=(common/stow)
 [[ -d "$TARGET/stow" ]] && STOW_DIRS+=("$TARGET/stow")
-
 STOW_PKG_PATHS=()
+declare -A CURRENT_STOW_TARGETS=()
 for stow_dir in "${STOW_DIRS[@]}"; do
     for pkg_path in "$stow_dir"/*/; do
         pkg=$(basename "$pkg_path")
-        stow_selected "$pkg" && STOW_PKG_PATHS+=("$stow_dir/$pkg")
+        if stow_selected "$pkg"; then
+            STOW_PKG_PATHS+=("$stow_dir/$pkg")
+            while IFS= read -r source; do
+                CURRENT_STOW_TARGETS["${source#"$pkg_path"}"]=1
+            done < <(find "$pkg_path" \( -type f -o -type l \) -print)
+        fi
     done
 done
 
-# Snapshot which package files were already dirty. `--adopt` rewrites a repo
-# file with the contents of whatever it found in $HOME, so the run has to end
-# with a revert — but a blanket revert also throws away uncommitted edits that
-# were in flight before bootstrap started. Anything dirty going in stays dirty
-# coming out; only what stow itself changed gets reverted.
-readarray -t PRE_DIRTY < <(git diff --name-only -- "${STOW_PKG_PATHS[@]}" 2>/dev/null || true)
+for rel in "${!CURRENT_STOW_TARGETS[@]}"; do
+    [[ -e "$HOME/$rel" || -L "$HOME/$rel" ]] && PRESENT_STOW_TARGETS["$rel"]=1
+done
 
+# A manifest gives deletion the inverse of auto-discovery: remove only retired
+# targets that are still links into this repository.
+STOW_MANIFEST="${XDG_STATE_HOME:-$HOME/.local/state}/zfiles/stow-targets"
+if [[ -f "$STOW_MANIFEST" ]]; then
+    trap restore_stow_state ERR
+    while IFS= read -r rel; do
+        [[ -n "$rel" ]] || continue
+        [[ -n "$rel" && ! ${CURRENT_STOW_TARGETS[$rel]+present} ]] || continue
+        target="$HOME/$rel"
+        if [[ -L "$target" && "$(readlink -m "$target")" == "$REPO_DIR/"* ]]; then
+            mkdir -p "$STOW_BACKUP_DIR/retired/$(dirname "$rel")"
+            mv "$target" "$STOW_BACKUP_DIR/retired/$rel"
+            RETIRED+=("$rel")
+            info "Removed retired stow target ~/$rel"
+        fi
+    done < "$STOW_MANIFEST"
+fi
+
+trap restore_stow_state ERR
 for pkg_path in "${STOW_PKG_PATHS[@]}"; do
     stow_dir=$(dirname "$pkg_path")
     pkg=$(basename "$pkg_path")
     backup_stow_conflicts "$stow_dir" "$pkg"
-    # This links service files to ~/.config/systemd/user/ if structured correctly
     stow "${STOW_FLAGS[@]}" -d "$stow_dir" "$pkg"
 done
+trap - ERR
+rm -rf "$STOW_BACKUP_DIR/retired"
 
-readarray -t POST_DIRTY < <(git diff --name-only -- "${STOW_PKG_PATHS[@]}" 2>/dev/null || true)
-ADOPTED=()
-for f in "${POST_DIRTY[@]}"; do
-    was_dirty=false
-    for p in "${PRE_DIRTY[@]}"; do
-        [[ "$p" == "$f" ]] && { was_dirty=true; break; }
-    done
-    $was_dirty || ADOPTED+=("$f")
-done
-if ((${#ADOPTED[@]})); then
-    git checkout -- "${ADOPTED[@]}"
-    info "Reverted ${#ADOPTED[@]} file(s) adopted by stow."
-fi
-if ((${#PRE_DIRTY[@]})); then
-    warn "Left ${#PRE_DIRTY[@]} uncommitted change(s) in stowed packages alone: ${PRE_DIRTY[*]}"
-fi
+mkdir -p "$(dirname "$STOW_MANIFEST")"
+printf '%s\n' "${!CURRENT_STOW_TARGETS[@]}" | sort > "$STOW_MANIFEST.tmp"
+mv "$STOW_MANIFEST.tmp" "$STOW_MANIFEST"
 
 # 3. Shared setup (every target; remote-hostile steps guard themselves)
+# shellcheck source=common/setup.sh
 source common/setup.sh
 
 # 4. Target-specific setup

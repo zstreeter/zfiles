@@ -1,0 +1,17 @@
+[Unit]
+Description=Carillon Email Watcher for %i
+After=graphical-session.target
+PartOf=graphical-session.target
+
+[Service]
+ExecStart=%h/.local/share/cargo/bin/carillon watch --account %i
+Restart=on-failure
+RestartSec=10
+Environment=RUST_LOG=info
+# pass / gpg expect XDG-relocated stores (see bootstrap.sh §8d).
+# The systemd user env doesn't inherit zsh exports, so set them here.
+Environment=PASSWORD_STORE_DIR=%h/.local/share/password-store
+Environment=GNUPGHOME=%h/.local/share/gnupg
+
+[Install]
+WantedBy=graphical-session.target

@@ -27,18 +27,10 @@ if [[ ! -f "$COLORS_FILE" ]]; then
     exit 0
 fi
 
-# Read a hex color value from colors.toml. Tolerates `key = "#xxx"` and
-# `key="#xxx"`. (colors.toml uses full-line comments only, so no inline
-# comment stripping — and stripping `#.*$` would eat the color hex.)
+# Use Omarchy's resolver so both semantic Quattro palettes and legacy themes
+# expose the same color names.
 get_color() {
-    awk -F'=' -v k="$1" '
-        $1 ~ ("^[[:space:]]*"k"[[:space:]]*$") {
-            v = $2
-            gsub(/[[:space:]"\047]/, "", v)  # strip whitespace and quotes
-            print v
-            exit
-        }
-    ' "$COLORS_FILE"
+    omarchy-theme-color --file "$COLORS_FILE" "$1"
 }
 
 # === Sioyek: RGB-float prefs ===
@@ -47,6 +39,10 @@ get_color() {
 # in our setup). Atomic write via tmp+mv.
 hex_to_rgb_float() {
     local hex="${1#\#}"
+    [[ "$hex" =~ ^[0-9a-fA-F]{6}$ ]] || {
+        echo "theme-set hook: invalid color '$1'" >&2
+        return 1
+    }
     awk -v h="$hex" 'BEGIN {
         r = strtonum("0x" substr(h,1,2))
         g = strtonum("0x" substr(h,3,2))
@@ -57,9 +53,9 @@ hex_to_rgb_float() {
 
 bg_rgb=$(hex_to_rgb_float "$(get_color background)")
 fg_rgb=$(hex_to_rgb_float "$(get_color foreground)")
-sel_rgb=$(hex_to_rgb_float "$(get_color selection_background)")
-accent_rgb=$(hex_to_rgb_float "$(get_color color4)")
-warn_rgb=$(hex_to_rgb_float "$(get_color color3)")
+sel_rgb=$(hex_to_rgb_float "$(get_color selection)")
+accent_rgb=$(hex_to_rgb_float "$(get_color blue)")
+warn_rgb=$(hex_to_rgb_float "$(get_color yellow)")
 
 SIOYEK_OUT="$THEME_DIR/sioyek-prefs.config"
 cat > "$SIOYEK_OUT.tmp" << EOF
@@ -119,12 +115,8 @@ cat > "$OPENCODE_TUI.tmp" << EOF
 EOF
 mv "$OPENCODE_TUI.tmp" "$OPENCODE_TUI"
 echo "theme-set hook: Set opencode TUI theme to $OC_THEME"
-
-# Re-signal opencode so it picks up the new tui.json. omarchy-restart-opencode
-# already restarted it once before our hook ran, but with the OLD tui.json.
-if pgrep -x opencode >/dev/null; then
-    killall -SIGUSR2 opencode 2>/dev/null || true
-fi
+# Do not signal every opencode process here: that interrupts active agents.
+# New sessions read the updated file; Omarchy already handles its own reload.
 
 # herdr config is a static stowed dotfile (zfiles/herdr), no longer theme-rendered,
 # so there's nothing to reload on theme-set.

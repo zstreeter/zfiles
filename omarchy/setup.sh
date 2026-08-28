@@ -1,7 +1,8 @@
 # Omarchy target (Arch + Hyprland desktop). Sourced by bootstrap.sh;
 # defines target_packages / target_setup, expects REPO_DIR + helpers.
+# shellcheck shell=bash
 
-PINENTRY=/usr/bin/pinentry-gtk
+export PINENTRY=/usr/bin/pinentry-gtk
 
 target_packages() {
     info "Installing packages (pacman)..."
@@ -34,10 +35,15 @@ target_setup() {
     sudo cp "$REPO_DIR/omarchy/root_etc/keyd/default.conf" /etc/keyd/default.conf
     sudo systemctl enable --now keyd
 
-    # Pimalaya tools (Himalaya & Mirador) — configs come from the stowed
-    # himalaya/mirador packages, which only exist on this target.
+    # Pimalaya tools (Himalaya & Carillon) — configs come from the stowed
+    # himalaya/carillon packages, which only exist on this target.
     info "Checking Pimalaya tools..."
     if command -v cargo &>/dev/null; then
+        export CARGO_HOME="$HOME/.local/share/cargo"
+        export RUSTUP_HOME="$HOME/.local/share/rustup"
+        export PATH="$CARGO_HOME/bin:$PATH"
+        mkdir -p "$CARGO_HOME"
+
         # himalaya-tui needs the v2 config schema, and crates.io still ships
         # v1.2.0 — so install the CLI v2 from git too. Keep both binaries on v2
         # or the shared ~/.config/himalaya/config.toml won't parse.
@@ -56,48 +62,69 @@ target_setup() {
         else
             info "himalaya-tui is already installed."
         fi
+
+        info "Installing/updating Carillon from git..."
+        cargo install --locked --git https://github.com/pimalaya/carillon.git
     else
-        warn "Cargo not found! Skipping Himalaya installation."
+        warn "Cargo not found! Skipping Pimalaya installation."
     fi
 
-    if ! command -v mirador &>/dev/null; then
-        info "Mirador not found. Installing via AUR..."
-        # AUR_HELPER comes from target_packages; ZFILES_SKIP_PKG skips that
-        # step, so re-derive it here rather than crash on an unset variable.
-        "${AUR_HELPER:-$(command -v paru || command -v yay || echo paru)}" \
-            -S --needed --noconfirm mirador-git
-    else
-        info "Mirador is already installed."
+    # Carillon replaced Mirador; remove artifacts left by the retired stow
+    # package and its two old installation paths.
+    systemctl --user disable --now mirador@gmail mirador@work 2>/dev/null || true
+    [[ -L "$HOME/.config/mirador/config.toml" ]] && rm "$HOME/.config/mirador/config.toml"
+    [[ -L "$HOME/.config/systemd/user/mirador@.service" ]] && rm "$HOME/.config/systemd/user/mirador@.service"
+    rmdir "$HOME/.config/mirador" 2>/dev/null || true
+    cargo uninstall mirador >/dev/null 2>&1 || true
+    if pacman -Qq mirador-git &>/dev/null; then
+        sudo pacman -Rns --noconfirm mirador-git
     fi
 
-    info "Configuring Mirador services..."
-    systemctl --user daemon-reload
-    systemctl --user enable --now mirador@gmail 2>/dev/null || true
-    systemctl --user enable --now mirador@work 2>/dev/null || true
+    if [[ -x "$HOME/.local/share/cargo/bin/carillon" ]]; then
+        info "Configuring Carillon services..."
+        systemctl --user daemon-reload
+        systemctl --user enable carillon@gmail carillon@work
+        systemctl --user restart carillon@gmail carillon@work
+    else
+        warn "Carillon is unavailable; email watcher services were not started."
+    fi
 
-    # Hyprland (Omarchy 4, Lua config): hyprland.lua already requires
-    # hypr.monitors / hypr.bindings / hypr.autostart — the stowed
-    # omarchy/stow/hypr/.config/hypr/*.lua files ARE those modules. Nothing to
-    # wire; Omarchy's migration drops template copies of them, which the
-    # stow conflict backup stashes aside.
-    info "Reloading Hyprland..."
-    hyprctl reload >/dev/null 2>&1 || true
+    # These are supported user modules, but Omarchy refreshes and migrations
+    # rewrite their paths. Deploy copies so those writes cannot mutate git.
+    info "Deploying Hyprland overlay..."
+    local source name
+    mkdir -p "$HOME/.config/hypr"
+    for source in "$REPO_DIR"/omarchy/config/hypr/*.lua; do
+        name=$(basename "$source")
+        cp "$source" "$HOME/.config/hypr/$name.tmp"
+        mv "$HOME/.config/hypr/$name.tmp" "$HOME/.config/hypr/$name"
+    done
+    rm -f "$HOME/.config/hypr/hypridle.conf" "$HOME/.config/hypr/hyprlock.conf"
+    if hyprctl reload >/dev/null 2>&1; then
+        if [[ -n "$(hyprctl configerrors)" ]]; then
+            hyprctl configerrors >&2
+            return 1
+        fi
+    else
+        warn "Hyprland is not running; deployed overlay will load next session."
+    fi
 
     # Omarchy theme hooks + consumers
     #
-    # Theme architecture (see omarchy/hooks/theme-set for full detail):
+    # Theme architecture (see the stowed theme-set.d/zfiles hook):
     #   Templates:   omarchy/stow/omarchy/.config/omarchy/themed/*.tpl (stowed)
     #   Rendered:    ~/.local/state/omarchy/current/theme/<file>  (Omarchy's engine)
     #   Hook output: ~/.local/state/omarchy/current/theme/sioyek-prefs.config (our hook)
     #   Consumers:   user configs symlink into the rendered dir; on theme
     #                switch, Omarchy's `mv next-theme current` swaps everything
     #                atomically and the hook regenerates sioyek/opencode.
-    info "Installing Omarchy hooks..."
-    local hooks_dir="$HOME/.config/omarchy/hooks"
-    mkdir -p "$hooks_dir"
-    ln -sfn "$REPO_DIR/omarchy/hooks/theme-set"   "$hooks_dir/theme-set"
-    ln -sfn "$REPO_DIR/omarchy/hooks/post-update" "$hooks_dir/post-update"
-    chmod +x "$REPO_DIR/omarchy/hooks/theme-set" "$REPO_DIR/omarchy/hooks/post-update"
+    local legacy_hook
+    for legacy_hook in theme-set post-update; do
+        if [[ -L "$HOME/.config/omarchy/hooks/$legacy_hook" \
+            && "$(readlink -m "$HOME/.config/omarchy/hooks/$legacy_hook")" == "$REPO_DIR/"* ]]; then
+            rm "$HOME/.config/omarchy/hooks/$legacy_hook"
+        fi
+    done
 
     # Seed the upstream-template snapshot used by post-update's drift check.
     # On first install we treat the current upstream as "reviewed."
@@ -107,7 +134,7 @@ target_setup() {
     for user_tpl in "$REPO_DIR"/omarchy/stow/omarchy/.config/omarchy/themed/*.tpl; do
         [[ -f "$user_tpl" ]] || continue
         name=$(basename "$user_tpl")
-        upstream="$HOME/.local/share/omarchy/default/themed/$name"
+        upstream="${OMARCHY_PATH:-/usr/share/omarchy}/default/themed/$name"
         if [[ -f "$upstream" && ! -f "$snapshot_dir/$name" ]]; then
             cp "$upstream" "$snapshot_dir/$name"
         fi
@@ -128,17 +155,18 @@ target_setup() {
     ln -snf "$theme_dir/sioyek-prefs.config"      "$HOME/.config/sioyek/prefs_user.config"
     # herdr config is a plain stowed dotfile (common/stow/herdr), not a theme template.
 
-    # Trigger a full theme re-set so Omarchy renders our user templates and
-    # our hook generates its outputs. The theme name lives in theme.name
-    # (not in the `current` symlink itself, which points to a real dir).
+    # Rebuild current state without restarting applications, then run only our
+    # renderer. A normal theme set restarts opencode and interrupts live agents.
     if [[ -f "$HOME/.local/state/omarchy/current/theme.name" ]]; then
         local current_theme
         current_theme=$(cat "$HOME/.local/state/omarchy/current/theme.name")
-        info "Re-rendering theme: $current_theme"
-        omarchy-theme-set "$current_theme" || warn "omarchy-theme-set failed; templates may be stale until next theme switch"
+        info "Rendering overlay for theme: $current_theme"
+        OMARCHY_THEME_HEADLESS=1 OMARCHY_THEME_SKIP_BACKGROUND=1 omarchy-theme-set "$current_theme"
+        bash "$HOME/.config/omarchy/hooks/theme-set.d/zfiles" "$current_theme"
     fi
 
-    # Optional services (work laptops have their own sanctioned docker story)
-    info "Enabling services..."
-    sudo systemctl enable --now docker 2>/dev/null || true
+    info "Reconciling services..."
+    systemctl --user try-restart wireplumber.service
+    sudo systemctl enable --now docker.socket
+    sudo systemctl disable docker.service 2>/dev/null || true
 }
