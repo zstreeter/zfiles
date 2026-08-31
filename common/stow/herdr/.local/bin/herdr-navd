@@ -5,7 +5,8 @@ This is the WSL counterpart to hypr/.config/hypr/scripts/herdr-nav. Same
 precedence for a direction:
 
   1. If the current herdr pane runs nvim -> ask nvim to move between its
-     splits. If nvim actually moved, stop.
+     splits. If nvim actually moved, stop. A floating nvim window declines --
+     see NVIM_EXPR.
   2. Else if herdr has a pane in that direction -> focus it.
   3. Else -> move window focus in the tiling WM.
 
@@ -88,9 +89,18 @@ WATCH_RETRY_SECONDS = 2.0
 # Moves the cursor and reports whether it actually went anywhere -- one round
 # trip instead of a query, a move, and another query. pcall so a window-local
 # autocmd that throws can't take the whole expression down with it.
+#
+# A floating window declines before moving at all. "Did the current window
+# change?" is the right test for a normal split and a lie for a float: floats
+# are not in the layout tree, so `wincmd h|j|k|l` from one all land on the same
+# place -- the last-accessed window -- and every direction reports a move.
+# Without the guard a snacks picker or lazygit swallows all four directions and
+# herdr never sees them. The snacks terminal needs no special case:
+# `Snacks.terminal()` with no command is a bottom split, i.e. a normal window.
 NVIM_EXPR = (
     "luaeval('(function()"
     " local a=vim.api.nvim_get_current_win()"
+    ' if vim.api.nvim_win_get_config(a).relative~="" then return 0 end'
     ' pcall(vim.cmd,"wincmd {win}")'
     " return a~=vim.api.nvim_get_current_win() and 1 or 0"
     " end)()')"
