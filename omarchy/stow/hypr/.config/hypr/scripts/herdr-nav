@@ -13,6 +13,14 @@
 # $XDG_RUNTIME_DIR/nvim.<pid>.0, and one --remote-expr both moves and reports
 # whether it was already at the edge.
 #
+# A FLOATING nvim window declines outright. "Did the current window change?" is
+# the right test for a normal split and a lie for a float: floats are not in the
+# layout tree, so `wincmd h|j|k|l` from one all land on the same place -- the
+# last-accessed window -- and every direction reports a move. Without the guard
+# a snacks picker or lazygit swallows all four directions and herdr never sees
+# them. Nothing to special-case for the snacks terminal: `Snacks.terminal()`
+# with no command is a bottom split, so it is a normal window here.
+#
 # ponytail: assumes a single terminal window and that terminal == herdr (true
 # on this box). Omarchy 4 ships foot; ghostty kept for pre-4 installs. Each keypress spawns a few short-lived queries; latency is a few
 # tens of ms over local sockets — fine for interactive focus.
@@ -46,7 +54,7 @@ if [ -n "$nvim_pid" ]; then
   sock="$XDG_RUNTIME_DIR/nvim.$nvim_pid.0"
   if [ -S "$sock" ]; then
     moved=$(nvim --server "$sock" --remote-expr \
-      "luaeval('(function() local a=vim.api.nvim_get_current_win() pcall(vim.cmd,\"wincmd $win\") return a~=vim.api.nvim_get_current_win() and 1 or 0 end)()')" \
+      "luaeval('(function() local a=vim.api.nvim_get_current_win() if vim.api.nvim_win_get_config(a).relative~=\"\" then return 0 end pcall(vim.cmd,\"wincmd $win\") return a~=vim.api.nvim_get_current_win() and 1 or 0 end)()')" \
       2>/dev/null || echo 0)
     [ "$moved" = "1" ] && exit 0   # moved between nvim splits; done
   fi
