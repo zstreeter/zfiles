@@ -1,0 +1,67 @@
+# =============================================================================
+# himalaya v2 config — shared by himalaya CLI (v2.x) and himalaya-tui.
+#
+# Migrated from the v1 schema (backup kept out-of-tree during migration):
+#   email               -> from
+#   folder.aliases.*    -> mailbox.alias.*
+#   backend.host/port   -> imap.server = "imaps://host:port"  (993 = implicit TLS)
+#   backend.login       -> imap.sasl.plain.username
+#   backend.auth.cmd    -> imap.sasl.plain.password.command
+#   message.send.backend.* -> smtp.*   (587 start-tls => smtp://... + smtp.starttls)
+#
+# Passwords come from `pass` via a command; the env prefix pins the XDG GNUPG /
+# password-store dirs (single-quoted TOML literal so the inner "" survive).
+#
+# mailto: handling lives in the `himalaya-mailto` wrapper (himalaya/.local/bin):
+# it parses the URL, assembles a draft via v2's `message compose`, opens $EDITOR
+# in ghostty, then sends / saves-draft / discards. (v1's `message write -H` +
+# built-in mailto parser were both dropped in v2.)
+# =============================================================================
+
+[theme.envelope-seen]
+fg = "dark-gray"
+mod = ["dim"]
+
+[theme.envelope-unread]
+fg = "light-yellow"
+mod = ["bold"]
+
+# -----------------------------------------------------------------------------
+# Gmail (Personal)
+# -----------------------------------------------------------------------------
+[accounts.gmail]
+default = true
+from = "zacharylouis42@gmail.com"
+
+mailbox.alias.inbox = "INBOX"
+mailbox.alias.sent = "[Gmail]/Sent Mail"
+mailbox.alias.drafts = "[Gmail]/Drafts"
+mailbox.alias.trash = "[Gmail]/Trash"
+
+imap.server = "imaps://imap.gmail.com:993"
+imap.sasl.plain.username = "zacharylouis42@gmail.com"
+imap.sasl.plain.password.command = 'GNUPGHOME="${XDG_DATA_HOME:-$HOME/.local/share}/gnupg" PASSWORD_STORE_DIR="${XDG_DATA_HOME:-$HOME/.local/share}/password-store" pass show email/gmail-himalaya'
+
+smtp.server = "smtps://smtp.gmail.com:465"
+smtp.sasl.plain.username = "zacharylouis42@gmail.com"
+smtp.sasl.plain.password.command = 'GNUPGHOME="${XDG_DATA_HOME:-$HOME/.local/share}/gnupg" PASSWORD_STORE_DIR="${XDG_DATA_HOME:-$HOME/.local/share}/password-store" pass show email/gmail-himalaya'
+
+# -----------------------------------------------------------------------------
+# Work (JBI Tools)
+# -----------------------------------------------------------------------------
+[accounts.work]
+from = "zach@jbi.tools"
+
+mailbox.alias.inbox = "INBOX"
+mailbox.alias.sent = "INBOX.Sent"
+mailbox.alias.drafts = "INBOX.Drafts"
+mailbox.alias.trash = "INBOX.Trash"
+
+imap.server = "imaps://imap.hostinger.com:993"
+imap.sasl.plain.username = "zach@jbi.tools"
+imap.sasl.plain.password.command = 'GNUPGHOME="${XDG_DATA_HOME:-$HOME/.local/share}/gnupg" PASSWORD_STORE_DIR="${XDG_DATA_HOME:-$HOME/.local/share}/password-store" pass show email/work-himalaya'
+
+smtp.server = "smtp://smtp.hostinger.com:587"
+smtp.starttls = true
+smtp.sasl.plain.username = "zach@jbi.tools"
+smtp.sasl.plain.password.command = 'GNUPGHOME="${XDG_DATA_HOME:-$HOME/.local/share}/gnupg" PASSWORD_STORE_DIR="${XDG_DATA_HOME:-$HOME/.local/share}/password-store" pass show email/work-himalaya'

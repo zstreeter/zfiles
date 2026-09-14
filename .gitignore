@@ -1,0 +1,62 @@
+.zsh_history
+**/.zcompdump
+common/stow/yazi/.config/yazi/package.toml
+omarchy/stow/cura/.local/share/cura/.sentry-native/
+omarchy/stow/cura/.local/share/cura/stderr.log
+omarchy/stow/cura/.local/share/cura/stdout.log
+
+# API keys. secrets.env is the real path (~/.config/shell/secrets.env, created
+# by bootstrap outside the repo); the other name is a historical/mistyped one
+# that has shown up in-tree before. Ignore all of them everywhere — a folded
+# stow symlink is all it takes for one to land inside the repo.
+**/secrets.env
+**/secrets.sh
+
+# Editor/tool backup droppings (yazi writes keymap.toml-<epoch> on upgrade)
+**/*.toml-[0-9]*
+
+# pi runtime data — secrets, sessions, and migration artifacts.
+# The directory itself is stowed; these specific files must never be tracked.
+common/stow/pi/.config/pi/agent/auth.json
+common/stow/pi/.config/pi/agent/auth.json.migrated
+common/stow/pi/.config/pi/agent/oauth.json
+common/stow/pi/.config/pi/agent/oauth.json.migrated
+common/stow/pi/.config/pi/agent/sessions/
+common/stow/pi/.config/pi/agent/*.jsonl
+# Installed package tree: reconstructible from settings.example.json via
+# `pi install`, so the template is tracked and the materialised install is not.
+common/stow/pi/.config/pi/agent/npm/
+common/stow/pi/.config/pi/agent/git/
+# Machine-local model cache and pi's own pre-edit backups.
+common/stow/pi/.config/pi/agent/models-store.json
+common/stow/pi/.config/pi/agent/*.bak
+# settings.json names the provider and model this machine uses and is rewritten
+# by pi itself; models.json holds provider endpoints and credential refs. This
+# repository is public, so neither is tracked -- settings.example.json records
+# the package list instead.
+common/stow/pi/.config/pi/agent/settings.json
+common/stow/pi/.config/pi/agent/models.json
+
+# Defense-in-depth: yazi's theme is a runtime symlink at ~/.config/yazi/
+# flavors/zfiles.yazi, never inside the package. If either shows up here it
+# means stow folded the directory and the symlink landed in-tree — which
+# bootstrap's blanket --no-folding is supposed to prevent.
+common/stow/yazi/.config/yazi/omarchy-theme.toml
+common/stow/yazi/.config/yazi/flavors/
+
+# Zap installs zsh plugins to ~/.local/share/zap, never in-tree. A copy here
+# is fallout from the same folding bug.
+common/stow/zsh/.config/zsh/zsh-syntax-highlighting/
+
+# herdr-navd is an extensionless Python script, so importing or running it in
+# place leaves bytecode next to the stowed original.
+**/__pycache__/
+
+# Claude Code agent worktrees — scratch, never part of the dotfiles
+.claude/worktrees/
+
+# paperctl's per-host layer. config.toml beside it is committed and carries no
+# secrets; this is where the things that must not be published go — a contact
+# address for Unpaywall's polite pool, a machine-specific path. The committed
+# file promises in its own header that this one is ignored, so it has to be.
+common/stow/paperctl/.config/paperctl/local.toml

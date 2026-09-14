@@ -1,0 +1,655 @@
+#!/usr/bin/env python3
+"""measure — record what commands actually printed, so facts get quoted, not recalled.
+
+    measure run --tag hbm-peak -- ./bench --size 4096
+    measure recall hbm
+    measure show m-20260910-a3f21c
+    measure diff hbm-peak
+
+WHY THIS EXISTS
+
+An agent's memory of a number is not evidence. Across a context reset it keeps
+the conclusion ("peak HBM was 41 GB") and loses the provenance -- which machine,
+which commit, which flags, whether the tree was dirty. It then repeats the
+number with full confidence long after the code that produced it changed.
+
+The fix is not a notes file; a notes file is just another place to write down
+the same guess. The fix is that ENTRIES CANNOT BE ASSERTED. `measure run`
+executes the command and captures what came back, so a record is a byproduct of
+execution. The one exception, `measure note`, is stored with kind="note" and
+prints as UNVERIFIED everywhere it appears, precisely so it can never be
+mistaken for something that was run.
+
+The second half is staleness. Every entry carries the commit it was taken at,
+whether the tree was dirty, and the hash of any files named with --input. On
+recall, an entry whose inputs have since changed is marked STALE with the list
+of what moved. That is the difference between "41 GB" and "41 GB, measured at
+79ba8d4, and residualMarginals.cc has changed twice since -- re-run it."
+
+STORAGE
+
+One append-only JSONL file at <repo-root>/.measurements/ledger.jsonl (or
+$MEASURE_DIR). Append-only because the value is the history: a number that moved
+across commits is often the finding. Plain JSONL so `jq` works and so a
+half-written entry costs one line, not the ledger.
+
+Standard library only, no daemon, no server. It runs on the work server too,
+which is where the benchmarks actually are and where context resets cost most.
+"""
+
+import argparse
+import datetime as dt
+import difflib
+import hashlib
+import json
+import os
+import re
+import shutil
+import socket
+import subprocess
+import sys
+import threading
+import time
+from pathlib import Path
+
+# Enough to hold a profiler dump; past this we keep the head and the tail, which
+# is where the summary lines almost always are.
+MAX_CAPTURE = 64 * 1024
+LEDGER_NAME = "ledger.jsonl"
+
+
+# --- plumbing ---------------------------------------------------------------
+
+def _tty():
+    return sys.stdout.isatty() and os.environ.get("NO_COLOR") is None
+
+
+def c(code, s):
+    return f"\033[{code}m{s}\033[0m" if _tty() else s
+
+
+def die(msg, code=1):
+    print(f"measure: {msg}", file=sys.stderr)
+    sys.exit(code)
+
+
+def git(*args, cwd=None):
+    try:
+        out = subprocess.run(["git", *args], cwd=cwd, capture_output=True,
+                             text=True, timeout=10)
+        return out.stdout.strip() if out.returncode == 0 else None
+    except (OSError, subprocess.SubprocessError):
+        return None
+
+
+def repo_root():
+    """Ledger lives with the code it describes. Outside a repo, with the cwd."""
+    if os.environ.get("MEASURE_DIR"):
+        return Path(os.environ["MEASURE_DIR"]).expanduser().resolve()
+    top = git("rev-parse", "--show-toplevel")
+    return Path(top) if top else Path.cwd()
+
+
+def ledger_path(root):
+    return root / ".measurements" / LEDGER_NAME
+
+
+def git_state(root):
+    sha = git("rev-parse", "HEAD", cwd=root)
+    if not sha:
+        return {}
+    return {
+        "sha": sha,
+        "short": sha[:7],
+        "branch": git("rev-parse", "--abbrev-ref", "HEAD", cwd=root),
+        # A dirty tree means the measurement is not reproducible from the SHA
+        # alone. Recorded so recall can say so rather than implying it is.
+        # The ledger itself is untracked until someone commits it, and it must
+        # not count -- otherwise the first `measure run` dirties every run after.
+        "dirty": bool(git("status", "--porcelain", "--", ".",
+                          ":(exclude).measurements", cwd=root)),
+    }
+
+
+def file_sha(path):
+    try:
+        h = hashlib.sha256()
+        with open(path, "rb") as fh:
+            for chunk in iter(lambda: fh.read(1 << 16), b""):
+                h.update(chunk)
+        return h.hexdigest()
+    except OSError:
+        return None
+
+
+def load(root):
+    p = ledger_path(root)
+    if not p.exists():
+        return []
+    entries = []
+    for n, line in enumerate(p.read_text(errors="replace").splitlines(), 1):
+        line = line.strip()
+        if not line:
+            continue
+        try:
+            entries.append(json.loads(line))
+        except json.JSONDecodeError:
+            print(c("33", f"measure: skipping malformed ledger line {n}"),
+                  file=sys.stderr)
+    return entries
+
+
+def append(root, entry):
+    p = ledger_path(root)
+    p.parent.mkdir(parents=True, exist_ok=True)
+    with open(p, "a") as fh:
+        fh.write(json.dumps(entry, sort_keys=True) + "\n")
+
+
+def make_id(entry):
+    blob = json.dumps(entry, sort_keys=True).encode()
+    stamp = dt.datetime.now().strftime("%Y%m%d")
+    return f"m-{stamp}-{hashlib.sha256(blob).hexdigest()[:6]}"
+
+
+def ago(iso):
+    try:
+        then = dt.datetime.fromisoformat(iso)
+    except (TypeError, ValueError):
+        return "?"
+    delta = dt.datetime.now(then.tzinfo) - then
+    s = int(delta.total_seconds())
+    if s < 90:
+        return f"{s}s ago"
+    if s < 5400:
+        return f"{s // 60}m ago"
+    if s < 172800:
+        return f"{s // 3600}h ago"
+    return f"{s // 86400}d ago"
+
+
+# --- staleness --------------------------------------------------------------
+
+def staleness(entry, cur, root):
+    """Return (status, detail). Statuses: ok, stale, unknown, note.
+
+    Recorded --input hashes are the strong signal and outrank everything: if the
+    files that fed a measurement are byte-identical, the measurement still
+    stands no matter how far HEAD has moved. Without them all we have is the
+    commit, which can only say "something may have changed" -- reported as
+    unknown rather than ok, because a confident-but-wrong number is the exact
+    failure this tool exists to prevent.
+    """
+    if entry.get("kind") == "note":
+        return "note", "not executed"
+
+    inputs = entry.get("inputs") or []
+    if inputs:
+        changed = [i["path"] for i in inputs
+                   if file_sha(root / i["path"]) != i["sha256"]]
+        if changed:
+            return "stale", "changed: " + ", ".join(changed[:3]) + (
+                f" (+{len(changed) - 3})" if len(changed) > 3 else "")
+        return "ok", "inputs unchanged"
+
+    was, now = entry.get("git") or {}, cur or {}
+    if was.get("dirty"):
+        return "unknown", "measured on a dirty tree"
+    if was.get("sha") and now.get("sha") and was["sha"] != now["sha"]:
+        return "unknown", f"taken at {was.get('short')}, HEAD is {now.get('short')}"
+    if not was.get("sha"):
+        return "unknown", "no commit recorded"
+    return "ok", f"at {was.get('short')}"
+
+
+STATUS_COLOR = {"ok": "32", "stale": "31", "unknown": "33", "note": "35"}
+STATUS_LABEL = {"ok": "OK", "stale": "STALE", "unknown": "?", "note": "UNVERIFIED"}
+
+
+def status_tag(status, width=10):
+    # Pad before colouring: a %-*s format counts the escape bytes, so padding a
+    # coloured string silently misaligns every row on a tty.
+    return c(STATUS_COLOR[status], f"{STATUS_LABEL[status]:<{width}}")
+
+
+# --- run --------------------------------------------------------------------
+
+def tee(src, sink, chunks):
+    for line in iter(src.readline, b""):
+        sink.buffer.write(line)
+        sink.buffer.flush()
+        chunks.append(line)
+    src.close()
+
+
+def clip(text):
+    """Keep the head and the tail; the middle of a long dump is rarely the point."""
+    if len(text) <= MAX_CAPTURE:
+        return text, False
+    half = MAX_CAPTURE // 2
+    return (text[:half] + f"\n\n... [{len(text) - MAX_CAPTURE} bytes elided by measure] ...\n\n"
+            + text[-half:]), True
+
+
+def cmd_run(args, root):
+    if not args.command:
+        die("nothing to run. Put the command after --:\n"
+            "       measure run --tag build -- make -j8")
+
+    extracts = {}
+    for spec in args.extract or []:
+        if "=" not in spec:
+            die(f"--extract wants NAME=REGEX, got: {spec}")
+        name, pattern = spec.split("=", 1)
+        try:
+            extracts[name] = re.compile(pattern)
+        except re.error as e:
+            die(f"--extract {name}: bad regex: {e}")
+
+    inputs = []
+    for f in args.input or []:
+        p = Path(f)
+        sha = file_sha(p)
+        if sha is None:
+            die(f"--input {f}: cannot read")
+        try:
+            rel = str(p.resolve().relative_to(root))
+        except ValueError:
+            rel = str(p.resolve())
+        inputs.append({"path": rel, "sha256": sha})
+
+    started = time.monotonic()
+    try:
+        proc = subprocess.Popen(args.command, stdout=subprocess.PIPE,
+                                stderr=subprocess.PIPE)
+    except FileNotFoundError:
+        die(f"{args.command[0]}: not found", 127)
+    except OSError as e:
+        die(f"{args.command[0]}: {e}", 126)
+
+    out_chunks, err_chunks = [], []
+    threads = [
+        threading.Thread(target=tee, args=(proc.stdout, sys.stdout, out_chunks)),
+        threading.Thread(target=tee, args=(proc.stderr, sys.stderr, err_chunks)),
+    ]
+    for t in threads:
+        t.start()
+    try:
+        proc.wait()
+    except KeyboardInterrupt:
+        # An interrupted run is still evidence of something; record it rather
+        # than losing the partial output.
+        proc.terminate()
+        proc.wait()
+    for t in threads:
+        t.join()
+    elapsed = time.monotonic() - started
+
+    stdout = b"".join(out_chunks).decode(errors="replace")
+    stderr = b"".join(err_chunks).decode(errors="replace")
+    stdout, clipped_out = clip(stdout)
+    stderr, clipped_err = clip(stderr)
+
+    found = {}
+    for name, rx in extracts.items():
+        m = rx.search(stdout) or rx.search(stderr)
+        if m:
+            found[name] = m.group(1) if m.groups() else m.group(0)
+        else:
+            print(c("33", f"measure: --extract {name} matched nothing"),
+                  file=sys.stderr)
+
+    entry = {
+        "kind": "run",
+        "tag": args.tag or Path(args.command[0]).name,
+        "note": args.note,
+        "argv": args.command,
+        "cwd": str(Path.cwd()),
+        "exit": proc.returncode,
+        "duration_s": round(elapsed, 3),
+        "stdout": stdout,
+        "stderr": stderr,
+        "truncated": clipped_out or clipped_err,
+        "extract": found,
+        "inputs": inputs,
+        "host": socket.gethostname(),
+        "git": git_state(root),
+        "at": dt.datetime.now().astimezone().isoformat(timespec="seconds"),
+    }
+    entry["id"] = make_id(entry)
+    append(root, entry)
+
+    verdict = c("32", "recorded") if proc.returncode == 0 else c("31", f"recorded (exit {proc.returncode})")
+    bits = [entry["id"], entry["tag"], f"{elapsed:.1f}s"]
+    if found:
+        bits.append(" ".join(f"{k}={v}" for k, v in found.items()))
+    if entry["git"].get("dirty"):
+        bits.append(c("33", "dirty-tree"))
+    print(c("2", f"\nmeasure: {verdict} {' '.join(bits)}"), file=sys.stderr)
+
+    # Transparent to the caller, so this composes inside scripts and Makefiles.
+    sys.exit(proc.returncode)
+
+
+def cmd_note(args, root):
+    entry = {
+        "kind": "note",
+        "tag": args.tag,
+        "note": " ".join(args.text),
+        "source": args.source,
+        "host": socket.gethostname(),
+        "git": git_state(root),
+        "at": dt.datetime.now().astimezone().isoformat(timespec="seconds"),
+    }
+    entry["id"] = make_id(entry)
+    append(root, entry)
+    print(f"measure: recorded {entry['id']} {c('35', 'UNVERIFIED')} {entry['tag']}",
+          file=sys.stderr)
+
+
+# --- read -------------------------------------------------------------------
+
+def summarize(entry):
+    if entry.get("kind") == "note":
+        return (entry.get("note") or "").splitlines()[0][:70]
+    if entry.get("extract"):
+        return " ".join(f"{k}={v}" for k, v in entry["extract"].items())[:70]
+    if entry.get("note"):
+        return entry["note"][:70]
+    return " ".join(entry.get("argv") or [])[:70]
+
+
+def cmd_recall(args, root):
+    entries = load(root)
+    if not entries:
+        print(f"measure: nothing recorded yet in {ledger_path(root)}")
+        print("         measure run --tag <name> -- <command>")
+        return
+
+    if args.pattern:
+        rx = re.compile(args.pattern, re.I)
+        entries = [e for e in entries
+                   if rx.search(e.get("tag") or "")
+                   or rx.search(e.get("note") or "")
+                   or rx.search(" ".join(e.get("argv") or []))
+                   or rx.search(e.get("id") or "")]
+    if args.tag:
+        entries = [e for e in entries if e.get("tag") == args.tag]
+    if not entries:
+        print("measure: no entries match")
+        return
+
+    cur = git_state(root)
+    entries = list(reversed(entries))
+    # One line per tag by default: the current value of each thing measured,
+    # rather than a scroll of every time it was measured.
+    if args.latest:
+        seen, keep = set(), []
+        for e in entries:
+            if e.get("tag") not in seen:
+                seen.add(e.get("tag"))
+                keep.append(e)
+        entries = keep
+    if not args.all:
+        entries = entries[:args.number]
+
+    if args.json:
+        for e in entries:
+            st, detail = staleness(e, cur, root)
+            print(json.dumps({**e, "status": st, "status_detail": detail},
+                             sort_keys=True))
+        return
+
+    stale_seen = False
+    for e in entries:
+        st, detail = staleness(e, cur, root)
+        stale_seen = stale_seen or st in ("stale", "unknown")
+        flag = "" if e.get("exit", 0) == 0 else c("31", f" exit={e['exit']}")
+        tag = (e.get("tag") or "-")[:20]
+        print(f"{c('2', e['id'])}  {status_tag(st)}  {c('1', f'{tag:<20}')}  "
+              f"{ago(e.get('at')):>9}  {summarize(e)}{flag}")
+        if st != "ok" or args.verbose:
+            print(f"{'':>13}{c('2', detail)}")
+    print(c("2", f"\n{len(entries)} entry(s) from {ledger_path(root)}"))
+    if stale_seen:
+        print(c("33", "Entries above marked STALE or ? are not safe to quote. "
+                      "Re-run them."))
+
+
+def find(entries, ident):
+    exact = [e for e in entries if e.get("id") == ident]
+    if exact:
+        return exact[-1]
+    by_tag = [e for e in entries if e.get("tag") == ident]
+    if by_tag:
+        return by_tag[-1]
+    prefix = [e for e in entries if (e.get("id") or "").startswith(ident)]
+    if len(prefix) == 1:
+        return prefix[0]
+    if len(prefix) > 1:
+        die(f"{ident} is ambiguous: {', '.join(e['id'] for e in prefix)}")
+    return None
+
+
+def cmd_show(args, root):
+    entries = load(root)
+    e = find(entries, args.ident)
+    if not e:
+        die(f"no entry {args.ident} (try: measure recall)")
+    cur = git_state(root)
+    st, detail = staleness(e, cur, root)
+
+    print(c("1", e["id"]), status_tag(st), c("2", f"({detail})"))
+    rows = [("tag", e.get("tag")), ("when", f"{e.get('at')}  ({ago(e.get('at'))})"),
+            ("host", e.get("host")), ("kind", e.get("kind"))]
+    if e.get("kind") == "run":
+        rows += [("command", " ".join(e.get("argv") or [])),
+                 ("cwd", e.get("cwd")),
+                 ("exit", e.get("exit")),
+                 ("duration", f"{e.get('duration_s')}s")]
+    g = e.get("git") or {}
+    if g:
+        rows.append(("commit", f"{g.get('short')} on {g.get('branch')}"
+                               + (c("31", "  DIRTY TREE") if g.get("dirty") else "")))
+    if e.get("note"):
+        rows.append(("note", e["note"]))
+    if e.get("source"):
+        rows.append(("source", e["source"]))
+    for k, v in rows:
+        if v not in (None, ""):
+            print(f"  {c('2', k + ':'):<18} {v}")
+    for i in e.get("inputs") or []:
+        live = file_sha(root / i["path"])
+        mark = c("32", "unchanged") if live == i["sha256"] else c("31", "CHANGED")
+        print(f"  {c('2', 'input:'):<18} {i['path']}  {i['sha256'][:12]}  {mark}")
+    for k, v in (e.get("extract") or {}).items():
+        print(f"  {c('2', 'extract:'):<18} {k} = {c('1', v)}")
+
+    if e.get("stdout"):
+        print(c("2", "\n--- stdout " + "-" * 60))
+        print(e["stdout"].rstrip())
+    if e.get("stderr"):
+        print(c("2", "\n--- stderr " + "-" * 60))
+        print(e["stderr"].rstrip())
+    if e.get("truncated"):
+        print(c("33", "\n(output was clipped when recorded; re-run to see all of it)"))
+
+
+def cmd_diff(args, root):
+    runs = [e for e in load(root)
+            if e.get("tag") == args.tag and e.get("kind") == "run"]
+    if len(runs) < 2:
+        die(f"need two runs of '{args.tag}' to compare, have {len(runs)}")
+    a, b = runs[-2], runs[-1]
+
+    ga, gb = a.get("git") or {}, b.get("git") or {}
+    print(f"{c('1', 'A')} {a['id']}  {ago(a.get('at')):>9}  {ga.get('short', '-')}"
+          f"{c('31', '+dirty') if ga.get('dirty') else ''}  exit={a.get('exit')}")
+    print(f"{c('1', 'B')} {b['id']}  {ago(b.get('at')):>9}  {gb.get('short', '-')}"
+          f"{c('31', '+dirty') if gb.get('dirty') else ''}  exit={b.get('exit')}")
+
+    if a.get("argv") != b.get("argv"):
+        print(c("33", "\nNot the same command -- these are not comparable:"))
+        print(f"  A: {' '.join(a.get('argv') or [])}")
+        print(f"  B: {' '.join(b.get('argv') or [])}")
+
+    keys = sorted(set(a.get("extract") or {}) | set(b.get("extract") or {}))
+    if keys:
+        print()
+        for k in keys:
+            va = (a.get("extract") or {}).get(k, "-")
+            vb = (b.get("extract") or {}).get(k, "-")
+            same = va == vb
+            move = ""
+            # No percentage on an unchanged value: "+0.0%" is noise, and the
+            # point of this column is to make a number that MOVED impossible to
+            # miss.
+            if not same:
+                try:
+                    fa, fb = float(va), float(vb)
+                    if fa:
+                        pct = (fb - fa) / abs(fa) * 100
+                        move = c("31" if pct > 0 else "32", f"  {pct:+.1f}%")
+                except (TypeError, ValueError):
+                    pass
+            print(f"  {k:<16} {va:>14} -> {c('2' if same else '1', f'{vb:>14}')}{move}")
+
+    da = (a.get("duration_s"), b.get("duration_s"))
+    if all(x is not None for x in da):
+        print(f"  {'duration_s':<16} {da[0]:>14} -> {da[1]:>14}")
+
+    if args.output:
+        delta = list(difflib.unified_diff(
+            (a.get("stdout") or "").splitlines(),
+            (b.get("stdout") or "").splitlines(),
+            fromfile=a["id"], tofile=b["id"], lineterm="", n=2))
+        print(c("2", "\n--- stdout diff " + "-" * 55))
+        print("\n".join(delta[:args.context_lines]) if delta
+              else c("2", "(identical)"))
+
+
+def cmd_prune(args, root):
+    entries = load(root)
+    if not entries:
+        die("nothing to prune")
+    cur = git_state(root)
+
+    def doomed(e):
+        if args.tag and e.get("tag") == args.tag:
+            return True
+        if args.stale and staleness(e, cur, root)[0] == "stale":
+            return True
+        if args.unverified and e.get("kind") == "note":
+            return True
+        return False
+
+    if not (args.tag or args.stale or args.unverified):
+        die("say what to prune: --tag T, --stale, or --unverified")
+
+    drop = [e for e in entries if doomed(e)]
+    if not drop:
+        print("measure: nothing matched")
+        return
+    for e in drop:
+        print(f"  {c('31', 'drop')} {e['id']}  {e.get('tag')}  {summarize(e)}")
+    if not args.yes:
+        print(f"\n{len(drop)} entry(s). Re-run with --yes to remove them.")
+        print(c("2", "Nothing was deleted. The ledger is the record of what was "
+                     "actually observed; dropping entries loses that history."))
+        return
+
+    p = ledger_path(root)
+    shutil.copy2(p, p.with_suffix(".jsonl.bak"))
+    keep = [e for e in entries if not doomed(e)]
+    with open(p, "w") as fh:
+        for e in keep:
+            fh.write(json.dumps(e, sort_keys=True) + "\n")
+    print(f"measure: removed {len(drop)}, kept {len(keep)} "
+          f"(previous ledger at {p.with_suffix('.jsonl.bak').name})")
+
+
+def cmd_path(args, root):
+    p = ledger_path(root)
+    print(p)
+    if not p.exists():
+        print(c("2", "(does not exist yet — created on the first `measure run`)"),
+              file=sys.stderr)
+
+
+# --- cli --------------------------------------------------------------------
+
+def main():
+    ap = argparse.ArgumentParser(
+        prog="measure",
+        description="Record what commands actually printed, so facts get quoted "
+                    "rather than recalled.",
+        epilog="Ledger: <repo-root>/.measurements/ledger.jsonl (override with "
+               "$MEASURE_DIR).")
+    sub = ap.add_subparsers(dest="cmd", required=True)
+
+    r = sub.add_parser("run", help="run a command and record what it printed")
+    r.add_argument("--tag", "-t", help="name this measurement (defaults to the binary)")
+    r.add_argument("--note", "-m", help="why this run was taken")
+    r.add_argument("--input", "-i", action="append",
+                   help="a file this result depends on; its hash is recorded so "
+                        "staleness can be detected exactly. Repeatable.")
+    r.add_argument("--extract", "-e", action="append", metavar="NAME=REGEX",
+                   help="pull a value out of the output, e.g. "
+                        "-e peak_gb='Peak HBM: ([0-9.]+)'. Repeatable.")
+    r.add_argument("command", nargs=argparse.REMAINDER,
+                   help="the command, after --")
+    r.set_defaults(fn=cmd_run)
+
+    n = sub.add_parser("note", help="record something learned by reading, not running "
+                                    "(stored as UNVERIFIED)")
+    n.add_argument("--tag", "-t", required=True)
+    n.add_argument("--source", "-s", help="where it came from, e.g. file.cc:412")
+    n.add_argument("text", nargs="+")
+    n.set_defaults(fn=cmd_note)
+
+    l = sub.add_parser("recall", help="what has been measured, newest first")
+    l.add_argument("pattern", nargs="?", help="regex over tag, note, command, id")
+    l.add_argument("--tag", "-t")
+    l.add_argument("-n", "--number", type=int, default=20)
+    l.add_argument("--all", "-a", action="store_true", help="no limit")
+    l.add_argument("--latest", "-1", action="store_true",
+                   help="only the most recent entry per tag")
+    l.add_argument("--verbose", "-v", action="store_true",
+                   help="show provenance for fresh entries too")
+    l.add_argument("--json", action="store_true")
+    l.set_defaults(fn=cmd_recall)
+
+    s = sub.add_parser("show", help="one entry in full, including its output")
+    s.add_argument("ident", help="id, id prefix, or tag (newest with that tag)")
+    s.set_defaults(fn=cmd_show)
+
+    d = sub.add_parser("diff", help="compare the last two runs of a tag")
+    d.add_argument("tag")
+    d.add_argument("--output", "-o", action="store_true", help="diff stdout too")
+    d.add_argument("--context-lines", type=int, default=80,
+                   help="cap on diff lines printed (default 80)")
+    d.set_defaults(fn=cmd_diff)
+
+    p = sub.add_parser("prune", help="remove entries (asks first)")
+    p.add_argument("--tag", "-t")
+    p.add_argument("--stale", action="store_true")
+    p.add_argument("--unverified", action="store_true")
+    p.add_argument("--yes", "-y", action="store_true")
+    p.set_defaults(fn=cmd_prune)
+
+    w = sub.add_parser("path", help="where the ledger for this directory lives")
+    w.set_defaults(fn=cmd_path)
+
+    args = ap.parse_args()
+    if getattr(args, "command", None) and args.command and args.command[0] == "--":
+        args.command = args.command[1:]
+    args.fn(args, repo_root())
+
+
+if __name__ == "__main__":
+    try:
+        main()
+    except BrokenPipeError:
+        os._exit(0)
+    except KeyboardInterrupt:
+        sys.exit(130)

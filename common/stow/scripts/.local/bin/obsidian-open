@@ -1,0 +1,113 @@
+#!/usr/bin/env bash
+# obsidian-open — open Obsidian at a specific note, on any zfiles target.
+#
+#   obsidian-open                          the default vault, wherever it was left
+#   obsidian-open notes/spectral.md        that note in the default vault
+#   obsidian-open -v Research notes/a.md   that note in a named vault
+#   obsidian-open ~/research/x/notes/a.md  absolute path, vault inferred
+#
+# Backs the /obsidian Claude Code skill: the point is landing on one FILE, so
+# the rendered math sits beside the terminal conversation that produced it.
+#
+# HOW IT OPENS
+# Through Obsidian's URI scheme, obsidian://open?vault=<name>&file=<path>,
+# rather than by passing a filename. Obsidian is single-instance: handing a
+# path to an already-running instance does nothing useful, while the URI is
+# routed to the running window and switches it to the note. `vault` is the
+# vault's NAME and `file` is relative to the vault root, url-encoded.
+#
+# One consequence worth knowing: the vault must have been opened in Obsidian at
+# least once, or the app has no registration for that name and the URI opens
+# the vault switcher instead. That is Obsidian's behaviour, not something this
+# script can route around -- see the note in obsidian-vault about obsidian.json
+# being written on first launch.
+set -uo pipefail
+
+die() { echo "obsidian-open: $*" >&2; exit 1; }
+is_wsl() { grep -qi microsoft /proc/version 2>/dev/null; }
+
+VAULT_ARG=""
+while [[ $# -gt 0 ]]; do
+    case $1 in
+        -v|--vault) VAULT_ARG=${2:-}; shift 2 ;;
+        -h|--help) sed -n '2,8p' "$0" | sed 's/^# \?//'; exit 0 ;;
+        --) shift; break ;;
+        -*) die "unknown option '$1'" ;;
+        *) break ;;
+    esac
+done
+
+TARGET=${1:-}
+
+# An absolute path to an existing file identifies its own vault: walk up until
+# a .obsidian directory turns up. Beats -v for the common case of "open the
+# thing I am already looking at in the shell".
+if [[ -n $TARGET && -e $TARGET && -z $VAULT_ARG ]]; then
+    abs=$(cd "$(dirname "$TARGET")" && pwd)/$(basename "$TARGET")
+    dir=$(dirname "$abs")
+    while [[ $dir != / ]]; do
+        if [[ -d "$dir/.obsidian" ]]; then
+            VAULT_ARG=$dir
+            TARGET=${abs#"$dir"/}
+            break
+        fi
+        dir=$(dirname "$dir")
+    done
+fi
+
+VAULT_PATH=$(obsidian-vault path "$VAULT_ARG") || exit 1
+VAULT_NAME=$(basename "$VAULT_PATH")
+
+# Build the URI. python3 rather than a hand-rolled encoder because a note title
+# is prose -- spaces, ampersands, parentheses and non-ASCII are all normal in
+# this vault's filenames, and every one of them breaks a naive URI.
+URI=$(python3 - "$VAULT_NAME" "$TARGET" <<'PY'
+import sys, urllib.parse
+vault, target = sys.argv[1], sys.argv[2]
+uri = "obsidian://open?vault=" + urllib.parse.quote(vault, safe="")
+if target:
+    # Obsidian resolves `file` with or without the .md extension; strip it so a
+    # note and a wikilink to it produce the same URI.
+    if target.endswith(".md"):
+        target = target[:-3]
+    uri += "&file=" + urllib.parse.quote(target, safe="")
+print(uri)
+PY
+) || die "could not build URI"
+
+# --- Launch -------------------------------------------------------------------
+# Detection before installation, on every target: this script never installs
+# anything. Omarchy gets Obsidian from omarchy/pkglist.txt and WSL from
+# wsl/windows/install.ps1; if neither has run, say so rather than guessing.
+if is_wsl; then
+    # The Windows build, per this target's rule that anything with a window is
+    # the Windows program. Obsidian.exe takes a URI as argv, which avoids
+    # `cmd.exe /c start` -- cmd treats the & separating vault from file as a
+    # command separator, and quoting through both wslpath and cmd's parser to
+    # stop that is more fragile than calling the exe.
+    exe=""
+    for candidate in \
+        "$(command -v Obsidian.exe 2>/dev/null || true)" \
+        "$(obsidian-vault config 2>/dev/null | sed 's|/AppData/Roaming/obsidian/obsidian.json||')/AppData/Local/Programs/Obsidian/Obsidian.exe"
+    do
+        [[ -n $candidate && -x $candidate ]] && { exe=$candidate; break; }
+    done
+    [[ -n $exe ]] || die "Obsidian not found on the Windows side.
+  Re-run zfiles bootstrap.sh (wsl/windows/install.ps1 installs it), or:
+    winget install --id Obsidian.Obsidian --scope user"
+    # Detached: Obsidian is a GUI app and the shell should come straight back.
+    nohup "$exe" "$URI" >/dev/null 2>&1 &
+    disown
+elif command -v obsidian >/dev/null 2>&1; then
+    nohup obsidian "$URI" >/dev/null 2>&1 &
+    disown
+elif command -v xdg-open >/dev/null 2>&1; then
+    # The .desktop file registers the obsidian:// handler, so this works for a
+    # Flatpak or AppImage install that never put `obsidian` on PATH.
+    nohup xdg-open "$URI" >/dev/null 2>&1 &
+    disown
+else
+    die "Obsidian not installed. On Omarchy: sudo pacman -S obsidian"
+fi
+
+printf 'obsidian: %s%s\n' "$VAULT_NAME" "${TARGET:+ → $TARGET}"

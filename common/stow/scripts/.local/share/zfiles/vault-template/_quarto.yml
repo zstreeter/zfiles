@@ -1,0 +1,94 @@
+project:
+  type: default
+  # Quarto applies this file's settings ONLY to files in this list. Measured on
+  # 1.8.27: a note outside it renders with none of the reader extensions, the
+  # filter or the pdf format, and reports no error -- the paper builds and is
+  # simply wrong. So notes/ is listed, and a bare `quarto render` builds drafts
+  # and notes both; literature/ is the one tree deliberately left out. Both
+  # extensions are listed because a draft may be a .qmd written for Quarto or
+  # a .md written in Obsidian -- after the reader settings below, they are the
+  # same thing.
+  render:
+    - "drafts/**/*.qmd"
+    - "drafts/**/*.md"
+    - "notes/**/*.md"
+
+execute:
+  freeze: auto
+
+# --- Obsidian as a first-class Quarto input ----------------------------------
+# These two settings are what let `quarto render` and `quarto preview` read a
+# note straight out of the vault, with no conversion step and no intermediate
+# file. `quarto preview` on a note gives live reload while you edit it in
+# Obsidian.
+#
+#   +wikilinks_title_after_pipe   [[Note]] and [[Note|alias]]
+#   +mark                         ==highlight==
+#   filters (at: pre-ast)         the rest -- see _extensions/obsidian/obsidian.lua
+#
+# Pandoc parses first and the filter runs on the syntax tree, so math and code
+# are Math and Code nodes by the time any rule sees them and cannot be damaged.
+# A text-level preprocessor could not make that guarantee: `==` also means
+# comparison, `^` also means superscript, `[[ ]]` also delimits a matrix.
+from: markdown+wikilinks_title_after_pipe+mark
+# `at: pre-ast` is load-bearing -- do not drop it back to a bare path.
+#
+# A filter with no position runs after Quarto has already normalized the
+# document, which is too late for callouts. This filter turns
+# `> [!warning] Careful` into a `.callout-warning` Div, and Quarto converts
+# that Div into a tcolorbox and adds tcolorbox to the LaTeX preamble -- but
+# only during normalization. Arrive after it and the Div passes through
+# anonymous: the box disappears, and because the title lives in an ATTRIBUTE
+# rather than in the content, the title disappears with it. The document
+# still builds. HTML still looks right, because the HTML writer renders the
+# class anyway. Only the PDF quietly loses the callout.
+#
+# Measured on Quarto 1.10.18, rendering the same note to PDF:
+#   pre-ast      tcolorbox present   <- correct
+#   post-ast     tcolorbox absent
+#   pre-quarto   tcolorbox absent    <- despite the name
+#
+# Declared here rather than through an _extension.yml: the `at:` form inside
+# an extension's `contributes.filters` fails YAML validation on Quarto 1.8
+# ("path: obsidian.lua failed to be a string"). This form works on 1.8 and 1.10.
+filters:
+  - at: pre-ast
+    path: _extensions/obsidian/obsidian.lua
+
+# One source, three outputs: the blog (html), the paper (typst), and LaTeX for
+# the venues that want it. `quarto preview` uses html only, so drafting stays
+# fast. Render one format at a time with --to; a bare `quarto render` builds
+# all three and so needs a LaTeX engine for the pdf one.
+#
+#   --to typst   the paper. Typst ships inside Quarto, so this needs no TeX
+#                install and compiles in seconds. Measured on 1.8.27: callouts,
+#                citations, transclusion and math all render; the obsidian
+#                filter wraps ==highlights== in #highlight[] for this writer.
+#   --to pdf     the same paper through lualatex, for when a journal template
+#                or a LaTeX-only package is involved. Needs texlive or
+#                `quarto install tinytex`, which fetches packages on demand.
+#   --to latex   the .tex itself, for arXiv or a journal.
+format:
+  html:
+    toc: true
+    code-fold: true
+    highlight-style: github-dark
+  typst:
+    papersize: us-letter
+    number-sections: true
+    # Citations come out numeric ([1]) by default; set `csl:` here or in the
+    # note's front matter for author-year.
+  pdf:
+    documentclass: article
+    papersize: letter
+    geometry:
+      - margin=1in
+    number-sections: true
+    colorlinks: true
+    # Keeps the .tex beside the .pdf. That file is the deliverable when a
+    # journal or arXiv wants source rather than a PDF.
+    keep-tex: true
+
+# Written by Better BibTeX's auto-export, never by hand. Citations reach here as
+# [[@citekey]] in a note, which the obsidian filter turns into a real citation.
+bibliography: references.bib

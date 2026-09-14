@@ -1,0 +1,80 @@
+#!/usr/bin/env bash
+# agent-skills — make one set of skills visible to every AI harness.
+#
+#   agent-skills          # link ~/.agents/skills/* into each harness
+#   agent-skills --list   # what exists and who can see it
+#
+# WHY ~/.agents/skills IS THE ROOT
+#
+# Four harnesses, four skill directories, and a skill written for one is
+# useful to all four -- so the source of truth is one directory and the rest
+# are links into it. ~/.agents/skills is the natural choice because pi already
+# reads it natively (its package manager joins $HOME/.agents/skills alongside
+# its own dir, and walks .agents/skills up from the project root too), and the
+# skills already installed on this machine are symlinks into it. So pi needs
+# nothing from this script; Claude Code and Codex each need a link.
+#
+# zfiles ships skills straight into ~/.agents/skills, one per program package
+# (common/stow/obsidian, .../quarto, .../reverify, ...), so a skill lives with
+# the program it documents. This script only fans them out.
+#
+# It never overwrites a real directory. A skill installed by something else
+# stays put and is reported instead -- losing someone's hand-written skill to
+# a dotfile re-run would be a bad trade for the convenience.
+set -uo pipefail
+
+ROOT="$HOME/.agents/skills"
+CLAUDE="$HOME/.claude/skills"
+CODEX="$HOME/.codex/skills"
+
+LIST=false
+[[ ${1:-} == --list ]] && LIST=true
+[[ ${1:-} == -h || ${1:-} == --help ]] && { sed -n '2,5p' "$0" | sed 's/^# \?//'; exit 0; }
+
+[[ -d $ROOT ]] || { echo "agent-skills: no $ROOT — nothing to link"; exit 0; }
+
+shopt -s nullglob
+skills=("$ROOT"/*/)
+((${#skills[@]})) || { echo "agent-skills: $ROOT is empty"; exit 0; }
+
+if $LIST; then
+    printf '%-24s %-8s %-8s %s\n' SKILL claude codex pi
+    for dir in "${skills[@]}"; do
+        name=$(basename "$dir")
+        c=no; x=no
+        [[ -e "$CLAUDE/$name" ]] && c=yes
+        [[ -e "$CODEX/$name" ]] && x=yes
+        # pi reads $ROOT directly, so anything here is always visible to it.
+        printf '%-24s %-8s %-8s %s\n' "$name" "$c" "$x" native
+    done
+    exit 0
+fi
+
+linked=0 skipped=0
+for target in "$CLAUDE" "$CODEX"; do
+    # Only wire up a harness that is actually installed; creating ~/.codex on a
+    # box without codex just leaves litter.
+    parent=$(dirname "$target")
+    [[ -d $parent ]] || continue
+    mkdir -p "$target"
+
+    for dir in "${skills[@]}"; do
+        name=$(basename "$dir")
+        link="$target/$name"
+        src="${dir%/}"
+
+        if [[ -L $link ]]; then
+            # Ours, or pointing somewhere stale -- repoint it either way.
+            ln -sfn "$src" "$link"
+            ((linked++))
+        elif [[ -e $link ]]; then
+            echo "agent-skills: $link is a real directory, leaving it alone" >&2
+            ((skipped++))
+        else
+            ln -sfn "$src" "$link"
+            ((linked++))
+        fi
+    done
+done
+
+echo "agent-skills: linked $linked, skipped $skipped (pi reads $ROOT directly)"

@@ -1,0 +1,60 @@
+[mgr]
+sort_by        = "alphabetical"
+sort_sensitive = false
+sort_reverse   = true
+sort_dir_first = false
+linemode       = "size"
+ratio          = [1, 3, 4]
+
+[preview]
+tab_size   = 2
+max_width  = 1000
+max_height = 1000
+
+[opener]
+edit = [
+	{ run = '$EDITOR "$@"', block = true },
+	{ run = '$EDITOR "$@"',    orphan = true },
+]
+play = [
+	{ run = 'mpv "$@"' },
+	{ run = 'iina "$@"' },
+	{ run = '''mediainfo "$1"; echo "Press enter to exit"; read''', block = true, desc = "Show media info" }
+]
+archive = [
+	{ run = 'unar "$1"', desc = "Extract here" },
+]
+# Named explicitly rather than left to the generic `open` (xdg-open): outside a
+# full desktop session — WSLg, a bare Hyprland shell — xdg-open's fallback chain
+# is the flaky part of the path. `sioyek` here resolves to the ~/.local/bin
+# wrapper (custom color mode). orphan so the viewer outlives the yazi process;
+# `open` stays as the second choice for targets with no sioyek (press O).
+pdf = [
+	{ run = 'sioyek "$@"', orphan = true, desc = "Open in sioyek" },
+]
+
+[open]
+rules = [
+	{ url = "*/", use = [ "open", "edit", "reveal" ] },
+
+	{ mime = "text/*",  use = [ "edit", "reveal" ] },
+	{ mime = "image/*", use = [ "open", "reveal" ] },
+	{ mime = "video/*", use = [ "play", "reveal" ] },
+	{ mime = "audio/*", use = [ "play", "reveal" ] },
+	{ mime = "inode/x-empty", use = [ "edit", "reveal" ] },
+
+	{ mime = "application/pdf",  use = [ "pdf", "open", "reveal" ] },
+
+	{ mime = "application/json", use = [ "edit", "reveal" ] },
+	{ mime = "*/javascript",     use = [ "edit", "reveal" ] },
+
+	{ mime = "application/zip",             use = [ "extract", "reveal", "archive" ] },
+	{ mime = "application/gzip",            use = [ "extract", "reveal", "archive" ] },
+	{ mime = "application/x-tar",           use = [ "extract", "reveal", "archive" ] },
+	{ mime = "application/x-bzip",          use = [ "extract", "reveal", "archive" ] },
+	{ mime = "application/x-bzip2",         use = [ "extract", "reveal", "archive" ] },
+	{ mime = "application/x-7z-compressed", use = [ "extract", "reveal", "archive" ] },
+	{ mime = "application/x-rar",           use = [ "extract", "reveal", "archive" ] },
+
+	{ mime = "*", use = [ "open", "reveal" ] },
+]

@@ -1,0 +1,22 @@
+# =============================================================================
+# Gmail (Personal)
+# =============================================================================
+[accounts.gmail]
+default = true
+
+imap.mailbox = "INBOX"
+imap.server = "imaps://imap.gmail.com:993"
+imap.sasl.plain.username = "zacharylouis42@gmail.com"
+imap.sasl.plain.password.command = "pass show email/gmail-himalaya"
+imap.hook.on-message-added.cmd = 'notify-send -c email.personal -i mail-message-new "Personal Email" "$sender: $subject"'
+
+# =============================================================================
+# Work (JBI Tools)
+# =============================================================================
+[accounts.work]
+
+imap.mailbox = "INBOX"
+imap.server = "imaps://imap.hostinger.com:993"
+imap.sasl.plain.username = "zach@jbi.tools"
+imap.sasl.plain.password.command = "pass show email/work-himalaya"
+imap.hook.on-message-added.cmd = 'notify-send -u critical -c email.work -i mail-message-new "Work Email" "$sender: $subject"'

@@ -1,0 +1,76 @@
+# paperctl -- committed configuration. NO SECRETS IN THIS FILE.
+#
+# It is in a public repo. Anything private goes in local.toml beside it, which
+# is gitignored: an email address, an API key, a machine-specific path.
+#
+# Layers, later wins. Every one optional:
+#   built-in defaults -> this file -> its [target.<name>] section ->
+#   local.toml -> PAPERCTL_* env vars -> command-line flags
+#
+# `paperctl doctor` prints what resolved and where each value came from.
+
+[library]
+root           = "~/Library"
+filename_style = "title_case"   # title_case | kebab | as_is
+write_refs_bib = true
+write_readme   = true
+
+[sources]
+enabled = ["arxiv", "crossref", "openalex"]
+# Unpaywall requires a contact address as its condition of use -- it is not a
+# login. Without one, paywalled DOIs stay link-only instead of finding the
+# legal open-access copy. Set it in local.toml:
+#     [sources]
+#     unpaywall_email = "you@example.com"
+unpaywall_email = ""
+
+[mail]
+# auto probes for a working backend, so a machine not listed under [target]
+# below still works. Set explicitly to skip the probe.
+backend = "auto"                # auto | graph | himalaya | none
+
+[mail.graph]
+# Shared with every m365-* skill; one device-code login covers all of them.
+token = "~/.config/microsoft-graph/token.json"
+
+[mail.himalaya]
+bin      = "himalaya"
+accounts = []                   # empty = whatever himalaya calls default
+
+[links]
+# Regexes for hosts private to you -- an intranet, a wiki behind SSO. A link
+# matching one is tagged "internal" and never treated as a paper. Deliberately
+# empty here and set in local.toml instead: this file is committed, and which
+# hosts are internal says who you work for.
+#     internal_domains = ["\\.corp\\.example\\.com[:/]", "wiki\\.example\\.net/"]
+internal_domains = []
+
+[quarto]
+projects_root = "~/research"
+# paperctl writes THIS file and never references.bib -- that one is Better
+# BibTeX's auto-export and hand edits to it are silently overwritten. Quarto
+# takes a list, so both can be cited from one project:
+#     bibliography: [references.bib, library.bib]
+bib_name = "library.bib"
+
+[net]
+timeout = 30
+retries = 2
+
+# --- per-target overrides ---------------------------------------------------
+# Detected exactly as bootstrap.sh does, with the same precedence
+# (remote > omarchy > wsl > linux). Override with PAPERCTL_TARGET.
+
+[target.wsl.mail]
+# The work laptop: Outlook through Microsoft Graph.
+backend = "graph"
+
+[target.omarchy.mail]
+# The personal box: IMAP through himalaya, which already holds the accounts and
+# their passwords via `pass`.
+backend  = "himalaya"
+accounts = ["gmail", "work"]
+
+[target.remote.mail]
+# Work servers have no mail client and no browser to authenticate one.
+backend = "none"

@@ -1,0 +1,121 @@
+#!/usr/bin/env bash
+# reverify-setup — install the reverify CLI on demand.
+#
+#   reverify-setup            # install/upgrade into a venv, symlink onto PATH
+#   reverify-setup --full     # also capstone + unicorn + lief + z3 (see below)
+#   reverify-setup --status   # whether it is installed, and where
+#
+# WHAT REVERIFY IS, PRECISELY
+#
+# It is an anti-hallucination judge for claims about BINARIES. A model proposes
+# ("this function is a CRC32", "the entrypoint is at 0x1400"), and deterministic
+# pure-Python tools -- a PE parser, a disassembler, a CPU emulator -- check the
+# claim against the actual bytes and return VERIFIED, REFUTED or INCONCLUSIVE
+# with evidence. It is not a general-purpose fact checker: every one of its nine
+# tools takes a binary as input. Point it at a .md, a .py or a .cc and it has
+# nothing to say.
+#
+# WHY IT IS NOT REGISTERED AS AN MCP SERVER
+#
+# It used to be, in all four harnesses. An MCP server is not free at rest: its
+# nine tool schemas ride along in EVERY request, forever, whether or not the
+# session has anything to do with binaries. Nothing in this setup's daily work
+# -- HPC kernels, LaTeX, notes -- asks a binary question, so that was a standing
+# per-request tax paid to keep an unused option open.
+#
+# So it is a CLI you install when you need it. The skill
+# (~/.agents/skills/reverify/SKILL.md) is what stays resident, and it costs
+# nothing until a binary question actually comes up -- at which point it tells
+# the agent to run this script and then shell out to `reverify`.
+#
+# For the general "check, do not assume" habit this was originally reached for,
+# see the `measure` package instead: it records what commands actually output,
+# so an agent quotes measurements rather than recollections.
+#
+# INSTALLED INTO A VENV, DELIBERATELY
+#
+# Not `pip install --user`. Ubuntu's Python is marked externally-managed
+# (PEP 668), so a --user install refuses outright, and --break-system-packages
+# does what it says. A venv needs no sudo, which matters here: none of these
+# machines grant it. The console scripts are symlinked onto PATH so callers
+# never name the venv.
+set -uo pipefail
+
+PREFIX="${XDG_DATA_HOME:-$HOME/.local/share}/reverify"
+VENV="$PREFIX/venv"
+BIN="$HOME/.local/bin"
+
+FULL=false
+STATUS_ONLY=false
+for arg in "$@"; do
+    case $arg in
+        --full) FULL=true ;;
+        --status) STATUS_ONLY=true ;;
+        -h|--help) sed -n '2,6p' "$0" | sed 's/^# \?//'; exit 0 ;;
+        *) echo "reverify-setup: unknown option: $arg" >&2; exit 1 ;;
+    esac
+done
+
+info() { printf '[reverify] %s\n' "$*"; }
+warn() { printf '[reverify] %s\n' "$*" >&2; }
+
+# `reverify --version` is not a flag it accepts -- it prints usage and exits
+# non-zero. The package attribute is the reliable source.
+version() {
+    "$VENV/bin/python" -c 'import reverify; print(reverify.__version__)' 2>/dev/null \
+        || echo unknown
+}
+
+if $STATUS_ONLY; then
+    if [[ -x "$VENV/bin/reverify" ]]; then
+        info "installed: $(version)"
+        info "venv:      $VENV"
+        info "on PATH:   $(command -v reverify || echo 'no -- symlink missing')"
+    else
+        info "not installed (run reverify-setup)"
+    fi
+    info "not registered with any harness, by design -- see the header of this script"
+    exit 0
+fi
+
+# --- install ----------------------------------------------------------------
+
+command -v python3 >/dev/null 2>&1 || { warn "python3 not found"; exit 1; }
+
+if [[ ! -x "$VENV/bin/python" ]]; then
+    info "creating venv at $VENV"
+    python3 -m venv "$VENV" || {
+        warn "venv creation failed. On Debian/Ubuntu this usually means the
+      python3-venv package is missing, which needs a sudo you may not have."
+        exit 1
+    }
+fi
+
+spec=reverify
+$FULL && spec='reverify[full]'
+info "installing $spec"
+# --upgrade so a later re-run picks up new releases; reverify is young and its
+# tool surface is still moving.
+"$VENV/bin/pip" install --quiet --upgrade pip >/dev/null 2>&1
+if ! "$VENV/bin/pip" install --quiet --upgrade "$spec"; then
+    warn "pip install failed."
+    $FULL && warn "  --full builds capstone/unicorn from source on some
+      platforms; retry without --full for the pure-Python core."
+    exit 1
+fi
+
+mkdir -p "$BIN"
+# reverify-mcp is symlinked too. Nothing here registers it, but if a future
+# session genuinely wants a binary-analysis server for a long RE task, it is one
+# `claude mcp add --scope user reverify -- $HOME/.local/bin/reverify-mcp` away,
+# and removable again just as cheaply.
+for tool in reverify reverify-mcp; do
+    if [[ -x "$VENV/bin/$tool" ]]; then
+        ln -sfn "$VENV/bin/$tool" "$BIN/$tool"
+    else
+        warn "expected $tool in the venv but it is not there"
+    fi
+done
+
+info "installed reverify $(version)"
+info "try: reverify auto <file> --json"

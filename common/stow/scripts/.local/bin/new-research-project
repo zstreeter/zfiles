@@ -1,0 +1,50 @@
+#!/usr/bin/env bash
+# new-research-project <name>
+# Scaffolds a new research vault under ~/research/<name> from the zfiles vault template.
+set -euo pipefail
+
+if [[ $# -lt 1 ]]; then
+    echo "usage: new-research-project <name>" >&2
+    exit 1
+fi
+
+NAME="$1"
+RESEARCH_ROOT="$HOME/research"
+VAULT_DIR="$RESEARCH_ROOT/$NAME"
+TEMPLATE_DIR="${XDG_DATA_HOME:-$HOME/.local/share}/zfiles/vault-template"
+
+if [[ ! -d "$TEMPLATE_DIR" ]]; then
+    echo "ERR: vault template not found at $TEMPLATE_DIR" >&2
+    echo "     Run zfiles bootstrap.sh first." >&2
+    exit 1
+fi
+
+if [[ -e "$VAULT_DIR" ]]; then
+    echo "ERR: $VAULT_DIR already exists" >&2
+    exit 1
+fi
+
+mkdir -p "$RESEARCH_ROOT"
+cp -r "$TEMPLATE_DIR" "$VAULT_DIR"
+
+# Empty references.bib so Quarto's bibliography ref resolves before BBT writes it
+touch "$VAULT_DIR/references.bib"
+
+cat <<EOF
+
+Created vault: $VAULT_DIR
+
+Next steps:
+  1. Open the vault in Obsidian (File → Open vault → $VAULT_DIR), then install the
+     community plugins listed in $VAULT_DIR/README.md.
+
+  2. Configure Better BibTeX auto-export in Zotero to:
+       $VAULT_DIR/references.bib
+     Format: Better BibLaTeX, On change.
+
+  3. Inside the vault: \`quarto preview\` to live-render drafts.
+
+  4. To publish a draft to the blog:
+       publish-post $VAULT_DIR/drafts/<file>.qmd
+
+EOF

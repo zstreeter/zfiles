@@ -1,0 +1,187 @@
+#!/usr/bin/env bash
+# obsidian-render — render an Obsidian note through Quarto.
+#
+#   obsidian-render note.md                 # PDF, via Typst (no TeX needed)
+#   obsidian-render note.md --to pdf        # PDF, via lualatex
+#   obsidian-render note.md --to tex        # .tex for arXiv or a journal
+#   obsidian-render note.md --to html
+#   obsidian-render note.md --preview       # live reload while you edit
+#   obsidian-render note.md --paper         # scholarly preamble for a loose note
+#
+# THIS IS A CONVENIENCE WRAPPER, NOT A CONVERTER.
+#
+# It used to be a converter: ~400 lines normalizing Obsidian syntax into Pandoc
+# syntax with regexes before handing the result to Quarto. That design was
+# wrong. Every rule in it was a regex over prose, and LaTeX is made of the same
+# characters those regexes look for -- `==` is a highlight and a comparison,
+# `^` is a block id and a superscript, `[[ ]]` is a wikilink and a bracket
+# matrix -- so it could corrupt a formula, and the damage showed up as a LaTeX
+# error nowhere near the cause.
+#
+# The work now happens where it cannot do that: a Pandoc Lua filter, which runs
+# AFTER parsing, on the syntax tree, where math is a Math node and unreachable.
+# See _extensions/obsidian/obsidian.lua in the vault template.
+#
+# Which means a vault scaffolded by new-research-project needs nothing from
+# this script at all:
+#
+#     quarto render notes/paper.md --to typst
+#     quarto preview notes/paper.md
+#
+# both work directly, because the vault's _quarto.yml sets the reader
+# extensions and loads the filter. What is left here is the two cases Quarto
+# alone does not cover: a note OUTSIDE any vault project, and remembering the
+# flags.
+set -uo pipefail
+
+die() { echo "obsidian-render: $*" >&2; exit 1; }
+
+FILTER="${XDG_DATA_HOME:-$HOME/.local/share}/zfiles/vault-template/_extensions/obsidian/obsidian.lua"
+FROM="markdown+wikilinks_title_after_pipe+mark"
+
+# The loose-note branch hands Quarto these two settings in a metadata file
+# rather than on the command line. Cleaned up on exit, including Ctrl-C out of
+# a --preview.
+TMPMETA=""
+cleanup() { [[ -n $TMPMETA ]] && rm -f "$TMPMETA"; }
+trap cleanup EXIT INT TERM
+
+TO=typst
+OUTPUT=""
+PAPER=false
+ACTION=render
+declare -a EXTRA=()
+NOTE=""
+
+# The loop keeps going past the filename. Every example in the header writes the
+# note first -- `obsidian-render note.md --to tex` -- so stopping at the first
+# non-option silently discarded every flag, and `--to tex` handed back a PDF
+# with no complaint. Position must not matter.
+while [[ $# -gt 0 ]]; do
+    case $1 in
+        --to) TO=${2:-}; shift 2 ;;
+        -o|--output) OUTPUT=${2:-}; shift 2 ;;
+        --paper) PAPER=true; shift ;;
+        --preview) ACTION=preview; shift ;;
+        -h|--help) sed -n '2,9p' "$0" | sed 's/^# \?//'; exit 0 ;;
+        --) shift; EXTRA+=("$@"); break ;;
+        -*) EXTRA+=("$1"); shift ;;
+        *)  # First bare word is the note; anything further is Quarto's.
+            if [[ -z $NOTE ]]; then NOTE=$1; else EXTRA+=("$1"); fi
+            shift ;;
+    esac
+done
+
+[[ -n $NOTE ]] || die "usage: obsidian-render <note.md> [--to typst|pdf|tex|html|docx]"
+[[ -f $NOTE ]] || die "no such note: $NOTE"
+NOTE=$(cd "$(dirname "$NOTE")" && pwd)/$(basename "$NOTE")
+
+command -v quarto >/dev/null 2>&1 || die "quarto not installed.
+  Omarchy: quarto-cli-bin is in omarchy/pkglist.txt
+  WSL:     re-run zfiles bootstrap.sh (wsl/setup.sh installs the .deb)"
+
+[[ $TO == tex ]] && TO=latex
+
+if [[ $TO == pdf || $TO == latex ]]; then
+    # TinyTeX is not on PATH -- Quarto keeps it to itself and injects it at
+    # render time -- so a `command -v pdflatex` sweep alone reports "no LaTeX"
+    # on a machine that renders PDFs perfectly well. `quarto install tinytex`
+    # puts it in ~/.TinyTeX on Linux and ~/Library/TinyTeX on macOS; the XDG
+    # path is where a manual install may land it instead. Check all three.
+    have_tex=false
+    for engine in pdflatex xelatex lualatex tectonic; do
+        command -v "$engine" >/dev/null 2>&1 && { have_tex=true; break; }
+    done
+    for d in "$HOME/.TinyTeX" "$HOME/Library/TinyTeX" \
+             "${XDG_DATA_HOME:-$HOME/.local/share}/TinyTeX"; do
+        [[ -d $d ]] && { have_tex=true; break; }
+    done
+    if ! $have_tex; then
+        echo "obsidian-render: no LaTeX engine found. Fastest fix:" >&2
+        echo "    quarto install tinytex" >&2
+    fi
+fi
+
+# Find the vault and decide which of the two paths this is.
+#
+# The walk gets its own cursor. Reusing $dir for both left it at "/" whenever no
+# vault was found -- which is the loose-note case, the one branch that then
+# cd's to it -- so quarto was handed a bare filename in the root directory and
+# answered "No valid input files passed to render".
+dir=$(dirname "$NOTE")
+VAULT=""
+probe=$dir
+while [[ $probe != / ]]; do
+    [[ -d "$probe/.obsidian" ]] && { VAULT=$probe; break; }
+    probe=$(dirname "$probe")
+done
+
+declare -a CMD=(quarto "$ACTION")
+
+if [[ -n $VAULT && -f "$VAULT/_quarto.yml" ]]; then
+    # Inside a project: Quarto already knows the reader extensions, the filter,
+    # the bibliography and the formats. Adding them here would override the
+    # vault's own settings, so pass nothing but the target.
+    cd "$VAULT" || die "cannot enter vault: $VAULT"
+    CMD+=("${NOTE#"$VAULT"/}")
+else
+    # A loose note. Supply what the project would have.
+    [[ -f $FILTER ]] || die "filter not found: $FILTER
+  Run zfiles bootstrap.sh, or stow the 'scripts' package."
+    cd "$dir" || die "cannot enter $dir"
+
+    # Both settings go in a metadata file, and neither can move to the command
+    # line:
+    #
+    #   --from       `quarto render --from <pandoc format>` is not supported.
+    #                It breaks Quarto's own reader before any of this runs --
+    #                "readqmd.lua:283: attempt to index a nil value (local
+    #                'meta')" -- which reads like a filter bug and is not one.
+    #                The `from:` KEY is supported; only the flag is not.
+    #
+    #   --lua-filter a filter given as a flag runs at post-ast, and callouts
+    #                have to be rewritten at pre-ast or the tcolorbox and its
+    #                title are silently dropped from the PDF. Only the config
+    #                form takes a position. See the filters block in the
+    #                vault template's _quarto.yml for the measurements.
+    #
+    # So the file below is the loose-note equivalent of the vault's
+    # _quarto.yml, and gives byte-identical output to it.
+    TMPMETA=$(mktemp -t obsidian-render.XXXXXX.yml) || die "cannot create temp file"
+    cat > "$TMPMETA" <<EOF
+from: $FROM
+filters:
+  - at: pre-ast
+    path: $FILTER
+EOF
+    CMD+=("$(basename "$NOTE")" --metadata-file "$TMPMETA")
+
+    if $PAPER && [[ $TO == typst ]]; then
+        # Only meaningful outside a project; inside one, _quarto.yml owns this.
+        CMD+=(-M papersize=us-letter -M number-sections=true)
+    elif $PAPER; then
+        # Only meaningful outside a project; inside one, _quarto.yml owns this.
+        #
+        # No documentclass here. Quarto's default LaTeX template is KOMA and
+        # unconditionally emits \KOMAoption{captions}{tableheading}; forcing
+        # `article` leaves that command undefined and the PDF fails to compile
+        # on a document with no tables in it. scrartcl is already an article
+        # class, so the override bought nothing and cost the render.
+        CMD+=(-M papersize=letter
+              -M number-sections=true -M colorlinks=true
+              -V geometry:margin=1in)
+    fi
+    # A loose note next to a references.bib should still resolve its citations.
+    # As metadata, not --bibliography: the flag does reach pandoc, but citeproc
+    # keys off the metadata, so the citation renders as a bare [@key] with the
+    # bibliography loaded and unused.
+    [[ -s "$dir/references.bib" ]] && echo "bibliography: references.bib" >> "$TMPMETA"
+fi
+
+[[ $ACTION == render ]] && CMD+=(--to "$TO")
+[[ -n $OUTPUT ]] && CMD+=(--output "$OUTPUT")
+((${#EXTRA[@]})) && CMD+=("${EXTRA[@]}")
+
+# Not exec: that would replace this shell and the EXIT trap with it, leaving
+# the metadata file behind on every loose-note render.
+"${CMD[@]}"

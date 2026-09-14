@@ -1,0 +1,47 @@
+# Core Tools
+keyd
+neovim
+zsh
+eza
+bat
+ripgrep
+fd
+fzf
+zoxide
+git
+gnupg
+curl
+
+# Development
+go
+rust
+mise
+bun-bin
+quarto-cli-bin
+jupyterlab
+python-matplotlib
+python-numpy
+python-pandas
+python-plotly
+
+# AI / Agents
+opencode-bin
+lsof
+
+# GUI Apps
+sioyek-git
+cura-bin
+yazi
+zotero-bin
+obsidian
+imv
+mpv
+chromium
+
+# Research / Writing
+texlive-meta
+texlive-bibtexextra
+ripgrep-all
+
+# Password Management
+pass

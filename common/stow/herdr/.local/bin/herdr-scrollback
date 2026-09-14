@@ -1,0 +1,17 @@
+#!/usr/bin/env bash
+# Open a pane's scrollback in nvim — including alternate-screen history
+# (opencode, claude, any TUI). herdr's copy mode (prefix+space) only sees the
+# host scrollback, and alt-screen rows never land there; `pane read
+# --source recent-unwrapped` harvests them by scrolling the app while idle.
+set -euo pipefail
+pane="${1:-${HERDR_ACTIVE_PANE_ID:-$HERDR_PANE_ID}}"
+f=$(mktemp -t herdr-scrollback.XXXXXX)
+trap 'rm -f "$f"' EXIT
+herdr pane read "$pane" --source recent-unwrapped --lines "${LINES_BACK:-5000}" --format text \
+  | sed 's/[[:space:]]*$//' > "$f"
+# herdr harvests alt-screen history by scrolling the app, but only while it is
+# idle; a busy agent yields just the visible screen.
+vis=$(herdr pane read "$pane" --source visible --format text | wc -l)
+[ "$(wc -l < "$f")" -le "$vis" ] &&
+  sed -i '1i # herdr-scrollback: only the visible screen was captured (pane busy?). Retry when the agent is idle.' "$f"
+exec "${EDITOR:-nvim}" -R +'normal! G' "$f"

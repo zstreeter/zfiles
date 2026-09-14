@@ -1,0 +1,64 @@
+#!/bin/bash
+# Omarchy post-update hook for zfiles.
+#
+# Called by omarchy update after package changes and migrations.
+#
+# User theme templates are whole-file overrides. This hook detects matching
+# upstream template changes and warns so the user can merge them.
+
+set -e
+
+OMARCHY_SOURCE="${OMARCHY_PATH:-/usr/share/omarchy}"
+REPO_USER_TPL="$HOME/.config/omarchy/themed"
+UPSTREAM_TPL="$OMARCHY_SOURCE/default/themed"
+REPO_DIR=$(git -C "$(dirname "$(readlink -f "$0")")" rev-parse --show-toplevel)
+
+# 1. Rebuild generated state without restarting applications. Normal theme
+# switching signals opencode; headless mode only refreshes files on disk.
+if [[ -f "$HOME/.local/state/omarchy/current/theme.name" ]]; then
+    THEME=$(cat "$HOME/.local/state/omarchy/current/theme.name")
+    if OMARCHY_THEME_HEADLESS=1 OMARCHY_THEME_SKIP_BACKGROUND=1 omarchy-theme-set "$THEME"; then
+        bash "$HOME/.config/omarchy/hooks/theme-set.d/zfiles" "$THEME"
+    else
+        echo "zfiles post-update: failed to refresh generated theme state" >&2
+    fi
+fi
+
+# 2. Drift check on overridden templates. We track the upstream content we
+# last reconciled against in a tiny snapshot dir; if upstream has moved on,
+# warn the user to review.
+SNAPSHOT_DIR="${XDG_STATE_HOME:-$HOME/.local/state}/zfiles/upstream-tpl-seen"
+mkdir -p "$SNAPSHOT_DIR"
+
+shopt -s nullglob
+for user_tpl in "$REPO_USER_TPL"/*.tpl; do
+    name=$(basename "$user_tpl")
+    upstream="$UPSTREAM_TPL/$name"
+    [[ -f "$upstream" ]] || continue   # no upstream pair = pure-zfiles template (e.g., yazi)
+
+    seen="$SNAPSHOT_DIR/$name"
+    if [[ ! -f "$seen" ]] || ! cmp -s "$upstream" "$seen"; then
+        echo "zfiles post-update: upstream '$name' changed since last review."
+        echo "  Compare:  diff $seen $upstream"
+        echo "  Override: $user_tpl"
+        echo "  After reconciling, snapshot the new upstream:"
+        echo "    cp $upstream $seen"
+    fi
+done
+
+# 3. Overlay sanity. Omarchy may rewrite its managed user modules during an
+# update; bootstrap deploys the repository copies again.
+REPO_HYPR="$REPO_DIR/omarchy/config/hypr"
+broken=()
+for f in "$REPO_HYPR"/*.lua; do
+    name=$(basename "$f")
+    cmp -s "$f" "$HOME/.config/hypr/$name" || broken+=("$name")
+done
+if binds=$(hyprctl binds 2>/dev/null); then
+    grep -q 'description: Focus left' <<< "$binds" || broken+=("bindings not loaded")
+fi
+if (( ${#broken[@]} )); then
+    msg="zfiles overlay broken after update: ${broken[*]} — re-run bootstrap.sh"
+    echo "zfiles post-update: $msg"
+    notify-send -u critical "zfiles" "$msg" 2>/dev/null || true
+fi

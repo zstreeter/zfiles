@@ -1,0 +1,42 @@
+#!/bin/bash
+# Wrapper: launch sioyek in custom color mode so omarchy theme colors
+# (custom_background_color/custom_text_color in prefs_user.config) apply to
+# the PDF page from the first frame.
+#
+# Uses absolute /usr/bin/sioyek to avoid recursing into this wrapper, which
+# shadows the system binary via ~/.local/bin appearing earlier in PATH.
+
+# On WSL this is a router, not a launcher: the PDF goes to the Windows build of
+# sioyek. See wsl/.local/bin/winapp for why every GUI program on this target is
+# the native Windows one -- the short version is that a Linux sioyek reaches
+# the Windows compositor as an msrdc RAIL window that GlazeWM cannot tile
+# predictably and nothing can close.
+#
+# Everything upstream of here is unchanged: yazi's `pdf` opener, xdg-open and
+# the .desktop file all still call plain `sioyek`, and this file decides where
+# that lands. Custom color mode is handled Windows-side by `startup_commands
+# toggle_custom_color` in windows/sioyek/prefs_user.config, which is strictly
+# better than the --execute-command trick below: startup commands only run for
+# a genuinely new instance, so the "don't flip the running one" problem the
+# pidof check exists to solve cannot arise there at all.
+if grep -qi microsoft /proc/version 2>/dev/null; then
+    WINAPP="$HOME/.local/bin/winapp"
+    [[ -x $WINAPP ]] || WINAPP=winapp
+    exec "$WINAPP" sioyek.exe "$@"
+fi
+
+SIOYEK=/usr/bin/sioyek
+
+# If a sioyek instance is already running, this invocation just hands the
+# file to it. Don't toggle — that would flip the existing instance OUT of
+# custom color mode.
+# Use pidof (matches /proc/[pid]/exe — the real binary) rather than pgrep,
+# which would match this wrapper script itself: bash sets comm=sioyek when
+# argv[0] is the script name, so pgrep -x sioyek finds the wrapper.
+if pidof "$SIOYEK" >/dev/null; then
+    exec "$SIOYEK" "$@"
+fi
+
+# Fresh launch: prepend toggle_custom_color so the new instance bootstraps
+# into custom color mode in the same invocation (no startup race).
+exec "$SIOYEK" --execute-command toggle_custom_color "$@"
