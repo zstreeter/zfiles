@@ -1,0 +1,35 @@
+#!/bin/sh
+# Refuse to publish the identifiers in ~/.config/zfiles/leak-patterns.
+#
+# Credentials are not our job: GitHub secret scanning and push protection are
+# enabled on this repository, run server-side, and cannot be bypassed with
+# --no-verify. This covers only what GitHub cannot know -- an employer's name,
+# its internal hosts, its unreleased hardware -- which is also why the list
+# lives outside the repository: committing it would publish what it hides.
+P="${XDG_CONFIG_HOME:-$HOME/.config}/zfiles/leak-patterns"
+[ -r "$P" ] || { echo "pre-push: no pattern file at $P" >&2; exit 1; }
+
+# Not `grep -f "$P"` directly: -f reads every line as a pattern, so a blank
+# line becomes the empty pattern, which matches all input and blocks every
+# push. Strip comments and blanks; newline-separated patterns are alternatives.
+PATS=$(grep -vE '^[[:space:]]*(#|$)' "$P")
+# bootstrap seeds this file with a sentinel, so the default state is loud. Once
+# it is deleted an empty list is a real answer -- this machine has nothing to
+# hide -- rather than a file nobody ever filled in.
+case "$PATS" in *UNCONFIGURED*)
+	echo "pre-push: $P is unconfigured (fill it in, delete its UNCONFIGURED line)" >&2
+	exit 1
+	;;
+esac
+[ -n "$PATS" ] || exit 0
+
+while read -r _ local _ _; do
+	case "$local" in *[!0]*) ;; *) continue ;; esac # a deletion publishes nothing
+	# Added lines of commits not yet on any remote. Added-only, because a line
+	# this push *removes* is a scrub, not a leak. Not-yet-pushed only, because
+	# flagging what went public years ago teaches you to reach for --no-verify.
+	if git log -p "$local" --not --remotes | grep '^+' | grep -iE "$PATS"; then
+		echo "pre-push: identifiers above would become public" >&2
+		exit 1
+	fi
+done
