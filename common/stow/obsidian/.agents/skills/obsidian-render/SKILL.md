@@ -1,9 +1,9 @@
 ---
-name: obsidian
-description: "Open Obsidian at a specific note so rendered math sits beside the terminal, or render a vault note to PDF/LaTeX via Quarto. Use when the user says /obsidian, /obsidian-launch, or asks to open, show, view, or render a note, vault, or paper."
+name: obsidian-render
+description: "Open Obsidian at a specific note so rendered math sits beside the terminal, or render a vault note to PDF/LaTeX via Quarto. Use when the user says /obsidian-render, /obsidian-open, or asks to open, show, view, or render a note, vault, or paper."
 ---
 
-# /obsidian
+# /obsidian-render
 
 Open Obsidian **at a specific file**, or render a vault note into a paper. Both
 run through zfiles scripts on `$PATH` — never reimplement their logic here.

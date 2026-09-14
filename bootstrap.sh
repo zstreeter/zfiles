@@ -235,6 +235,38 @@ mkdir -p "$(dirname "$STOW_MANIFEST")"
 printf '%s\n' "${!CURRENT_STOW_TARGETS[@]}" | sort > "$STOW_MANIFEST.tmp"
 mv "$STOW_MANIFEST.tmp" "$STOW_MANIFEST"
 
+# .git/hooks is never cloned; common/githooks is. See that directory for why.
+git config core.hooksPath common/githooks
+
+# The identifiers that hook refuses to publish. Never tracked -- a committed
+# list of what you are hiding is itself the disclosure -- so it cannot arrive by
+# clone. Seed it here; the hook blocks pushes until the sentinel line is gone,
+# because a file that exists and matches nothing is a guard that only looks set
+# up. Same deal as secrets.env: the real copy lives in the password manager.
+LEAK_PATTERNS="${XDG_CONFIG_HOME:-$HOME/.config}/zfiles/leak-patterns"
+if [[ ! -f "$LEAK_PATTERNS" ]]; then
+    mkdir -p "$(dirname "$LEAK_PATTERNS")"
+    cat > "$LEAK_PATTERNS" << 'PATTERNS'
+# Strings this machine must never publish. One extended regex per line; blank
+# lines and # comments are ignored. common/githooks/pre-push matches them
+# against every line your next push would add.
+#
+# Not for credentials: GitHub secret scanning and push protection catch those
+# server-side, where --no-verify cannot reach. This is for what GitHub cannot
+# know -- an employer's name, internal hostnames, unreleased hardware.
+#
+# Paste the real list from the password manager. Examples, delete them:
+#   \bexamplecorp\b
+#   \.internal\.examplecorp\.com
+#   \bPROJECT-[0-9]{4}\b
+#
+# Then delete the line below. Until it goes, every push is refused.
+UNCONFIGURED
+PATTERNS
+    chmod 600 "$LEAK_PATTERNS"
+    warn "Seeded $LEAK_PATTERNS — fill it in before pushing"
+fi
+
 # 3. Shared setup (every target; remote-hostile steps guard themselves)
 # shellcheck source=common/setup.sh
 source common/setup.sh

@@ -13,7 +13,8 @@
     "npm:@narumitw/pi-herdr",
     "npm:@juicesharp/rpiv-ask-user-question",
     "npm:opencode-pi",
-    "git:https://github.com/hasit/pi-community-themes"
+    "git:https://github.com/hasit/pi-community-themes",
+    "npm:pi-obsidian"
   ],
   "theme": "catppuccin-macchiato"
 }
