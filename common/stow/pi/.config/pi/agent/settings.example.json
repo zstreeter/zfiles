@@ -2,8 +2,11 @@
   "_comment": [
     "Template for ~/.config/pi/agent/settings.json, which is NOT tracked: pi",
     "rewrites it on every install and model switch, and it carries whichever",
-    "provider and model this machine happens to use. Copy it, then run",
-    "`pi install` for each entry below, or just let pi install them on start.",
+    "provider and model this machine happens to use. common/setup.sh reads",
+    "`packages` and runs `pi install` for any entry missing from settings.json",
+    "(idempotent). `theme` is the default off Omarchy; on Omarchy setup.sh",
+    "sets `omarchy-system` instead, which the theme-set hook keeps in sync",
+    "with the active Omarchy theme and pi hot-reloads.",
     "Providers and credentials belong in models.json, which is also untracked."
   ],
   "packages": [
@@ -14,7 +17,8 @@
     "npm:@juicesharp/rpiv-ask-user-question",
     "npm:opencode-pi",
     "git:https://github.com/hasit/pi-community-themes",
-    "npm:pi-obsidian"
+    "npm:pi-obsidian",
+    "npm:@dietrichgebert/ponytail"
   ],
   "theme": "catppuccin-macchiato"
 }

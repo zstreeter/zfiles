@@ -118,5 +118,19 @@ echo "theme-set hook: Set opencode TUI theme to $OC_THEME"
 # Do not signal every opencode process here: that interrupts active agents.
 # New sessions read the updated file; Omarchy already handles its own reload.
 
+# === pi: XDG-relocated theme sync ===
+# Omarchy renders pi.json per theme and ships omarchy-theme-set-pi to copy it
+# into pi's themes dir — but that script hardcodes ~/.pi/agent and silently
+# no-ops for an XDG install ($PI_CODING_AGENT_DIR = ~/.config/pi/agent).
+# Mirror it here. Write in place (same inode) rather than tmp+mv so pi's
+# hot-reload watcher on the active theme file fires and the running TUI
+# swaps immediately. settings.json's `theme` is set once by common/setup.sh.
+PI_AGENT_DIR="${PI_CODING_AGENT_DIR:-${XDG_CONFIG_HOME:-$HOME/.config}/pi/agent}"
+if [[ -f "$THEME_DIR/pi.json" && -d "$PI_AGENT_DIR" ]]; then
+    mkdir -p "$PI_AGENT_DIR/themes"
+    cat "$THEME_DIR/pi.json" > "$PI_AGENT_DIR/themes/omarchy-system.json"
+    echo "theme-set hook: Synced pi theme omarchy-system"
+fi
+
 # herdr config is a static stowed dotfile (zfiles/herdr), no longer theme-rendered,
 # so there's nothing to reload on theme-set.
