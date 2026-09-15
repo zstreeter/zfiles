@@ -18,7 +18,8 @@
     "npm:opencode-pi",
     "git:https://github.com/hasit/pi-community-themes",
     "npm:pi-obsidian",
-    "npm:@dietrichgebert/ponytail"
+    "npm:@dietrichgebert/ponytail",
+    "npm:pi-vimmode"
   ],
   "theme": "catppuccin-macchiato"
 }
