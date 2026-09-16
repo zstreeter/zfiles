@@ -1,0 +1,44 @@
+#!/usr/bin/env bash
+# vault-sync-bib — regenerate a vault's paperctl bibliography.
+#
+# Run as a Quarto pre-render hook (see the vault template's _quarto.yml), or by
+# hand after `paperctl add`.
+#
+# WHY THIS IS A SCRIPT AND NOT AN INLINE HOOK
+# Quarto parses `pre-render` entries itself before handing them to a shell, so an
+# inline `bash -c '... "$(basename ...)" ...'` loses its quoting and dies with
+# "unexpected EOF while looking for matching `'". A named command on PATH has
+# nothing to quote. Measured on Quarto 1.10.18.
+#
+# WHAT IT FIXES
+# library.bib is paperctl's export of ~/Library/<vault>/. Without regeneration it
+# goes stale the moment you `paperctl add` — and nothing says so: the render
+# succeeds and the new citation silently resolves to nothing.
+set -uo pipefail
+
+# QUARTO_PROJECT_DIR is set when Quarto invokes this; fall back to $PWD so the
+# script is also useful by hand.
+VAULT="${QUARTO_PROJECT_DIR:-$PWD}"
+NAME=$(basename "$VAULT")
+OUT="$VAULT/library.bib"
+
+# A vault without paperctl installed must still render.
+command -v paperctl >/dev/null 2>&1 || {
+    echo "vault-sync-bib: paperctl not installed, skipping" >&2
+    exit 0
+}
+
+# paperctl bib exits 0 and writes 0 entries when the folder does not exist, so a
+# typo'd or absent library is indistinguishable from an empty one. Check first,
+# and say so — silently emitting an empty bibliography is the failure mode this
+# script exists to prevent.
+LIB_ROOT="${PAPERCTL_LIBRARY:-$HOME/Library}"
+if [[ ! -d "$LIB_ROOT/$NAME" ]]; then
+    echo "vault-sync-bib: no library at $LIB_ROOT/$NAME — skipping (vault '$NAME')" >&2
+    exit 0
+fi
+
+paperctl bib --folder "$NAME" --out "$OUT" || {
+    echo "vault-sync-bib: paperctl bib failed for '$NAME'" >&2
+    exit 0   # never break a render over a bibliography refresh
+}
