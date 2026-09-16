@@ -159,6 +159,72 @@ def cmd_add(args, cfg) -> int:
 # search-web / search
 # --------------------------------------------------------------------------
 
+def cmd_adopt(args, cfg) -> int:
+    """File PDFs you already have against entries already in the index.
+
+    `add` fetches; it has no way to say "the PDF is already on disk". So a
+    library assembled by hand before paperctl -- or one whose papers are books
+    and technical reports with no open-access copy -- reports "0 available as
+    local PDFs" while the files sit in the folder. The metadata is right and
+    citations work; only paperctl's own view of the files is wrong.
+
+    Matching is on title similarity against the filename, and the score is
+    always reported. Below the same 0.55 floor `add` uses, the file is skipped
+    rather than filed against the wrong paper: misfiling a PDF is worse than
+    leaving it loose, because the index then asserts something false.
+    """
+    import difflib   # local: only this command needs them
+    import re
+
+    dest = library.folder(cfg, getattr(args, "to", None))
+    # load_index/save_index both take the FOLDER and append INDEX_NAME themselves.
+    index = library.load_index(dest)
+    entries = index.get("entries") or []
+    if not entries:
+        emit(args, {"adopted": 0}, [f"no index at {dest} -- `paperctl add` first"])
+        return 1
+
+    papers = dest / "papers"
+    files = [Path(f) for f in (args.files or [])] or \
+        sorted(p for p in dest.glob("*.pdf") if p.is_file())
+    if not files:
+        emit(args, {"adopted": 0}, [f"no loose PDFs in {dest}"])
+        return 0
+
+    style = cfg.get("library.filename_style") or "title_case"
+    norm = lambda t: re.sub(r"[^a-z0-9]+", " ", (t or "").lower()).strip()
+    done, skipped = [], []
+
+    for f in files:
+        stem = norm(f.stem)
+        best, score = None, 0.0
+        for e in entries:
+            r = difflib.SequenceMatcher(None, stem, norm(e.get("title"))).ratio()
+            if r > score:
+                best, score = e, r
+        if not best or score < 0.55:
+            skipped.append((f.name, score))
+            continue
+        target = papers / library.pdf_name(library.record_of(best), style)
+        if not args.dry_run:
+            papers.mkdir(parents=True, exist_ok=True)
+            shutil.move(str(f), target)
+            best["pdf"] = target.name
+            best["status"] = "have"
+            best["note"] = "adopted from local file"
+        done.append((f.name, best.get("citekey"), score))
+
+    if done and not args.dry_run:
+        library.save_index(dest, index)
+        library.write_projections(cfg, dest, index)
+
+    lines = [f"{'would adopt' if args.dry_run else 'adopted'} {len(done)} into {dest}"]
+    lines += [f"  {n}  ->  @{k}  ({s:.2f})" for n, k, s in done]
+    lines += [f"  SKIPPED {n}  (best match {s:.2f} < 0.55)" for n, s in skipped]
+    emit(args, {"adopted": len(done), "skipped": len(skipped)}, lines)
+    return 0
+
+
 def cmd_search_web(args, cfg) -> int:
     from .sources import search_all
 
@@ -392,6 +458,12 @@ def build_parser() -> argparse.ArgumentParser:
     a.add_argument("--to", metavar="FOLDER", help="folder under the library root")
     a.add_argument("--source", help="comma-separated subset of "
                                     + ",".join(REGISTRY))
+
+    ad = add_cmd("adopt", cmd_adopt,
+                 "file PDFs you already have against existing entries", dry=True)
+    ad.add_argument("files", nargs="*", metavar="PDF",
+                    help="PDFs to adopt; default: loose *.pdf in the folder")
+    ad.add_argument("--to", metavar="FOLDER", help="folder under the library root")
 
     s = add_cmd("search", cmd_search, "search the local library")
     s.add_argument("query")
