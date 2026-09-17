@@ -67,6 +67,16 @@ command = "himalaya-tui"
 pane_borders = true             # line between panes on split
 pane_gaps    = false            # zen: no spacing between panes
 
+# Hand the cursor back to the outer terminal (WezTerm). The default "auto"
+# DRAWS herdr's own cursor on WSL — as a terminal cell, one fixed shape — which
+# swallows the DECSCUSR codes zsh emits to switch block (vicmd, \e[1 q) and bar
+# (viins, \e[5 q). That looked like a zsh sourcing bug; it is not. zap-zsh/vim's
+# zle-keymap-select is correct and live, herdr was just eating its output.
+# Trade-off herdr's docs warn about: "auto" exists to dodge ConPTY cursor
+# flicker on WSL. If the cursor flickers, "drawn" is the fallback — at the cost
+# of losing vi-mode shape again.
+host_cursor = "native"
+
 # The left agent/workspace sidebar. Toggle it with prefix+b (ctrl+a then b).
 # "hidden" makes the collapsed state ZERO width — fully gone, no status rail —
 # so the terminal reclaims the full width. ("compact" would leave a thin rail
