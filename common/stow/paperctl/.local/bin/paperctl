@@ -12,8 +12,8 @@ import sys
 from pathlib import Path
 
 _here = Path(__file__).resolve()
-for _lib in (_here.parent.parent / "lib",          # ~/.local/bin -> ~/.local/lib
-             _here.parent.parent / ".local" / "lib"):  # running from the repo
+for _lib in (_here.parent.parent / "lib",
+             _here.parent.parent / ".local" / "lib"):
     if (_lib / "paperctl" / "cli.py").exists():
         sys.path.insert(0, str(_lib))
         break
@@ -29,7 +29,5 @@ if __name__ == "__main__":
     except KeyboardInterrupt:
         sys.exit(130)
     except BrokenPipeError:
-        # Piping into head closes the pipe early; that is not an error, and the
-        # default handler prints a traceback at exit for it.
         import os
         os._exit(0)

@@ -12,12 +12,12 @@ from dataclasses import dataclass, field
 @dataclass
 class Message:
     id: str = ""
-    sender: str = ""                 # display name if known, else address
+    sender: str = ""
     sender_address: str = ""
-    date: str = ""                   # ISO 8601 where the backend can manage it
+    date: str = ""
     subject: str = ""
-    html: str = ""                   # RAW markup. Never a text rendering.
-    html_unique: str | None = None   # this message only, quoted chain stripped
+    html: str = ""
+    html_unique: str | None = None
 
     @property
     def body(self) -> str:
@@ -38,4 +38,4 @@ class Thread:
     message_ids: list[str] = field(default_factory=list)
     account: str = ""
     backend: str = ""
-    extra: dict = field(default_factory=dict)   # backend's own bookkeeping
+    extra: dict = field(default_factory=dict)

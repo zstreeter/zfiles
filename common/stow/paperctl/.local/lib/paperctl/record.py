@@ -70,8 +70,6 @@ def score_title(query: str, title: str) -> float:
     head = _norm(title.split(":", 1)[0])
     if head and head != t:
         ratio = max(ratio, difflib.SequenceMatcher(None, q, head).ratio())
-    # An exact main-title hit beats anything fuzzy, so that a decoy cannot win
-    # on sheer length of overlap.
     if head == q:
         return 0.99
     return ratio

@@ -52,13 +52,10 @@ import threading
 import time
 from pathlib import Path
 
-# Enough to hold a profiler dump; past this we keep the head and the tail, which
-# is where the summary lines almost always are.
 MAX_CAPTURE = 64 * 1024
 LEDGER_NAME = "ledger.jsonl"
 
 
-# --- plumbing ---------------------------------------------------------------
 
 def _tty():
     return sys.stdout.isatty() and os.environ.get("NO_COLOR") is None
@@ -102,10 +99,6 @@ def git_state(root):
         "sha": sha,
         "short": sha[:7],
         "branch": git("rev-parse", "--abbrev-ref", "HEAD", cwd=root),
-        # A dirty tree means the measurement is not reproducible from the SHA
-        # alone. Recorded so recall can say so rather than implying it is.
-        # The ledger itself is untracked until someone commits it, and it must
-        # not count -- otherwise the first `measure run` dirties every run after.
         "dirty": bool(git("status", "--porcelain", "--", ".",
                           ":(exclude).measurements", cwd=root)),
     }
@@ -168,7 +161,6 @@ def ago(iso):
     return f"{s // 86400}d ago"
 
 
-# --- staleness --------------------------------------------------------------
 
 def staleness(entry, cur, root):
     """Return (status, detail). Statuses: ok, stale, unknown, note.
@@ -207,12 +199,9 @@ STATUS_LABEL = {"ok": "OK", "stale": "STALE", "unknown": "?", "note": "UNVERIFIE
 
 
 def status_tag(status, width=10):
-    # Pad before colouring: a %-*s format counts the escape bytes, so padding a
-    # coloured string silently misaligns every row on a tty.
     return c(STATUS_COLOR[status], f"{STATUS_LABEL[status]:<{width}}")
 
 
-# --- run --------------------------------------------------------------------
 
 def tee(src, sink, chunks):
     for line in iter(src.readline, b""):
@@ -277,8 +266,6 @@ def cmd_run(args, root):
     try:
         proc.wait()
     except KeyboardInterrupt:
-        # An interrupted run is still evidence of something; record it rather
-        # than losing the partial output.
         proc.terminate()
         proc.wait()
     for t in threads:
@@ -327,7 +314,6 @@ def cmd_run(args, root):
         bits.append(c("33", "dirty-tree"))
     print(c("2", f"\nmeasure: {verdict} {' '.join(bits)}"), file=sys.stderr)
 
-    # Transparent to the caller, so this composes inside scripts and Makefiles.
     sys.exit(proc.returncode)
 
 
@@ -347,7 +333,6 @@ def cmd_note(args, root):
           file=sys.stderr)
 
 
-# --- read -------------------------------------------------------------------
 
 def summarize(entry):
     if entry.get("kind") == "note":
@@ -381,8 +366,6 @@ def cmd_recall(args, root):
 
     cur = git_state(root)
     entries = list(reversed(entries))
-    # One line per tag by default: the current value of each thing measured,
-    # rather than a scroll of every time it was measured.
     if args.latest:
         seen, keep = set(), []
         for e in entries:
@@ -501,9 +484,6 @@ def cmd_diff(args, root):
             vb = (b.get("extract") or {}).get(k, "-")
             same = va == vb
             move = ""
-            # No percentage on an unchanged value: "+0.0%" is noise, and the
-            # point of this column is to make a number that MOVED impossible to
-            # miss.
             if not same:
                 try:
                     fa, fb = float(va), float(vb)
@@ -576,7 +556,6 @@ def cmd_path(args, root):
               file=sys.stderr)
 
 
-# --- cli --------------------------------------------------------------------
 
 def main():
     ap = argparse.ArgumentParser(

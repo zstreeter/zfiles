@@ -1,6 +1,4 @@
 #!/usr/bin/env bash
-# new-research-project <name>
-# Scaffolds a new research vault under ~/research/<name> from the zfiles vault template.
 set -euo pipefail
 
 if [[ $# -lt 1 ]]; then
@@ -10,19 +8,11 @@ fi
 
 NAME="$1"
 
-# WHERE VAULTS LIVE
-# On WSL, Obsidian is the *Windows* build (the target's standing rule: anything
-# with a window is the Windows program). A vault under $HOME is only reachable
-# from there over \\wsl$\, which is slow and drops file-watch events, so the
-# vault goes on the Windows filesystem and WSL reaches it through /mnt/c.
-# Everywhere else ~/research is correct. obsidian-vault resolves either.
 is_wsl() { grep -qi microsoft /proc/version 2>/dev/null; }
 
 if [[ -n ${ZFILES_VAULT_ROOT:-} ]]; then
     RESEARCH_ROOT="$ZFILES_VAULT_ROOT"
 elif is_wsl; then
-    # %USERPROFILE% via APPDATA, not a guessed /mnt/c/Users/$USER: the Windows
-    # and Linux account names differ on a domain-joined machine, which this is.
     _appdata=$(cd /mnt/c && cmd.exe /c 'echo %APPDATA%' 2>/dev/null | tr -d '\r\n')
     if [[ -n $_appdata && $_appdata != '%APPDATA%' ]]; then
         _appdata=$(wslpath -u "$_appdata" 2>/dev/null) || _appdata=""
@@ -41,7 +31,6 @@ else
 fi
 
 VAULT_DIR="$RESEARCH_ROOT/$NAME"
-# Every vault has a matching PDF library, managed by paperctl.
 LIBRARY_DIR="$HOME/Library/$NAME"
 TEMPLATE_DIR="${XDG_DATA_HOME:-$HOME/.local/share}/zfiles/vault-template"
 
@@ -57,21 +46,10 @@ if [[ -e "$VAULT_DIR" ]]; then
 fi
 
 mkdir -p "$RESEARCH_ROOT"
-# -L dereferences: the template's _quarto.yml, AGENTS.md and README.md are
-# RELATIVE symlinks back into zfiles (../../../../zfiles/...), which resolve
-# only at the template's own directory depth. A plain `cp -r` copies the link
-# text verbatim and every one of them dangles in the new vault -- and a missing
-# _quarto.yml is the silent failure this template warns about: Quarto renders
-# with no reader extensions, no filter and no pdf format, and reports no error.
-# Copy the CONTENT, so a vault is self-contained and survives zfiles moving.
 cp -rL "$TEMPLATE_DIR" "$VAULT_DIR"
 
-# Empty references.bib so Quarto's bibliography ref resolves before BBT writes it
 touch "$VAULT_DIR/references.bib"
 
-# The paper library for this vault. paperctl files PDFs here with a README index
-# and library.bib; `paperctl add --to <NAME>` is the only thing that should write
-# to it. Created now so the mapping vault <-> library is never ambiguous.
 mkdir -p "$LIBRARY_DIR"
 
 cat <<EOF

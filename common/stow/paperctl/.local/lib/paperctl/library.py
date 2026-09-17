@@ -50,8 +50,6 @@ def load_index(path: Path) -> dict:
     except FileNotFoundError:
         return {"schema": SCHEMA, "entries": []}
     except (json.JSONDecodeError, OSError) as e:
-        # Refuse rather than silently starting a fresh index: overwriting it
-        # would lose every record of what was already downloaded.
         sys.exit(f"paperctl: {f} is unreadable ({e}). Move it aside to start over.")
     data.setdefault("entries", [])
     return data
@@ -63,8 +61,6 @@ def save_index(path: Path, index: dict) -> None:
     index["updated"] = datetime.now(timezone.utc).isoformat(timespec="seconds")
     tmp = path / (INDEX_NAME + ".tmp")
     tmp.write_text(json.dumps(index, indent=2, sort_keys=True) + "\n")
-    # Atomic: a crash mid-write must not leave a truncated index, which
-    # load_index would then refuse and block every later run.
     tmp.replace(path / INDEX_NAME)
 
 
@@ -72,9 +68,6 @@ def find_entry(index: dict, ident: str) -> dict | None:
     return next((e for e in index["entries"] if e.get("ident") == ident), None)
 
 
-# --------------------------------------------------------------------------
-# PDF acquisition
-# --------------------------------------------------------------------------
 
 def pdf_name(rec: Record, style: str) -> str:
     """Filename for a paper's PDF, collision-proof by construction.
@@ -96,8 +89,6 @@ def download_pdf(fetch, url: str, dest: Path) -> tuple[bool, str]:
     except Exception as e:
         return False, f"fetch failed: {type(e).__name__}"
     if not data[:5].startswith(b"%PDF"):
-        # Publishers answer a paywalled request with 200 and a login page, so
-        # status code is not enough -- the magic bytes are the real check.
         return False, "response was not a PDF (likely a paywall or login page)"
     dest.parent.mkdir(parents=True, exist_ok=True)
     dest.write_bytes(data)
@@ -144,15 +135,9 @@ def acquire(fetch, rec: Record, papers: Path, email: str,
             "note": "; ".join(reasons) or "no open-access copy found"}
 
 
-# Statuses worth re-attempting later. needs-sso is IEEE-only and genuinely
-# needs a human, but link-only often just means Unpaywall had not yet indexed
-# the OA copy -- so `paperctl retry` exists and this is what it looks for.
 RETRYABLE = {"link-only"}
 
 
-# --------------------------------------------------------------------------
-# Adding
-# --------------------------------------------------------------------------
 
 def add(cfg, fetch, rec: Record, dest: Path, dry_run: bool = False,
         kind: str = "", provenance: dict | None = None) -> dict:
@@ -206,9 +191,6 @@ def dedupe_citekeys(entries: list[dict]) -> None:
             e["citekey"] = f"{base}{chr(ord('a') + n - 1)}"
 
 
-# --------------------------------------------------------------------------
-# Projections: README.md and refs.bib
-# --------------------------------------------------------------------------
 
 def write_projections(cfg, dest: Path, index: dict) -> None:
     entries = index.get("entries") or []
@@ -300,8 +282,6 @@ def _rows(entries: list[dict]) -> list[str]:
             rows.append(f"  {' · '.join(bits)}")
         if e.get("pdf"):
             rows.append(f"  [PDF](papers/{urllib.parse.quote(e['pdf'])})")
-        # Provenance only exists for mail-harvested entries; omit the line
-        # entirely rather than printing "shared by None".
         if e.get("shared_by"):
             rows.append(f"  shared by {e['shared_by']}"
                         + (f", {e['shared_at'][:10]}" if e.get("shared_at") else ""))

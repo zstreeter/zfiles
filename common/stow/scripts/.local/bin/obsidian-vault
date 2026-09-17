@@ -1,43 +1,10 @@
 #!/usr/bin/env bash
-# obsidian-vault — resolve Obsidian vault locations on any zfiles target.
-#
-#   obsidian-vault path [<name>]   absolute POSIX path to a vault
-#   obsidian-vault name [<path>]   vault name (what obsidian:// URIs want)
-#   obsidian-vault list            every known vault, "name<TAB>path"
-#   obsidian-vault config          path to Obsidian's own obsidian.json
-#
-# WHY THIS EXISTS
-# Two of the three things that want a vault path -- obsidian-open and
-# obsidian-render -- need it on targets where Obsidian itself is a *Windows*
-# program (WSL), so neither the config location nor the recorded paths are
-# POSIX. Resolution is fiddly enough, and wrong often enough, to be worth one
-# script rather than three copies.
-#
-# THE REGISTRY IS OBSIDIAN'S OWN
-# Obsidian records every vault it has opened in obsidian.json:
-#
-#   {"vaults":{"<hash>":{"path":"C:\\Users\\...\\Vault","ts":1690000000,"open":true}}}
-#
-# That file is the source of truth rather than anything zfiles writes, because
-# it is what the app acts on -- a vault this script invented but Obsidian has
-# never opened cannot be addressed by an obsidian:// URI at all. It is created
-# on FIRST LAUNCH, not by the installer, so a freshly installed Obsidian has no
-# registry and every lookup here has to survive its absence. Hence the
-# filesystem fallbacks below.
-#
-# jq is deliberately not used: it isn't in wsl/pkglist.txt and isn't installed
-# on the WSL target. python3 is present everywhere, same call the herdr-navd
-# daemon makes for the same reason.
 set -uo pipefail
 
 die() { echo "obsidian-vault: $*" >&2; exit 1; }
 
 is_wsl() { grep -qi microsoft /proc/version 2>/dev/null; }
 
-# %APPDATA% as a POSIX path. Same approach and same caching rationale as
-# winapp's win_local_appdata: WSL exports no equivalent, and guessing
-# /mnt/c/Users/$USER breaks the moment the Windows and Linux account names
-# differ -- the normal case on a domain-joined machine, which this one is.
 win_appdata() {
     local cache="${XDG_CACHE_HOME:-$HOME/.cache}/zfiles/appdata"
     local value raw
@@ -45,8 +12,6 @@ win_appdata() {
         value=$(<"$cache")
         [[ -d $value ]] && { printf '%s\n' "$value"; return 0; }
     fi
-    # cd out of the WSL filesystem: cmd.exe cannot set a UNC working directory
-    # and warns on stderr before falling back to C:\Windows.
     raw=$(cd /mnt/c && cmd.exe /c 'echo %APPDATA%' 2>/dev/null | tr -d '\r\n')
     [[ -n $raw && $raw != '%APPDATA%' ]] || return 1
     value=$(wslpath -u "$raw" 2>/dev/null) || return 1
@@ -55,10 +20,6 @@ win_appdata() {
     printf '%s\n' "$value"
 }
 
-# Where Obsidian keeps obsidian.json. On WSL the app is the Windows build --
-# the target's standing rule is that anything with a window is the Windows
-# program (see wsl/stow/wsl/.local/bin/winapp) -- so the config is under
-# %APPDATA%, not $XDG_CONFIG_HOME.
 obsidian_config() {
     local appdata
     if is_wsl; then
@@ -71,9 +32,6 @@ obsidian_config() {
     fi
 }
 
-# Registered vaults, most-recently-used first, as "path" lines. Paths recorded
-# by a Windows Obsidian are Windows paths, so they are translated here; a vault
-# whose drive is not mounted is dropped rather than reported as a dead path.
 registry_vaults() {
     local cfg
     cfg=$(obsidian_config) || return 1
@@ -109,14 +67,6 @@ to_posix() {
 
 is_vault() { [[ -d "$1/.obsidian" ]]; }
 
-# Every vault this machine knows about, deduplicated, best candidate first.
-#
-# Order is deliberate. The registry comes first because it is what Obsidian
-# will actually act on. ~/research/* comes next -- those are the vaults
-# new-research-project scaffolds, and a freshly scaffolded one is a real vault
-# on disk before Obsidian has ever opened it, so it exists here and nowhere
-# else. The scan is last and is bounded: it is the only way to find a vault
-# that predates zfiles, but an unbounded walk of /mnt/c is minutes long.
 _all_vaults_raw() {
     local p posix
 
@@ -143,9 +93,6 @@ _all_vaults_raw() {
     fi
 }
 
-# The same vault reaches _all_vaults_raw from more than one source -- a
-# ~/research vault that has been opened is in the registry too -- so the
-# dedup is what makes "first line" mean "best candidate".
 all_vaults() { _all_vaults_raw | awk '!seen[$0]++'; }
 
 cmd_list() {
@@ -168,7 +115,6 @@ cmd_path() {
         return 0
     fi
 
-    # An explicit argument may be a name or a path.
     if [[ -n $want ]]; then
         if [[ -d $want ]]; then
             printf '%s\n' "$(cd "$want" && pwd)"

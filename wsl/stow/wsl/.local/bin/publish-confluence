@@ -86,8 +86,6 @@ def _bridge_cwd(mcp_py):
 
 BRIDGE_CWD = os.environ.get("CONFLUENCE_MCP_CWD") or _bridge_cwd(MB)
 TEXSVG = os.path.expanduser("~/.local/lib/texsvg/tex2svg.js")
-# Corporate TLS interception re-signs npm/node traffic; node needs the system
-# bundle explicitly or every HTTPS call dies UNABLE_TO_GET_ISSUER_CERT_LOCALLY.
 CA = "/etc/ssl/certs/ca-certificates.crt"
 
 
@@ -99,7 +97,6 @@ def mcp(tool, args):
     )
     if p.returncode != 0:
         raise SystemExit(f"{tool}: bridge exited {p.returncode}\n{p.stderr[-800:]}")
-    # The bridge prints a permissions warning on stderr; the JSON is on stdout.
     line = next((l for l in p.stdout.splitlines() if l.startswith("{")), "")
     if not line:
         raise SystemExit(f"{tool}: no JSON in output\n{p.stdout[-800:]}\n{p.stderr[-400:]}")
@@ -111,11 +108,6 @@ def mcp(tool, args):
         payload = json.loads(text)
     except ValueError:
         return {"text": text}
-    # `isError` is NOT sufficient. confluence_upload_attachment returns
-    # isError=false AND "message": "Attachment uploaded successfully" while
-    # nesting {"success": false, "error": "403 Forbidden"} underneath. Trusting
-    # the top level reported four successful uploads that never happened.
-    # Walk one level down and fail loudly on any success:false.
     def check(node, path=""):
         if isinstance(node, dict):
             if node.get("success") is False:
@@ -188,7 +180,7 @@ def quarto_body(path):
     """
     import html as _html
     src = os.path.abspath(path)
-    proj = os.path.dirname(os.path.dirname(src))  # notes/x.md -> vault root
+    proj = os.path.dirname(os.path.dirname(src))
     rel = os.path.relpath(src, proj)
     r = subprocess.run(["quarto", "render", rel, "--to", "html"],
                        cwd=proj, capture_output=True, text=True)
@@ -203,8 +195,6 @@ def quarto_body(path):
         re.search(r'<body[^>]*>(.*?)</body>', doc, re.S)
     body = m.group(1) if m else doc
 
-    # Confluence storage is a constrained XHTML dialect: script/style are
-    # dropped, and Quarto's nav/tooling markup is noise on a wiki page.
     body = re.sub(r'<(script|style)\b.*?</\1>', '', body, flags=re.S)
     body = re.sub(r'<div[^>]*class="[^"]*(quarto-title-meta|toc|code-tools)[^"]*".*?</div>',
                   '', body, flags=re.S)
@@ -226,10 +216,6 @@ def quarto_body(path):
     body = re.sub(r'<span class="math (display|inline)">(.*?)</span>',
                   sub_math, body, flags=re.S)
 
-    # Confluence's storage sanitiser drops <div id="refs"> and its csl-entry
-    # children, so Quarto's bibliography vanishes on ingest -- measured: the
-    # inline citations survive as links, the reference list does not. Re-emit
-    # each entry as a plain <p>, which storage format keeps.
     def refs_span(text):
         """(start, end, inner) of the refs div, matched by balanced <div> depth.
 
@@ -257,9 +243,6 @@ def quarto_body(path):
             r'<div[^>]*class="[^"]*csl-entry[^"]*"[^>]*>(.*?)</div>', inner, re.S)
         if not entries:
             entries = [x for x in re.split(r'</div>\s*<div[^>]*>', inner) if x.strip()]
-        # Quarto already emits its own "References" heading immediately before
-        # the refs div, and that heading survives the sanitiser. Adding another
-        # produced "References References" on the page.
         rows = "".join(f"<p>{e.strip()}</p>" for e in entries)
         body = body[:start] + rows + body[end:]
     return body, count
@@ -317,14 +300,11 @@ def main():
             md = md[fm.end():]
     title = title or os.path.splitext(os.path.basename(a.file))[0]
 
-    # Obsidian wikilinks mean nothing outside the vault; strip to plain text
-    # rather than publish dead [[...]] syntax.
     md = re.sub(r"\[\[@?([^\]|]+?)(?:\|([^\]]+))?\]\]", lambda m: m.group(2) or m.group(1), md)
 
     md, blocks = extract_math(md)
     print(f"{len(blocks)} formula(e) found")
 
-    # 1. page must exist before attachments can hang on it
     if a.page_id:
         page_id = a.page_id
         mcp("confluence_update_page", {

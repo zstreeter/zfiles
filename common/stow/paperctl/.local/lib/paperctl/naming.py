@@ -12,13 +12,8 @@ import unicodedata
 
 RE_PREFIX = re.compile(r"^\s*((re|fwd?|fw|aw|sv)\s*:\s*)+", re.I)
 
-# Filenames only. Illegal on NTFS, and ":" and "\" are a nuisance on ext4 too
-# because half the tooling that touches ~/Library is Windows-side.
 ILLEGAL = re.compile(r'[:/\\*?"<>|]')
 
-# Words BBT drops when building shorttitle. Same list, same order of operations,
-# so a citekey generated here matches one Zotero would generate for the same
-# paper and the two .bib files can coexist without colliding or duplicating.
 STOPWORDS = {
     "a", "an", "the", "and", "or", "but", "of", "for", "on", "in", "to",
     "with", "from", "by", "at", "as", "is", "are", "be", "using", "via",
@@ -51,9 +46,6 @@ def title_case_filename(title: str, limit: int = 100) -> str:
     s = re.sub(r"[^\w\s.-]", " ", s, flags=re.U)
     s = re.sub(r"\s+", "_", s.strip()).strip("._-")
     if len(s) > limit:
-        # Back to a word boundary. Cutting mid-word produces filenames like
-        # Finite_Time_Blow_Up_Of_Eul, which read as corrupt rather than as
-        # abbreviated.
         s = s[:limit].rsplit("_", 1)[0]
     return s or "untitled"
 
@@ -105,9 +97,6 @@ def citekey(authors: list[str], title: str, year: str) -> str:
     return f"{first}{short}{year or ''}"
 
 
-# BibTeX/LaTeX specials. Backslash is absent on purpose: values reaching here
-# have already been HTML-unescaped and are plain text, so a backslash in one is
-# vanishingly rare, while escaping it would break any that is deliberate.
 LATEX_SPECIALS = {"&": r"\&", "%": r"\%", "$": r"\$", "#": r"\#",
                   "_": r"\_", "~": r"\textasciitilde{}", "^": r"\textasciicircum{}"}
 
@@ -123,7 +112,7 @@ def bib_escape(value: str) -> str:
     out = []
     for ch in clean(value):
         if ch in "{}":
-            continue           # braces are BibTeX syntax, never content
+            continue
         out.append(LATEX_SPECIALS.get(ch, ch))
     return "".join(out)
 
@@ -139,8 +128,6 @@ def bibtex(rec, key: str) -> str:
     kind = "article"
     venue = rec.venue or ""
     if rec.arxiv_id and not rec.doi:
-        # Braced like every other field: an unbraced value ends at the first
-        # non-word character, so a bare 2505.13124 is a parse error in pandoc.
         kind, fields = "misc", [("eprint", "{" + rec.arxiv_id + "}"),
                                 ("archivePrefix", "{arXiv}"),
                                 ("howpublished", "{arXiv preprint}")]
@@ -148,8 +135,6 @@ def bibtex(rec, key: str) -> str:
         kind = "inproceedings"
 
     if rec.title:
-        # Double-braced: BibTeX lowercases titles in many styles, and a paper
-        # about PINNs or GPUs must not become Pinns or Gpus.
         fields.insert(0, ("title", "{{" + bib_escape(rec.title) + "}}"))
     if rec.authors:
         fields.append(("author", "{" + bib_escape(" and ".join(rec.authors)) + "}"))
@@ -163,7 +148,6 @@ def bibtex(rec, key: str) -> str:
         if val:
             fields.append((name, "{" + bib_escape(val) + "}"))
     if rec.url:
-        # Not escaped: a URL is verbatim, and \_ inside one breaks the link.
         fields.append(("url", "{" + rec.url + "}"))
 
     body = ",\n".join(f"  {k} = {v}" for k, v in fields)

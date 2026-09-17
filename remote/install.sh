@@ -1,19 +1,4 @@
 #!/usr/bin/env sh
-# zfiles remote bootstrap — run this on a work server, from a herdr pane:
-#
-#   curl -fsSL https://raw.githubusercontent.com/zstreeter/zfiles/main/remote/install.sh | sh
-#
-# What it does: fetches only the parts of zfiles a bash ssh session actually
-# wants (the shared shell config, the bash prompt, yazi) and hands off to
-# bootstrap.sh --remote, which installs neovim/yazi/etc into ~/.local via mise.
-#
-# Deliberately NOT here: zsh, herdr, pi/opencode, mail, anything desktop. herdr
-# runs on the local machine; the server is just what's inside one of its panes.
-#
-# Constraints this respects:
-#   - never sudo, never a package manager: everything lands under $HOME
-#   - never replaces ~/.bashrc: bootstrap appends a guarded block to it
-#   - POSIX sh, because `curl | sh` shouldn't assume bash is the /bin/sh here
 
 set -eu
 
@@ -21,9 +6,6 @@ REPO_URL="${ZFILES_REPO_URL:-https://github.com/zstreeter/zfiles.git}"
 REPO_DIR="${ZFILES_DIR:-$HOME/.zfiles}"
 BRANCH="${ZFILES_BRANCH:-main}"
 
-# The stow packages a remote needs, plus this target dir. Cone-mode
-# sparse-checkout always includes the top-level files of every ancestor
-# directory, so bootstrap.sh and common/setup.sh come along free.
 SPARSE_DIRS="common/stow/shell common/stow/bash common/stow/yazi remote"
 
 info() { printf '\033[1;34m>>>\033[0m %s\n' "$1"; }
@@ -32,9 +14,6 @@ die()  { printf '\033[1;31mERR\033[0m %s\n' "$1" >&2; exit 1; }
 
 command -v git >/dev/null 2>&1 || die "git is required but not installed."
 
-# Sparse checkout needs git 2.25+ (`sparse-checkout` subcommand) and partial
-# clone needs 2.19+. Older servers are common enough to be worth a fallback —
-# a full clone of this repo is still only a few MB of text.
 git_supports_sparse() {
     v=$(git --version | awk '{print $3}')
     major=${v%%.*}

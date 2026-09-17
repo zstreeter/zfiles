@@ -129,7 +129,7 @@ def _html_of(raw: str) -> tuple[str, str]:
         if part.get_content_maintype() == "multipart":
             continue
         if part.get_filename():
-            continue                      # an attachment, not the body
+            continue
         try:
             body = part.get_content()
         except Exception:
@@ -161,7 +161,6 @@ def find_thread(cfg, subject: str, account=None) -> Thread | None:
     fallback, because some clients send neither References nor In-Reply-To.
     """
     account = account or (_accounts(cfg)[0] if _accounts(cfg) else None)
-    # himalaya's query language; quoted so a multi-word subject stays one term.
     envs = _envelopes(cfg, f'subject "{subject}"', account, 200)
     if not envs:
         return None
@@ -220,9 +219,6 @@ def fetch_thread(cfg, thread: Thread, account=None) -> list[Message]:
             sender_address=addr or sender,
             date=headers.get("date", ""),
             subject=subject,
-            # Plain text lands in `html` when there is no HTML part: the link
-            # extractor's bare-URL sweep handles it, and there were no anchors
-            # to lose. html_unique stays None -- himalaya has no equivalent.
             html=html_part or plain,
             html_unique=None,
         ))

@@ -35,10 +35,6 @@ from .sources import arxiv
 API = "https://api.alphaxiv.org"
 FOLDERS_URL = f"{API}/folders/v3"
 
-# Checked in order. Which one carries the arXiv id is not contractual -- the
-# payload has carried it under both names -- and a private upload has it under
-# none of them. Sniffing all of them and validating with arxiv.id_of() means a
-# renamed field degrades to a title search instead of filing garbage.
 ID_KEYS = ("canonicalId", "canonical_id", "universalPaperId",
            "universal_paper_id", "paperVersionId", "version_id")
 
@@ -110,9 +106,6 @@ def probe(cfg, fetch=None) -> tuple[bool, str, str]:
     return True, f"{len(folders)} folder(s), {n} bookmarked paper(s)", ""
 
 
-# --------------------------------------------------------------------------
-# Command
-# --------------------------------------------------------------------------
 
 def cmd_pull(args, cfg) -> int:
     from . import library, resolve
@@ -153,14 +146,8 @@ def cmd_pull(args, cfg) -> int:
     for f in folders:
         name = str(f.get("name") or "Bookmarks")
         papers = papers_of(f)
-        # --to collapses every alphaXiv folder into one library folder; without
-        # it each folder keeps its own name. title_case_filename is what makes
-        # that safe -- a folder called "PINNs / blowup" would otherwise nest,
-        # and one called "/tmp" would escape the library root entirely.
         dest = library.folder(cfg, args.to or naming.title_case_filename(name))
 
-        # Skip on arxiv_id, not on ident: an arXiv paper that also has a DOI is
-        # stored under the DOI, so ident alone would re-resolve it every run.
         known = {e.get("arxiv_id") for e in library.load_index(dest).get("entries", [])
                  if e.get("arxiv_id") and e.get("status") in ("downloaded", "have")}
 
@@ -226,26 +213,19 @@ def register_cli(sub, add_cmd) -> None:
     p.add_argument("--source", help="restrict metadata sources")
 
 
-# --------------------------------------------------------------------------
 
 def demo() -> None:
     """python3 -m paperctl.alphaxiv -- the parsing this module actually owns."""
     assert ident_of({"canonicalId": "2506.19243"}) == ("2506.19243", "2506.19243")
-    # Versioned ids lose the version: v1 and v2 are one paper in the library.
     assert ident_of({"canonicalId": "2506.19243v2"})[1] == "2506.19243"
-    # Field moved -> still found, because every candidate is sniffed.
     assert ident_of({"universalPaperId": "2506.19243"})[1] == "2506.19243"
     assert ident_of({"universal_paper_id": "1706.03762"})[1] == "1706.03762"
-    # A private upload has a Mongo id and no arXiv id: fall back to the title,
-    # which resolve.resolve searches for. Must NOT be mistaken for an id.
     priv = ident_of({"paperGroupId": "652f1c9ab3d4e5f6a7b8c9d0",
                      "title": "  Some   Internal Report "})
     assert priv == ("Some Internal Report", ""), priv
-    # Nothing usable at all is not a crash; the caller skips it.
     assert ident_of({}) == ("", "")
     assert papers_of({"papers": [{"title": "x"}, "junk", None]}) == [{"title": "x"}]
     assert papers_of({}) == []
-    # Folder names are sanitised before they become paths.
     assert "/" not in naming.title_case_filename("PINNs / blowup")
     print("alphaxiv: ok")
 

@@ -22,8 +22,6 @@ MSG_FIELDS = ("id,conversationId,subject,from,toRecipients,ccRecipients,"
               "receivedDateTime,sentDateTime,hasAttachments,webLink,"
               "body,uniqueBody")
 
-# Subjects that are noise in every thread. Matched at the start only -- a real
-# paper discussion can mention "out of office" in passing.
 AUTOREPLY = ("automatic reply:", "out of office:", "autoreply:", "undeliverable:")
 
 _CLIENT = None

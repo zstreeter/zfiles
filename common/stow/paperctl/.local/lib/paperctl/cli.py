@@ -55,9 +55,6 @@ def sources_for(args, cfg) -> list[str]:
     return enabled(getattr(args, "source", None), cfg.get("sources.enabled"))
 
 
-# --------------------------------------------------------------------------
-# doctor
-# --------------------------------------------------------------------------
 
 def cmd_doctor(args, cfg) -> int:
     """What works on THIS machine, and for anything that does not, why not."""
@@ -110,15 +107,9 @@ def cmd_doctor(args, cfg) -> int:
         print(f"  [{mark}] {ch['name']:<22} {ch['detail']}")
         if not ch["ok"] and ch["fix"]:
             print(f"         {c('2', ch['fix'])}")
-    # Exit 0 even with failures: doctor reports, it does not judge. A missing
-    # himalaya on WSL is correct, not broken, and a non-zero exit here would
-    # make every wrapper script treat a healthy machine as failing.
     return 0
 
 
-# --------------------------------------------------------------------------
-# add
-# --------------------------------------------------------------------------
 
 def cmd_add(args, cfg) -> int:
     fetch = fetcher(cfg)
@@ -157,9 +148,6 @@ def cmd_add(args, cfg) -> int:
     return 0
 
 
-# --------------------------------------------------------------------------
-# search-web / search
-# --------------------------------------------------------------------------
 
 def cmd_adopt(args, cfg) -> int:
     """File PDFs you already have against entries already in the index.
@@ -175,11 +163,10 @@ def cmd_adopt(args, cfg) -> int:
     rather than filed against the wrong paper: misfiling a PDF is worse than
     leaving it loose, because the index then asserts something false.
     """
-    import difflib   # local: only this command needs them
+    import difflib
     import re
 
     dest = library.folder(cfg, getattr(args, "to", None))
-    # load_index/save_index both take the FOLDER and append INDEX_NAME themselves.
     index = library.load_index(dest)
     entries = index.get("entries") or []
     if not entries:
@@ -292,9 +279,6 @@ def cmd_search(args, cfg) -> int:
     return 0
 
 
-# --------------------------------------------------------------------------
-# bib
-# --------------------------------------------------------------------------
 
 def cmd_bib(args, cfg) -> int:
     """Regenerate BibTeX. Writes library.bib, NEVER references.bib.
@@ -336,9 +320,6 @@ def cmd_bib(args, cfg) -> int:
     return 0
 
 
-# --------------------------------------------------------------------------
-# retry
-# --------------------------------------------------------------------------
 
 def cmd_retry(args, cfg) -> int:
     """Re-attempt papers that had no open-access copy last time.
@@ -383,9 +364,6 @@ def cmd_retry(args, cfg) -> int:
     return 0
 
 
-# --------------------------------------------------------------------------
-# tidy
-# --------------------------------------------------------------------------
 
 def cmd_tidy(args, cfg) -> int:
     """Report duplicate PDFs by content hash. Report-only unless --apply."""
@@ -420,9 +398,6 @@ def cmd_tidy(args, cfg) -> int:
     return 0
 
 
-# --------------------------------------------------------------------------
-# parser
-# --------------------------------------------------------------------------
 
 def build_parser() -> argparse.ArgumentParser:
     ap = argparse.ArgumentParser(
@@ -504,7 +479,6 @@ def main(argv: list[str] | None = None) -> int:
     if getattr(args, "config", None):
         os.environ["PAPERCTL_CONFIG"] = args.config
 
-    # Only dotted names are config overrides; the rest are command arguments.
     overrides = {k: v for k, v in vars(args).items() if "." in k}
     cfg = config.load(overrides)
     return args.fn(args, cfg)

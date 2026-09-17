@@ -1,7 +1,3 @@
-// Expose every skill in ~/.agents/skills as a slash command (/wayfinder,
-// /grill-with-docs...). opencode already loads the skills for its `skill`
-// tool but registers no command for them. Runs at startup, so skills added
-// by `npx skills add` show up on the next launch with nothing to re-run.
 import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { homedir } from "node:os";

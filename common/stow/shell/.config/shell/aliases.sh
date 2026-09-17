@@ -1,4 +1,3 @@
-# Use lunarvim for neovim if present.
 [ -x "$(command -v lvim)" ] && alias nvim="lvim" vimdiff="lvim -d"
 
 alias \

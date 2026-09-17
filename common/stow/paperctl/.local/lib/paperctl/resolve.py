@@ -47,9 +47,6 @@ def resolve(fetch, text: str, sources: list[str],
 
     if kind == "url":
         url = links.normalize(text)
-        # Order matters: an arXiv URL carries an id that gives the best record,
-        # a publisher URL usually carries a DOI, and scraping the page is the
-        # fallback that always technically works and is always worst.
         aid = arxiv.id_of(url)
         if aid:
             rec = _first(fetch, [(arxiv, aid)])
@@ -67,16 +64,12 @@ def resolve(fetch, text: str, sources: list[str],
         rec = page.fetch_one(fetch, url)
         if rec:
             return rec, []
-        # Nothing could describe it, but the URL is still worth keeping: a
-        # bare record indexes and links it, just without metadata.
         return Record(title="", url=url, source="unresolved"), []
 
     found = search_all(fetch, text, sources, limit)
     if not found:
         return None, []
     best = found[0]
-    # A weak best match is worse than none for `add`: it silently files the
-    # wrong paper. The caller decides what to do, but it needs to know.
     if best.score < 0.55:
         print(f"paperctl: best match scored {best.score:.2f}, which is weak:\n"
               f"          {best.title}\n"

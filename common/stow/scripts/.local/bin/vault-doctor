@@ -1,22 +1,4 @@
 #!/usr/bin/env bash
-# vault-doctor — assert a research vault is actually wired up.
-#
-#   vault-doctor [vault-path|vault-name]     (default: $PWD)
-#
-# Exits non-zero if anything is broken, so it is usable in a pre-commit hook or
-# before a publish.
-#
-# WHY THIS EXISTS
-# Every failure it checks for was silent. A vault scaffolded before
-# new-research-project gained `cp -rL` carries dangling symlinks into zfiles:
-# seven of them, including _extensions/obsidian/obsidian.lua, which means the
-# Obsidian filter never runs. Quarto reports a missing filter but NOT a missing
-# _quarto.yml -- a file outside the project's render list builds with no reader
-# extensions, no filter and no pdf format, and says nothing. And `paperctl bib`
-# exits 0 writing zero entries when the folder name is wrong, so a citation can
-# resolve to nothing while the render succeeds.
-#
-# The theme: these all succeed loudly and fail quietly. Hence a checker.
 set -uo pipefail
 
 ok=0; bad=0
@@ -37,10 +19,6 @@ echo "vault-doctor: $NAME"
 echo "  $VAULT"
 echo
 
-# --- 1. dangling symlinks --------------------------------------------------
-# The template stores _quarto.yml, AGENTS.md, README.md and obsidian.lua as
-# RELATIVE symlinks into zfiles, which resolve only at the template's own depth.
-# `cp -r` copies the link text verbatim and every one dangles.
 mapfile -t broken < <(find "$VAULT" -xtype l 2>/dev/null)
 if ((${#broken[@]})); then
     err "${#broken[@]} dangling symlink(s)"
@@ -50,7 +28,6 @@ else
     say "no dangling symlinks"
 fi
 
-# --- 2. the files Quarto silently tolerates missing -------------------------
 for f in _quarto.yml _extensions/obsidian/obsidian.lua; do
     if [[ -f $VAULT/$f && -s $VAULT/$f ]]; then
         say "$f present"
@@ -60,7 +37,6 @@ for f in _quarto.yml _extensions/obsidian/obsidian.lua; do
     fi
 done
 
-# --- 3. the render list actually covers notes/ and drafts/ ------------------
 if [[ -f $VAULT/_quarto.yml ]]; then
     if grep -q 'notes/' "$VAULT/_quarto.yml" && grep -q 'drafts/' "$VAULT/_quarto.yml"; then
         say "render list covers notes/ and drafts/"
@@ -70,7 +46,6 @@ if [[ -f $VAULT/_quarto.yml ]]; then
     fi
 fi
 
-# --- 4. the paired paper library -------------------------------------------
 LIB="${PAPERCTL_LIBRARY:-$HOME/Library}/$NAME"
 if [[ -d $LIB ]]; then
     say "library $LIB"
@@ -79,13 +54,7 @@ else
     note "new-research-project creates this; make it with: mkdir -p '$LIB'"
 fi
 
-# --- 5. every citekey resolves ---------------------------------------------
-# The failure this catches: paperctl add, forget to re-run paperctl bib, and the
-# citation renders as a dangling ?@key that is easy to miss in a long document.
 if compgen -G "$VAULT/notes/*.md" >/dev/null || compgen -G "$VAULT/drafts/*" >/dev/null; then
-    # Only prose sources. Recursing over every file type scrapes @container and
-    # @keyframes out of rendered CSS and @popperjs out of bundled JS -- Quarto
-    # leaves its .html output beside the note it came from.
     keys=$(find "$VAULT/notes" "$VAULT/drafts" -type f \( -name '*.md' -o -name '*.qmd' \) \
              -not -path '*_files/*' -print0 2>/dev/null \
            | xargs -0 -r grep -hoE '\[\[@[A-Za-z0-9]+\]\]|(^|[^[:alnum:]])@[A-Za-z][A-Za-z0-9]{6,}' 2>/dev/null \

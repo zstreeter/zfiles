@@ -1,8 +1,4 @@
-# Shell-agnostic environment. Plain exports only — sourced by zsh (via
-# $ZDOTDIR/.zshenv) and by bash (via ~/.config/bash/rc.sh), so nothing in here
-# may use zsh-only syntax.
 
-# Default programs:
 export EDITOR="nvim"
 if command -v ghostty >/dev/null 2>&1; then
     export TERMINAL="ghostty"
@@ -15,7 +11,6 @@ export XDG_DATA_HOME="$HOME/.local/share"
 export XDG_CACHE_HOME="$HOME/.cache"
 export XDG_STATE_HOME="$HOME/.local/state"
 
-# Cleanup
 export TMUX_TMPDIR="$XDG_RUNTIME_DIR"
 export ANDROID_SDK_HOME="$XDG_CONFIG_HOME/android"
 export CABAL_CONFIG="$XDG_DATA_HOME/cabal"
@@ -48,20 +43,11 @@ export STACK_XDG=1
 
 export CONDA_ROOT="$HOME/.local/miniconda"
 
-# Bun
 export BUN_INSTALL="$XDG_DATA_HOME/bun"
 export PATH="$BUN_INSTALL/bin:$PATH"
 
-# Cargo
 export PATH="$CARGO_HOME/bin:$PATH"
 
-# Omarchy environment (mirrors omarchy/default/bash/envs so SSH/non-omarchy
-# zsh sessions get the same baseline). Only prepend Omarchy's bin where it
-# actually exists (not on WSL/servers).
-# Omarchy 4 installs to /usr/share/omarchy (~/.local/share/omarchy is a
-# compat symlink). Never clobber a value the session already exported: the
-# shell's menu runs actions via `bash -lc`, and `qs ipc` finds the running
-# shell by *path* — a different spelling of the same dir reads as "not running".
 if [[ -z "$OMARCHY_PATH" ]]; then
     if [[ -d /usr/share/omarchy ]]; then
         export OMARCHY_PATH=/usr/share/omarchy
@@ -106,7 +92,6 @@ export CLAUDE_CODE_DISABLE_EXPERIMENTAL_BETAS=1
 [ -f "$XDG_CONFIG_HOME/shell/secrets.env" ] && . "$XDG_CONFIG_HOME/shell/secrets.env"
 [ -f "$XDG_CONFIG_HOME/shell/local.env" ] && . "$XDG_CONFIG_HOME/shell/local.env"
 
-# Other program settings:
 export UV_NATIVE_TLS=1
 export FZF_DEFAULT_OPTS="--layout=reverse --height 40%"
 export LESS=-R

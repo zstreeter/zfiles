@@ -4,17 +4,10 @@
 # guard themselves on $REMOTE.
 # shellcheck shell=bash
 
-# GPG agent — skipped on remote: a work server's gpg setup is the server's
-# business, and relocating GNUPGHOME under someone else's machine is exactly
-# the kind of surprise that target avoids.
-# shell/env.sh sets GNUPGHOME=$XDG_DATA_HOME/gnupg. Bootstrap may run under
-# bash without that loaded, so derive the target path the same way.
 if ! $REMOTE; then
     info "Configuring GPG Agent..."
     GNUPGHOME_TARGET="${GNUPGHOME:-${XDG_DATA_HOME:-$HOME/.local/share}/gnupg}"
 
-    # Relocate legacy ~/.gnupg once. Stop the running agent first so it doesn't
-    # hold open file handles in the source tree mid-move.
     if [[ -d "$HOME/.gnupg" && ! -e "$GNUPGHOME_TARGET" ]]; then
         info "Relocating $HOME/.gnupg → $GNUPGHOME_TARGET"
         gpgconf --kill gpg-agent 2>/dev/null || true
@@ -25,20 +18,14 @@ if ! $REMOTE; then
     mkdir -p "$GNUPGHOME_TARGET"
     chmod 700 "$GNUPGHOME_TARGET"
 
-    # Idempotent: the target's setup.sh picks PINENTRY (GUI on Omarchy, curses
-    # on WSL) so pass and signed commits work in a bare terminal.
     if ! grep -q "pinentry-program $PINENTRY" "$GNUPGHOME_TARGET/gpg-agent.conf" 2>/dev/null; then
         echo "pinentry-program $PINENTRY" >> "$GNUPGHOME_TARGET/gpg-agent.conf"
         echo "    Added $(basename "$PINENTRY") to gpg-agent.conf"
     fi
 
-    # Reload agent (auto-starts under the new GNUPGHOME) to apply changes
     GNUPGHOME="$GNUPGHOME_TARGET" gpg-connect-agent reloadagent /bye || true
 fi
 
-# Configure zsh with XDG and Zap — skipped on remote, which is bash-only
-# (that's why the shared config lives in `shell`, not `zsh`). No chsh on a
-# machine whose login shell isn't ours to change.
 if ! $REMOTE; then
 info "Configuring zsh..."
 
@@ -129,19 +116,12 @@ if [[ "$SHELL" != */zsh ]]; then
 fi
 fi  # ! $REMOTE
 
-# Hook bash into the zfiles config. Deliberately an *append* to whatever
-# ~/.bashrc already exists rather than a stowed file: on a work server that
-# file carries site setup (lmod, `module`, conda init) we must not clobber, and
-# on this side it keeps the machine's bashrc outside Stow ownership.
-# Same pattern as the generated ~/.zshenv above. Idempotent via the marker.
 ensure_bash_hook() {
     local target="$1" body="$2"
     if [[ -f "$target" ]] && grep -qF '# >>> zfiles >>>' "$target"; then
         info "bash hook already present in $target"
         return
     fi
-    # Keep a copy of a pre-existing file before touching it — same safety net
-    # the stow step applies, and the reason it lives outside the stow tree.
     if [[ -s "$target" ]]; then
         local backup="${XDG_STATE_HOME:-$HOME/.local/state}/zfiles/backup"
         mkdir -p "$backup"

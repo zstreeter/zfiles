@@ -23,8 +23,6 @@ def doi_of(text: str) -> str:
     m = DOI_RE.search(urllib.parse.unquote(text or ""))
     if not m:
         return ""
-    # Trailing punctuation is almost always sentence punctuation that got
-    # swept up, not part of the DOI.
     return m.group(1).rstrip(".,;)»\"'").lower()
 
 
@@ -58,9 +56,6 @@ def _parse(msg: dict) -> Record | None:
 
 
 def search(fetch, query: str, limit: int = 10) -> list[Record]:
-    # query.bibliographic rather than query: the general index matches on
-    # abstract and references too, so a survey that cites the target paper
-    # outranks the paper itself.
     q = urllib.parse.urlencode({
         "query.bibliographic": query,
         "rows": limit,

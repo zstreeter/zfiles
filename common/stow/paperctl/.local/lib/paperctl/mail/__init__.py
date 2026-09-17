@@ -46,8 +46,6 @@ def resolve_backend(cfg) -> tuple[object | None, str, str]:
     if want != "auto":
         return None, want, f"unknown mail.backend {want!r}"
 
-    # auto: probe in the order that matches how the targets actually differ,
-    # so an unlisted machine still lands somewhere sensible.
     for name in ("graph", "himalaya"):
         ok, detail, _ = BACKENDS[name].probe(cfg)
         if ok:
@@ -62,9 +60,6 @@ def probe(cfg) -> list[dict]:
         ok, detail, fix = mod.probe(cfg)
         out.append({"backend": name, "ok": ok, "detail": detail, "fix": fix})
     mod, chosen, why = resolve_backend(cfg)
-    # ok tracks whether a backend actually resolved, not whether one was named.
-    # "himalaya configured but unavailable" is a failure, and reporting it as
-    # ok is exactly the kind of cheerful lie doctor exists to prevent.
     out.append({"backend": "selected", "ok": mod is not None,
                 "detail": f"{chosen} -- {why}",
                 "fix": ("set mail.backend, or install the backend this target "
@@ -72,9 +67,6 @@ def probe(cfg) -> list[dict]:
     return out
 
 
-# --------------------------------------------------------------------------
-# Commands
-# --------------------------------------------------------------------------
 
 def _harvest(cfg, messages, fetch=None):
     """Messages -> deduplicated links with provenance. Backend-independent."""
@@ -93,11 +85,6 @@ def _harvest(cfg, messages, fetch=None):
     kept_urls = set(LE.drop_truncated([r["url"] for r in after_noise]))
     signal = [r for r in after_noise if r["url"] in kept_urls]
 
-    # Expand shorteners BEFORE classifying and deduping. A lnkd.in URL says
-    # nothing about what it points at, so an unexpanded one is always filed as
-    # "other", and two shorteners for the same target never dedupe. Done even
-    # for --dry-run, because the counts it reports would otherwise not match
-    # the counts a real run produces.
     shortened = 0
     if fetch is not None:
         for r in signal:
@@ -167,7 +154,6 @@ def cmd_thread(args, cfg) -> int:
                     "links": found}, lines + warn)
         return 0
 
-    # Full harvest: resolve each paper link and file it.
     from ..naming import title_case_filename
     dest = library.folder(cfg, args.to or title_case_filename(thread.title))
     srcs = sources_for(args, cfg)

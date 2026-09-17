@@ -95,12 +95,9 @@
 # GIT_PS1_HIDE_IF_PWD_IGNORED to a nonempty value. Override this on the
 # repository level by setting bash.hideIfPwdIgnored to "false".
 
-# check whether printf supports -v
 __git_printf_supports_v=
 printf -v __git_printf_supports_v -- '%s' yes >/dev/null 2>&1
 
-# stores the divergence from upstream in $p
-# used by GIT_PS1_SHOWUPSTREAM
 __git_ps1_show_upstream ()
 {
 	local key value
@@ -108,7 +105,6 @@ __git_ps1_show_upstream ()
 	local upstream=git legacy="" verbose="" name=""
 
 	svn_remote=()
-	# get some config options from git-config
 	local output="$(git config -z --get-regexp '^(svn-remote\..*\.url|bash\.showupstream)$' 2>/dev/null | tr '\0\n' '\n ')"
 	while read -r key value; do
 		case "$key" in
@@ -127,7 +123,6 @@ __git_ps1_show_upstream ()
 		esac
 	done <<< "$output"
 
-	# parse configuration values
 	for option in ${GIT_PS1_SHOWUPSTREAM}; do
 		case "$option" in
 		git|svn) upstream="$option" ;;
@@ -137,12 +132,9 @@ __git_ps1_show_upstream ()
 		esac
 	done
 
-	# Find our upstream
 	case "$upstream" in
 	git)    upstream="@{upstream}" ;;
 	svn*)
-		# get the upstream from the "git-svn-id: ..." in a commit message
-		# (git-svn uses essentially the same procedure internally)
 		local -a svn_upstream
 		svn_upstream=($(git log --first-parent -1 \
 					--grep="^git-svn-id: \(${svn_url_pattern#??}\)" 2>/dev/null))
@@ -155,7 +147,6 @@ __git_ps1_show_upstream ()
 			done
 
 			if [[ -z "$svn_upstream" ]]; then
-				# default branch name for checkouts with no layout:
 				upstream=${GIT_SVN_ID:-git-svn}
 			else
 				upstream=${svn_upstream#/}
@@ -166,12 +157,10 @@ __git_ps1_show_upstream ()
 		;;
 	esac
 
-	# Find how many commits we are ahead/behind our upstream
 	if [[ -z "$legacy" ]]; then
 		count="$(git rev-list --count --left-right \
 				"$upstream"...HEAD 2>/dev/null)"
 	else
-		# produce equivalent output to --count for older versions of git
 		local commits
 		if commits="$(git rev-list --left-right "$upstream"...HEAD 2>/dev/null)"
 		then
@@ -189,7 +178,6 @@ __git_ps1_show_upstream ()
 		fi
 	fi
 
-	# calculate the result
 	if [[ -z "$verbose" ]]; then
 		case "$count" in
 		"") # no upstream
@@ -223,8 +211,6 @@ __git_ps1_show_upstream ()
 				p="$p \${__git_ps1_upstream_name}"
 			else
 				p="$p ${__git_ps1_upstream_name}"
-				# not needed anymore; keep user's
-				# environment clean
 				unset __git_ps1_upstream_name
 			fi
 		fi
@@ -232,9 +218,6 @@ __git_ps1_show_upstream ()
 
 }
 
-# Helper function that is meant to be called from __git_ps1.  It
-# injects color codes into the appropriate gitstring variables used
-# to build a gitstring.
 __git_ps1_colorize_gitstring ()
 {
 	if [[ -n ${ZSH_VERSION-} ]]; then
@@ -243,8 +226,6 @@ __git_ps1_colorize_gitstring ()
 		local c_lblue='%F{blue}'
 		local c_clear='%f'
 	else
-		# Using \[ and \] around colors is necessary to prevent
-		# issues with command line editing/browsing/completion!
 		local c_red='\[\e[31m\]'
 		local c_green='\[\e[32m\]'
 		local c_lblue='\[\e[1;34m\]'
@@ -278,18 +259,11 @@ __git_ps1_colorize_gitstring ()
 	r="$c_clear$r"
 }
 
-# Helper function to read the first line of a file into a variable.
-# __git_eread requires 2 arguments, the file path and the name of the
-# variable, in that order.
 __git_eread ()
 {
 	test -r "$1" && IFS=$'\r\n' read "$2" <"$1"
 }
 
-# see if a cherry-pick or revert is in progress, if the user has committed a
-# conflict resolution with 'git commit' in the middle of a sequence of picks or
-# reverts then CHERRY_PICK_HEAD/REVERT_HEAD will not exist so we have to read
-# the todo file.
 __git_sequencer_status ()
 {
 	local todo
@@ -317,20 +291,8 @@ __git_sequencer_status ()
 	return 1
 }
 
-# __git_ps1 accepts 0 or 1 arguments (i.e., format string)
-# when called from PS1 using command substitution
-# in this mode it prints text to add to bash PS1 prompt (includes branch name)
-#
-# __git_ps1 requires 2 or 3 arguments when called from PROMPT_COMMAND (pc)
-# in that case it _sets_ PS1. The arguments are parts of a PS1 string.
-# when two arguments are given, the first is prepended and the second appended
-# to the state string when assigned to PS1.
-# The optional third parameter will be used as printf format string to further
-# customize the output of the git-status string.
-# In this mode you can request colored hints using GIT_PS1_SHOWCOLORHINTS=true
 __git_ps1 ()
 {
-	# preserve exit status
 	local exit=$?
 	local pcmode=no
 	local detached=no
@@ -343,9 +305,6 @@ __git_ps1 ()
 			ps1pc_start="$1"
 			ps1pc_end="$2"
 			printf_format="${3:-$printf_format}"
-			# set PS1 to a plain prompt so that we can
-			# simply return early if the prompt should not
-			# be decorated
 			PS1="$ps1pc_start$ps1pc_end"
 		;;
 		0|1)	printf_format="${1:-$printf_format}"
@@ -354,39 +313,6 @@ __git_ps1 ()
 		;;
 	esac
 
-	# ps1_expanded:  This variable is set to 'yes' if the shell
-	# subjects the value of PS1 to parameter expansion:
-	#
-	#   * bash does unless the promptvars option is disabled
-	#   * zsh does not unless the PROMPT_SUBST option is set
-	#   * POSIX shells always do
-	#
-	# If the shell would expand the contents of PS1 when drawing
-	# the prompt, a raw ref name must not be included in PS1.
-	# This protects the user from arbitrary code execution via
-	# specially crafted ref names.  For example, a ref named
-	# 'refs/heads/$(IFS=_;cmd=sudo_rm_-rf_/;$cmd)' might cause the
-	# shell to execute 'sudo rm -rf /' when the prompt is drawn.
-	#
-	# Instead, the ref name should be placed in a separate global
-	# variable (in the __git_ps1_* namespace to avoid colliding
-	# with the user's environment) and that variable should be
-	# referenced from PS1.  For example:
-	#
-	#     __git_ps1_foo=$(do_something_to_get_ref_name)
-	#     PS1="...stuff...\${__git_ps1_foo}...stuff..."
-	#
-	# If the shell does not expand the contents of PS1, the raw
-	# ref name must be included in PS1.
-	#
-	# The value of this variable is only relevant when in pcmode.
-	#
-	# Assume that the shell follows the POSIX specification and
-	# expands PS1 unless determined otherwise.  (This is more
-	# likely to be correct if the user has a non-bash, non-zsh
-	# shell and safer than the alternative if the assumption is
-	# incorrect.)
-	#
 	local ps1_expanded=yes
 	[ -z "${ZSH_VERSION-}" ] || [[ -o PROMPT_SUBST ]] || ps1_expanded=no
 	[ -z "${BASH_VERSION-}" ] || shopt -q promptvars || ps1_expanded=no
@@ -457,14 +383,12 @@ __git_ps1 ()
 		if [ -n "$b" ]; then
 			:
 		elif [ -h "$g/HEAD" ]; then
-			# symlink symbolic ref
 			b="$(git symbolic-ref HEAD 2>/dev/null)"
 		else
 			local head=""
 			if ! __git_eread "$g/HEAD" head; then
 				return $exit
 			fi
-			# is it a symbolic ref?
 			b="${head#ref: }"
 			if [ "$head" = "$b" ]; then
 				detached=yes
@@ -535,7 +459,6 @@ __git_ps1 ()
 
 	local z="${GIT_PS1_STATESEPARATOR-" "}"
 
-	# NO color option unless in PROMPT_COMMAND mode
 	if [ $pcmode = yes ] && [ -n "${GIT_PS1_SHOWCOLORHINTS-}" ]; then
 		__git_ps1_colorize_gitstring
 	fi
@@ -563,53 +486,16 @@ __git_ps1 ()
 	return $exit
 }
 
-# =============================================================================
-# zfiles addition -- everything above this line is git's contrib/git-prompt.sh,
-# verbatim. Keep local code below the line so refreshing the vendored copy is a
-# matter of replacing everything above it.
-# =============================================================================
 
-# Which GitHub account applies *here*, for the prompt. Lives alongside
-# __git_ps1 because it answers the same kind of question and both prompts
-# (zsh prompt.sh, bash prompt.sh) want them together.
-#
-# The account is per-directory, not global: ~/.gitconfig carries more than one
-# identity on the same host (a personal account and a work one) and selects
-# between them with includeIf rules -- by path for anything under the work
-# tree, by remote org otherwise. The included file sets `github.user` alongside
-# the author fields and the SSH key, so asking git for that key gets the same
-# answer git itself would use. No identity, path or org is spelled out in this
-# file; it is all read back out of the git config, so a new tree or org needs
-# only the ~/.gitconfig includeIf it would need anyway.
-#
-# Three layers, in order:
-#   1. `git config --get github.user` -- the includeIf-resolved identity.
-#   2. the same gitdir: rules applied to $PWD, for when there is no repo.
-#   3. gh's globally active account -- the fallback when no github.user is set
-#      (a personal repo, or any machine with a single-identity gitconfig).
 
-# Computed per call, not once at source time: gh-account.sh moves
-# GH_CONFIG_DIR on every cd, so a snapshot taken when the shell started would
-# keep pointing at whichever store happened to be active then.
 __gh_ps1_hosts() {
     printf '%s' "${GH_CONFIG_DIR:-${XDG_CONFIG_HOME:-$HOME/.config}/gh}/hosts.yml"
 }
 
-# `${var=}` rather than `var=` so re-sourcing the file keeps the cache warm.
 : "${__gh_ps1_key=}"
 : "${__gh_ps1_account=}"
 
-# Layer 2. Standing in the work tree but not inside a repo, layer 1 is empty: a
-# gitdir: condition is matched against the repo's .git, so with no repo there is
-# nothing to match and the include never fires. (Pointing GIT_DIR at a would-be
-# path doesn't help -- git only evaluates the condition when the directory
-# actually exists.) So apply the gitdir: rules to $PWD here instead.
-#
-# Only the gitdir: rules, and only on this no-repo path: the hasconfig: ones
-# match on a remote URL, which by definition doesn't exist when there is no
-# repo, and when there *is* a repo layer 1 has already applied all of them.
 __gh_ps1_gitdir_account() {
-    # Lines look like: includeif.gitdir:~/work/.path ~/.config/git/work.inc
     git config --global --get-regexp '^includeif\.gitdir:.*\.path$' 2>/dev/null |
     while IFS=' ' read -r key file; do
         local pattern="${key#includeif.gitdir:}"
@@ -619,9 +505,6 @@ __gh_ps1_gitdir_account() {
         case "$pattern" in
             '~/'*) dir="$HOME/${pattern#\~/}" ;;
             /*)    dir="$pattern" ;;
-            # Bare patterns are implicitly **/-prefixed and the rest can glob
-            # mid-path. Guessing at those would risk diverging from git's real
-            # matching, and a repo would have resolved them for us anyway.
             *)     continue ;;
         esac
         dir="${dir%/}"
@@ -629,21 +512,13 @@ __gh_ps1_gitdir_account() {
         case "$PWD/" in
             "$dir"/*) git config --file "${file/#\~/$HOME}" --get github.user 2>/dev/null ;;
         esac
-    # Every match prints; last one wins, the same precedence git gives includes.
     done | tail -1
 }
 
-# Layer 3. `gh auth status` costs ~100ms, far too slow to run per-prompt, so
-# read hosts.yml directly: the host block's top-level `user:` is the active
-# account (the names nested under `users:` are every account gh knows about,
-# active or not). First host wins if several are configured.
 __gh_ps1_active_account() {
     local hosts
     hosts=$(__gh_ps1_hosts)
     [ -r "$hosts" ] || return
-    # Indentation depth has moved between gh versions, so match on the key
-    # rather than a fixed column. `users:` can't collide: the trailing `s`
-    # means it never matches `user:`.
     sed -n 's/^[[:space:]]*user:[[:space:]]*//p' "$hosts" | head -1
 }
 
@@ -656,11 +531,6 @@ __gh_ps1_resolve() {
 }
 
 __gh_ps1() {
-    # Resolving costs up to three git forks, which is too much to repeat on
-    # every prompt, so cache it and redo the work only when an input moves: the
-    # directory, or either config file. One stat covers both files, so a repeat
-    # prompt in the same directory costs a single fork. Editing an *included*
-    # .inc is not caught -- it needs a new shell or a cd away and back.
     local key
     key="$PWD:$(stat -c %Y "$HOME/.gitconfig" \
                           "${XDG_CONFIG_HOME:-$HOME/.config}/git/config" \
@@ -692,10 +562,6 @@ __gh_ps1() {
 
 __gh_default_store() { printf '%s' "${XDG_CONFIG_HOME:-$HOME/.config}/gh"; }
 
-# Account -> store, by reading the active `user:` out of each store rather than
-# from a hardcoded table: a third account is `gh auth login` into a new
-# ~/.config/gh-<whatever>, with no edit here. Same spirit as the includeIf
-# rules, which a new internal org also needs nothing beyond.
 __gh_store_for_account() {
     [ -n "$1" ] || return 1
     local hosts active
@@ -710,8 +576,6 @@ __gh_store_for_account() {
     return 1
 }
 
-# Unset for the default store rather than setting it explicitly, so the common
-# case leaves a clean environment and behaves like a machine without this file.
 __gh_apply_store() {
     if [ "$1" = "$(__gh_default_store)" ]; then
         unset GH_CONFIG_DIR
@@ -723,18 +587,12 @@ __gh_apply_store() {
 __gh_route() {
     [ -n "$GH_ACCOUNT_PIN" ] && return 0   # ghuse override, until the next cd
 
-    # Resolve with GH_CONFIG_DIR cleared. Layer 3 falls back to whichever store
-    # it can see, so leaving the previous directory's store in the environment
-    # would make the answer depend on where we just came from: cd out of the
-    # work tree and layer 3 reads the work store, re-elects the work account,
-    # and the account never returns to personal.
     local account store
     account=$(GH_CONFIG_DIR= __gh_ps1_resolve)
     store=$(__gh_store_for_account "$account") || store=$(__gh_default_store)
     __gh_apply_store "$store"
 }
 
-# Manual override, cleared by the next cd. Takes an account name, not a path.
 ghuse() {
     if [ -z "$1" ]; then
         printf 'usage: ghuse <account>\nknown:\n' >&2
@@ -767,10 +625,6 @@ ghtoken() {
     sed -n 's/^[[:space:]]*oauth_token:[[:space:]]*//p' "$hosts" | head -1
 }
 
-# zsh gets a real chpwd hook. bash has none, so PROMPT_COMMAND stands in and
-# compares against the last seen directory -- routing on every prompt would
-# re-fork git for a bare <enter>. Both prompts source this file already, so
-# there is nothing to wire up in .zshrc or rc.sh.
 if [ -n "$ZSH_VERSION" ]; then
     autoload -Uz add-zsh-hook
     __gh_chpwd() { unset GH_ACCOUNT_PIN; __gh_route; }
@@ -782,10 +636,6 @@ elif [ -n "$BASH_VERSION" ]; then
         unset GH_ACCOUNT_PIN
         __gh_route
     }
-    # __zfiles_prompt calls __gh_chpwd itself; this file is sourced from the top
-    # of bash/prompt.sh, so prepending to PROMPT_COMMAND here would be undone by
-    # the assignment at the bottom of that file. Fall back to PROMPT_COMMAND
-    # only for a bash that loads git-prompt.sh without the zfiles prompt.
     case "$PROMPT_COMMAND" in
         *__gh_chpwd*) ;;
         '')  PROMPT_COMMAND='__gh_chpwd' ;;
@@ -794,7 +644,4 @@ elif [ -n "$BASH_VERSION" ]; then
     __gh_last_pwd="$PWD"
 fi
 
-# Route the shell's starting directory: hooks only fire on a later cd, and a
-# terminal opened straight into a work tree would otherwise start on the wrong
-# store.
 __gh_route

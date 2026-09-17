@@ -1,7 +1,4 @@
 #!/usr/bin/env bash
-# publish-post <draft.qmd> [slug]
-# Copies a vault draft (and adjacent assets) into the blog at
-# ~/Documents/Repos/zstreeter.github.io/posts/YYYY-MM-DD-<slug>/index.qmd
 set -euo pipefail
 
 if [[ $# -lt 1 ]]; then
@@ -33,8 +30,6 @@ fi
 mkdir -p "$DEST_DIR"
 cp "$DRAFT" "$DEST_DIR/index.qmd"
 
-# Copy adjacent images (siblings of the draft). Quarto's image: paths in
-# frontmatter resolve relative to the post directory, so colocating is simplest.
 DRAFT_DIR=$(dirname "$DRAFT")
 shopt -s nullglob
 for f in "$DRAFT_DIR"/*.{png,jpg,jpeg,svg,gif,webp}; do
@@ -42,11 +37,6 @@ for f in "$DRAFT_DIR"/*.{png,jpg,jpeg,svg,gif,webp}; do
 done
 shopt -u nullglob
 
-# Copy the bibliographies next to the post and pin them in its front matter.
-# Without this the post renders in the blog repo against whatever bibliography
-# that repo happens to configure, so every paperctl-only citekey silently
-# resolves to nothing -- Quarto does not fail on an unresolved @key. Colocating
-# makes the post self-contained instead of depending on blog-level config.
 VAULT_ROOT=$(cd "$DRAFT_DIR/.." && pwd)
 BIBS=()
 for b in references.bib library.bib; do
@@ -56,8 +46,6 @@ for b in references.bib library.bib; do
     fi
 done
 
-# Only inject when the draft does not already declare one, and only inside the
-# front matter block -- a `bibliography:` further down would be prose.
 if [[ ${#BIBS[@]} -gt 0 ]] && ! awk '/^---$/{n++; next} n==1 && /^bibliography:/{found=1} n>=2{exit} END{exit !found}' "$DEST_DIR/index.qmd"; then
     LIST=$(IFS=,; echo "${BIBS[*]}")
     awk -v list="[$LIST]" 'NR>1 && /^---$/ && !done {print "bibliography: " list; done=1} {print}' \

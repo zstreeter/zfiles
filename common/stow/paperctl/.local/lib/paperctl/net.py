@@ -17,11 +17,6 @@ import urllib.request
 
 DEFAULT_UA = "paperctl/1.0 (+https://github.com/zstreeter/zfiles)"
 
-# Retried: transient by definition. 429 is included because every one of these
-# APIs prefers a slow client to a blocked one, and 5xx is the publisher having
-# a bad minute. 403 and 404 are deliberately absent -- a paywall does not open
-# on the second ask, and retrying it just makes the run take four times longer
-# to reach the same "link-only".
 RETRY_STATUS = {408, 425, 429, 500, 502, 503, 504}
 
 
@@ -33,10 +28,6 @@ class Fetch:
         self.ua = user_agent
         self.timeout = timeout
         self.retries = max(0, int(retries))
-        # Crossref and OpenAlex both route a request carrying a contact address
-        # into a faster, more reliable pool. It is not authentication and it is
-        # not required; it is the difference between the polite and the common
-        # pool. Empty is fine and simply forgoes that.
         self.mailto = mailto
         self._ctx = _ssl_ctx()
 
@@ -47,9 +38,6 @@ class Fetch:
                            if self.mailto else self.ua),
             "Accept": accept,
         }
-        # Caller headers win, so an Authorization can be added without any of
-        # the politeness above being lost. The scholarly sources never pass
-        # any; alphaXiv's folder API is the one endpoint here that needs a key.
         head.update(headers or {})
         req = urllib.request.Request(url, headers=head)
         return urllib.request.urlopen(
@@ -67,9 +55,6 @@ class Fetch:
                 last = e
                 if e.code not in RETRY_STATUS:
                     raise
-                # Retry-After is authoritative when present; a server that
-                # tells you when to come back has already answered the
-                # question backoff is guessing at.
                 wait = _retry_after(e) or (2 ** attempt)
             except (urllib.error.URLError, TimeoutError, OSError) as e:
                 last = e

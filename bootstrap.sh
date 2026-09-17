@@ -8,17 +8,6 @@ info() { echo -e "\033[1;34m>>>\033[0m $1"; }
 warn() { echo -e "\033[1;33m!!!\033[0m $1"; }
 error() { echo -e "\033[1;31mERR\033[0m $1" >&2; exit 1; }
 
-# Machine facts → one TARGET directory. Each target dir owns everything
-# specific to that machine type: setup.sh, pkglist, stow/ packages, assets.
-#   omarchy/  — Arch + Omarchy desktop (Hyprland, keyd, themes, email)
-#   wsl/      — WSL Ubuntu work laptop (apt + mise, Windows host side)
-#   remote/   — a work server reached over ssh from a herdr pane. Bash prompt,
-#               yazi and neovim only, all user-local — never sudo, never
-#               rearrange $HOME.
-#   (linux)   — anything else: common packages only, no target dir.
-#
-# REMOTE can't be sniffed (a server looks like any other Linux box), so it's
-# explicit. remote/install.sh passes --remote after its sparse clone.
 REMOTE=false
 [[ "${ZFILES_TARGET:-}" == remote ]] && REMOTE=true
 for arg in "$@"; do
@@ -36,20 +25,12 @@ fi
 WSL=false
 ! $REMOTE && grep -qi microsoft /proc/version 2>/dev/null && WSL=true
 
-# The package step is the slow, privileged part. ZFILES_SKIP_PKG=1 leaves the
-# overlay and setup reconciliation active while skipping package installation.
 
 TARGET=linux
 $WSL && TARGET=wsl
 $OMARCHY && TARGET=omarchy
 $REMOTE && TARGET=remote
 
-# Installs mise into ~/.local/bin if absent, then pins the given tools globally.
-# Shared by the wsl target (noble ships neovim stale and yazi not at all), the
-# remote target (no root, so mise is the *only* source of binaries there), and
-# the core-CLI backfill below. Tools are pinned one at a time on purpose: one
-# name missing from mise's registry shouldn't take the rest of the toolchain
-# down with it.
 install_mise_stack() {
     if ! command -v mise &>/dev/null && [[ ! -x "$HOME/.local/bin/mise" ]]; then
         info "Installing mise..."
@@ -65,9 +46,6 @@ install_mise_stack() {
     eval "$(mise activate bash --shims)"
 }
 
-# Each <target>/setup.sh defines target_packages() and target_setup(), and may
-# override PINENTRY (consumed by common/setup.sh for gpg-agent) or STOW_ONLY
-# (a package whitelist — remote stows a subset of common).
 export PINENTRY=/usr/bin/pinentry-gtk
 STOW_ONLY=()
 target_packages() {
@@ -79,22 +57,12 @@ target_setup() { :; }
 
 info "Target: $TARGET"
 
-# 1. Target packages
 if [[ -n "${ZFILES_SKIP_PKG:-}" ]]; then
     info "Skipping package installation (ZFILES_SKIP_PKG is set)."
 else
     target_packages
 fi
 
-# 1b. Core CLI backfill.
-#
-# These aren't garnish: yazi's keymap binds z/Z to zoxide and its find/search to
-# fd, rg and fzf, and the shared shell aliases assume eza and bat. Each target
-# gets them a different way — pacman from omarchy/pkglist.txt, apt from
-# wsl/pkglist.txt, remote from mise — and parallel lists is exactly how zoxide
-# ended up in none of them. So the requirement is declared once here, and
-# anything the package manager didn't deliver is backfilled from mise into
-# ~/.local. Keys are the binary name, values the mise registry name.
 declare -A CORE_CLI_TOOLS=(
     [fd]=fd [rg]=ripgrep [fzf]=fzf [zoxide]=zoxide
     [eza]=eza [bat]=bat [nvim]=neovim
@@ -121,15 +89,9 @@ else
     info "All core CLI tools present."
 fi
 
-# 2. Stow dotfiles — packages are auto-discovered: every directory under
-# common/stow/ plus <target>/stow/. `ls <dir>/stow` IS the package list; to add
-# a package, drop a directory there. STOW_ONLY (set by remote/setup.sh)
-# whitelists a subset.
 info "Stowing dotfiles..."
 command -v stow &>/dev/null || error "stow not installed — rerun the package step or install it manually."
 
-# Never tree-fold or adopt. Folding lets runtime files land in the repository;
-# adoption lets pre-existing machine config overwrite tracked source files.
 STOW_FLAGS=(--no-folding --target="$HOME")
 STOW_BACKUP_DIR="${XDG_STATE_HOME:-$HOME/.local/state}/zfiles/backup/$(date +%Y%m%d%H%M%S).$$"
 BACKED_UP=()
@@ -182,7 +144,6 @@ stow_selected() {
     [[ " ${STOW_ONLY[*]} " == *" $1 "* ]]
 }
 
-# Collect packages and the target paths they currently own.
 STOW_DIRS=(common/stow)
 [[ -d "$TARGET/stow" ]] && STOW_DIRS+=("$TARGET/stow")
 STOW_PKG_PATHS=()
@@ -203,8 +164,6 @@ for rel in "${!CURRENT_STOW_TARGETS[@]}"; do
     [[ -e "$HOME/$rel" || -L "$HOME/$rel" ]] && PRESENT_STOW_TARGETS["$rel"]=1
 done
 
-# A manifest gives deletion the inverse of auto-discovery: remove only retired
-# targets that are still links into this repository.
 STOW_MANIFEST="${XDG_STATE_HOME:-$HOME/.local/state}/zfiles/stow-targets"
 if [[ -f "$STOW_MANIFEST" ]]; then
     trap restore_stow_state ERR
@@ -235,7 +194,6 @@ mkdir -p "$(dirname "$STOW_MANIFEST")"
 printf '%s\n' "${!CURRENT_STOW_TARGETS[@]}" | sort > "$STOW_MANIFEST.tmp"
 mv "$STOW_MANIFEST.tmp" "$STOW_MANIFEST"
 
-# .git/hooks is never cloned; common/githooks is. See that directory for why.
 git config core.hooksPath common/githooks
 
 # The identifiers that hook refuses to publish. Never tracked -- a committed
@@ -271,7 +229,6 @@ fi
 # shellcheck source=common/setup.sh
 source common/setup.sh
 
-# 4. Target-specific setup
 target_setup
 
 if ! $REMOTE; then
