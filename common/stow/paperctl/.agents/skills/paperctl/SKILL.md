@@ -56,6 +56,35 @@ not an empty thread. Links live in `href` attributes; the visible text is usuall
 the paper's title. A flattening path once returned zero URLs for 4 of 22 messages
 — including the originating mail carrying the two most important links.
 
+## alphaXiv bookmarks
+
+```bash
+# once, in ~/.config/shell/secrets.env (gitignored, sourced by every shell):
+#     export ALPHAXIV_API_KEY="axv1_..."   # alphaxiv.org -> Settings -> API Keys
+paperctl pull --dry-run                 # what would be filed, and where
+paperctl pull                           # one library folder per alphaXiv folder
+paperctl pull --folder blowup --to PINN_Blowup
+```
+
+**alphaXiv is the only source here that needs a credential.** arXiv, Crossref
+and OpenAlex are open APIs with no key and no registration; `unpaywall_email` is
+a contact address their terms ask for, not a secret. So there is exactly one key
+to set, and it is an env var — never a `config.toml` or `local.toml` setting,
+because those live inside the repo and an ignore rule is weaker than being
+outside it. `paperctl doctor` reports whether it is set and whether alphaXiv
+accepts it.
+
+One direction, always: alphaXiv is where papers are *found*, the library is
+where they live. `pull` never writes back, and never touches `references.bib`.
+A bookmark is "read this later", which is not the same claim as a bibliography
+entry — auto-filing them into Zotero would put unread papers in a citation list.
+
+Re-running is the sync. Bookmarks already filed **with a PDF** are skipped
+without a network call; anything `link-only` is re-attempted, same as
+`paperctl retry`. A private (non-arXiv) upload has no id to resolve, so it falls
+back to a title search and is reported `UNRESOLVED` if nothing matches — that is
+a report, not a failure, and the run continues.
+
 ## Searching
 
 ```bash

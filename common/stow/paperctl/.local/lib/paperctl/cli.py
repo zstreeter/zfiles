@@ -19,7 +19,7 @@ import shutil
 import sys
 from pathlib import Path
 
-from . import config, library, naming, net, resolve
+from . import alphaxiv, config, library, naming, net, resolve
 from .record import Record
 from .sources import REGISTRY, enabled
 
@@ -88,6 +88,8 @@ def cmd_doctor(args, cfg) -> int:
             mod = REGISTRY[name]
             url = getattr(mod, "API", "")
             check(f"source: {name}", fetch.reachable(url), url)
+
+    check("alphaxiv", *alphaxiv.probe(cfg, None if args.offline else fetch))
 
     for m in mail_probe(cfg):
         check(f"mail: {m['backend']}", m["ok"], m["detail"], m.get("fix", ""))
@@ -487,6 +489,8 @@ def build_parser() -> argparse.ArgumentParser:
     t = add_cmd("tidy", cmd_tidy, "find duplicate PDFs by content hash")
     t.add_argument("--apply", action="store_true",
                    help="actually remove duplicates (default is report-only)")
+
+    alphaxiv.register_cli(sub, add_cmd)
 
     from .mail import register_cli
     register_cli(sub, add_cmd)

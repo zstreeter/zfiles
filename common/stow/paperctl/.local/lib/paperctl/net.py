@@ -40,22 +40,28 @@ class Fetch:
         self.mailto = mailto
         self._ctx = _ssl_ctx()
 
-    def _open(self, url: str, accept: str, timeout: int | None):
-        req = urllib.request.Request(url, headers={
+    def _open(self, url: str, accept: str, timeout: int | None,
+              headers: dict | None = None):
+        head = {
             "User-Agent": (f"{self.ua} mailto:{self.mailto}"
                            if self.mailto else self.ua),
             "Accept": accept,
-        })
+        }
+        # Caller headers win, so an Authorization can be added without any of
+        # the politeness above being lost. The scholarly sources never pass
+        # any; alphaXiv's folder API is the one endpoint here that needs a key.
+        head.update(headers or {})
+        req = urllib.request.Request(url, headers=head)
         return urllib.request.urlopen(
             req, timeout=timeout or self.timeout, context=self._ctx)
 
-    def get(self, url: str, accept: str = "*/*",
-            timeout: int | None = None) -> bytes:
+    def get(self, url: str, accept: str = "*/*", timeout: int | None = None,
+            headers: dict | None = None) -> bytes:
         """Bytes, or raise. Retries only what is worth retrying."""
         last: Exception | None = None
         for attempt in range(self.retries + 1):
             try:
-                with self._open(url, accept, timeout) as r:
+                with self._open(url, accept, timeout, headers) as r:
                     return r.read()
             except urllib.error.HTTPError as e:
                 last = e
@@ -73,8 +79,8 @@ class Fetch:
         raise last if last else RuntimeError(f"unreachable: {url}")
 
     def get_text(self, url: str, accept: str = "*/*",
-                 timeout: int | None = None) -> str:
-        return self.get(url, accept, timeout).decode("utf-8", "replace")
+                 timeout: int | None = None, headers: dict | None = None) -> str:
+        return self.get(url, accept, timeout, headers).decode("utf-8", "replace")
 
     def final_url(self, url: str, timeout: int = 20) -> str:
         """Where a shortener actually lands. Never raises: the original URL is

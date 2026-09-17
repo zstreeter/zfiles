@@ -24,6 +24,14 @@ enabled = ["arxiv", "crossref", "openalex"]
 #     unpaywall_email = "you@example.com"
 unpaywall_email = ""
 
+# arXiv, Crossref and OpenAlex above need no key -- they are open APIs, and
+# unpaywall_email is a contact address their terms ask for, not a credential.
+#
+# The one source that DOES need a key is alphaXiv (`paperctl pull`), and it is
+# deliberately not settable here or in local.toml: keys live outside the repo,
+# in ~/.config/shell/secrets.env, as `export ALPHAXIV_API_KEY="axv1_..."`.
+# `paperctl doctor` reports whether it is set and whether alphaXiv accepts it.
+
 [mail]
 # auto probes for a working backend, so a machine not listed under [target]
 # below still works. Set explicitly to skip the probe.
