@@ -280,6 +280,63 @@ if [[ -d "$PI_OLD_DIR" && -n "$(ls -A "$PI_OLD_DIR" 2>/dev/null)" ]]; then
     rmdir "$HOME/.pi" 2>/dev/null || true
 fi
 
+# Install the pi packages listed in the stowed settings.example.json.
+# settings.json itself is untracked (pi rewrites it), so the template is
+# the source of truth and `pi install` merges each entry in. Idempotent:
+# entries already present in settings.json are skipped.
+#
+# Theme: on Omarchy, pi follows the system theme — Omarchy renders pi.json on
+# every theme switch and the zfiles theme-set hook syncs it into pi's themes
+# dir, where pi hot-reloads it. Elsewhere, the template's theme (catppuccin
+# from pi-community-themes) is the default. Applied after the packages so
+# the theme exists when pi validates it.
+PI_TEMPLATE="$PI_NEW_DIR/settings.example.json"
+PI_SETTINGS="$PI_NEW_DIR/settings.json"
+if command -v pi &>/dev/null && [[ -f "$PI_TEMPLATE" ]]; then
+    info "Syncing pi packages from settings.example.json..."
+    while IFS= read -r pkg; do
+        [[ -z "$pkg" ]] && continue
+        if [[ -f "$PI_SETTINGS" ]] && jq -e --arg p "$pkg" \
+            '(.packages // []) | map(if type == "string" then . else .source end) | index($p) != null' \
+            "$PI_SETTINGS" >/dev/null 2>&1; then
+            continue
+        fi
+        info "  pi install $pkg"
+        pi install "$pkg" || warn "  failed: $pkg (continuing)"
+    done < <(jq -r '.packages[]' "$PI_TEMPLATE")
+
+    if $OMARCHY; then
+        PI_THEME="omarchy-system"
+        # Seed the theme file now; the hook keeps it current from here on.
+        PI_OMARCHY_SRC="$HOME/.local/state/omarchy/current/theme/pi.json"
+        if [[ -f "$PI_OMARCHY_SRC" ]]; then
+            mkdir -p "$PI_NEW_DIR/themes"
+            cat "$PI_OMARCHY_SRC" > "$PI_NEW_DIR/themes/omarchy-system.json"
+        fi
+    else
+        PI_THEME=$(jq -r '.theme // empty' "$PI_TEMPLATE")
+    fi
+    if [[ -n "$PI_THEME" && -f "$PI_SETTINGS" ]] \
+        && [[ "$(jq -r '.theme // empty' "$PI_SETTINGS")" != "$PI_THEME" ]]; then
+        info "Setting pi theme: $PI_THEME"
+        tmp=$(mktemp "$PI_SETTINGS.XXXXXX")
+        jq --arg t "$PI_THEME" '.theme = $t' "$PI_SETTINGS" > "$tmp" && mv "$tmp" "$PI_SETTINGS"
+    fi
+fi
+
+# AgentPal pi extension (SMART INSTALL). The AgentPal repo owns the file;
+# link it rather than copy so it can't drift. Skipped when the repo isn't
+# checked out on this machine.
+AGENTPAL_REPO="${AGENTPAL_REPO:-$HOME/Documents/DevicePals/AgentPal}"
+AGENTPAL_EXT="$AGENTPAL_REPO/integrations/pi/agentpal.ts"
+if [[ -f "$AGENTPAL_EXT" ]]; then
+    mkdir -p "$PI_NEW_DIR/extensions"
+    if [[ "$(readlink -f "$PI_NEW_DIR/extensions/agentpal.ts" 2>/dev/null)" != "$AGENTPAL_EXT" ]]; then
+        info "Linking AgentPal pi extension from $AGENTPAL_REPO"
+        ln -sfn "$AGENTPAL_EXT" "$PI_NEW_DIR/extensions/agentpal.ts"
+    fi
+fi
+
 # XDG hygiene — relocate well-known dotfiles to XDG paths and remove
 # dead artifacts. Each relocate runs only when the legacy path exists and
 # the XDG target doesn't, so this is safe to rerun.
