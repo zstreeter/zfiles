@@ -230,20 +230,38 @@ def quarto_body(path):
     # children, so Quarto's bibliography vanishes on ingest -- measured: the
     # inline citations survive as links, the reference list does not. Re-emit
     # each entry as a plain <p>, which storage format keeps.
-    def flatten_refs(mm):
-        inner = mm.group(1)
-        entries = re.findall(r'<div[^>]*class="[^"]*csl-entry[^"]*"[^>]*>(.*?)</div>',
-                             inner, re.S)
+    def refs_span(text):
+        """(start, end, inner) of the refs div, matched by balanced <div> depth.
+
+        A non-greedy `<div id="refs">(.*?)</div>` stops at the FIRST nested
+        `</div>`, which is the end of entry one -- so exactly one reference
+        survived and the rest were left as raw csl-entry divs for the
+        sanitiser to drop. Measured on a 19-citation draft: 1 of 19 reached
+        the page. Depth counting is the only thing that gets the whole block.
+        """
+        m0 = re.search(r'<div id="refs"[^>]*>', text)
+        if not m0:
+            return None
+        depth, i = 1, m0.end()
+        for tok in re.finditer(r'<div\b[^>]*>|</div>', text[m0.end():]):
+            depth += 1 if tok.group(0).startswith('<div') else -1
+            if depth == 0:
+                i = m0.end() + tok.end()
+                return m0.start(), i, text[m0.end():m0.end() + tok.start()]
+        return m0.start(), len(text), text[m0.end():]
+
+    span = refs_span(body)
+    if span:
+        start, end, inner = span
+        entries = re.findall(
+            r'<div[^>]*class="[^"]*csl-entry[^"]*"[^>]*>(.*?)</div>', inner, re.S)
         if not entries:
             entries = [x for x in re.split(r'</div>\s*<div[^>]*>', inner) if x.strip()]
-        rows = "".join(f"<p>{e.strip()}</p>" for e in entries)
         # Quarto already emits its own "References" heading immediately before
         # the refs div, and that heading survives the sanitiser. Adding another
         # produced "References References" on the page.
-        return rows
-
-    body = re.sub(r'<div id="refs"[^>]*>(.*?)</div>\s*(?=<|$)', flatten_refs,
-                  body, flags=re.S)
+        rows = "".join(f"<p>{e.strip()}</p>" for e in entries)
+        body = body[:start] + rows + body[end:]
     return body, count
 
 

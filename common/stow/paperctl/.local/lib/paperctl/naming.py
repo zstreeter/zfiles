@@ -139,9 +139,11 @@ def bibtex(rec, key: str) -> str:
     kind = "article"
     venue = rec.venue or ""
     if rec.arxiv_id and not rec.doi:
-        kind, fields = "misc", [("eprint", rec.arxiv_id),
-                                ("archivePrefix", "arXiv"),
-                                ("howpublished", "arXiv preprint")]
+        # Braced like every other field: an unbraced value ends at the first
+        # non-word character, so a bare 2505.13124 is a parse error in pandoc.
+        kind, fields = "misc", [("eprint", "{" + rec.arxiv_id + "}"),
+                                ("archivePrefix", "{arXiv}"),
+                                ("howpublished", "{arXiv preprint}")]
     elif re.search(r"\b(proc|conference|symposium|workshop|meeting)\b", venue, re.I):
         kind = "inproceedings"
 

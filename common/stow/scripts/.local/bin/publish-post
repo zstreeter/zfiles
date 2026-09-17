@@ -42,6 +42,30 @@ for f in "$DRAFT_DIR"/*.{png,jpg,jpeg,svg,gif,webp}; do
 done
 shopt -u nullglob
 
+# Copy the bibliographies next to the post and pin them in its front matter.
+# Without this the post renders in the blog repo against whatever bibliography
+# that repo happens to configure, so every paperctl-only citekey silently
+# resolves to nothing -- Quarto does not fail on an unresolved @key. Colocating
+# makes the post self-contained instead of depending on blog-level config.
+VAULT_ROOT=$(cd "$DRAFT_DIR/.." && pwd)
+BIBS=()
+for b in references.bib library.bib; do
+    if [[ -s "$VAULT_ROOT/$b" ]]; then
+        cp "$VAULT_ROOT/$b" "$DEST_DIR/"
+        BIBS+=("$b")
+    fi
+done
+
+# Only inject when the draft does not already declare one, and only inside the
+# front matter block -- a `bibliography:` further down would be prose.
+if [[ ${#BIBS[@]} -gt 0 ]] && ! awk '/^---$/{n++; next} n==1 && /^bibliography:/{found=1} n>=2{exit} END{exit !found}' "$DEST_DIR/index.qmd"; then
+    LIST=$(IFS=,; echo "${BIBS[*]}")
+    awk -v list="[$LIST]" 'NR>1 && /^---$/ && !done {print "bibliography: " list; done=1} {print}' \
+        "$DEST_DIR/index.qmd" > "$DEST_DIR/index.qmd.tmp"
+    mv "$DEST_DIR/index.qmd.tmp" "$DEST_DIR/index.qmd"
+    echo "Pinned bibliography: [$LIST]"
+fi
+
 echo "Published to $DEST_DIR"
 echo "Preview:  cd $BLOG_DIR && quarto preview posts/${DATE}-${SLUG}/"
 echo "Publish:  cd $BLOG_DIR && quarto publish gh-pages"
