@@ -85,3 +85,9 @@ cat > "$OPENCODE_TUI.tmp" << EOF
 EOF
 mv "$OPENCODE_TUI.tmp" "$OPENCODE_TUI"
 echo "theme-set hook: Set opencode TUI theme to $OC_THEME"
+PI_AGENT_DIR="${PI_CODING_AGENT_DIR:-${XDG_CONFIG_HOME:-$HOME/.config}/pi/agent}"
+if [[ -f "$THEME_DIR/pi.json" && -d "$PI_AGENT_DIR" ]]; then
+    mkdir -p "$PI_AGENT_DIR/themes"
+    cat "$THEME_DIR/pi.json" > "$PI_AGENT_DIR/themes/omarchy-system.json"
+    echo "theme-set hook: Synced pi theme omarchy-system"
+fi
