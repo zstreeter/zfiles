@@ -11,6 +11,13 @@ omarchy/stow/cura/.local/share/cura/stdout.log
 # stow symlink is all it takes for one to land inside the repo.
 **/secrets.env
 **/secrets.sh
+# Backups of it too. A timestamped copy is still the whole file, and the glob
+# above does not match secrets.env.bak.20260917-153733.
+**/secrets.env.bak.*
+# Private but not secret: ~/.config/shell/local.env holds internal endpoints and
+# employer-specific names. Not credentials, but their values trip leak-patterns,
+# so they cannot be published either.
+**/local.env
 
 # Editor/tool backup droppings (yazi writes keymap.toml-<epoch> on upgrade)
 **/*.toml-[0-9]*

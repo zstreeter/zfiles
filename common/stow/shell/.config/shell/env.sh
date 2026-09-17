@@ -74,15 +74,40 @@ export BAT_THEME=ansi
 export PATH="$PATH:$HOME/.local/bin"
 [[ -d "$OMARCHY_PATH/bin" ]] && export PATH="$OMARCHY_PATH/bin:$PATH"
 
-# API keys (gitignored)
-# API keys (gitignored, created by bootstrap). Never created on the remote target.
+# AI settings. Model names and on/off switches only -- public strings, safe to
+# commit, and the same on every machine. The key that talks to these models is
+# not here; see secrets.env below.
+export ANTHROPIC_MODEL="claude-opus-5"
+export ANTHROPIC_DEFAULT_OPUS_MODEL="claude-opus-5"
+export ANTHROPIC_DEFAULT_FABLE_MODEL="claude-fable-5"
+export ANTHROPIC_DEFAULT_SONNET_MODEL="Claude-Sonnet-4.8"
+export ANTHROPIC_DEFAULT_HAIKU_MODEL="Claude-Haiku-4.5"
+export CLAUDE_CODE_SUBAGENT_MODEL="${ANTHROPIC_DEFAULT_OPUS_MODEL}"
+export CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC=1
+export CLAUDE_CODE_DISABLE_EXPERIMENTAL_BETAS=1
+
+# Secrets and machine-local values, both outside the repo, both gitignored,
+# both chmod 600, sourced last so they win over anything above.
+#
+#   secrets.env  real credentials only -- API keys and tokens. Created by
+#                bootstrap from the template in common/setup.sh.
+#   local.env    private but not secret: internal endpoints, an employer's
+#                Confluence site, paths under a corporate profile. Not
+#                credentials, but their *values* match ~/.config/zfiles/
+#                leak-patterns, so they cannot be committed either.
+#
+# There used to be a third file, ~/.config/claude-code/env.sh, on the theory
+# that `claude` read it too. It did not -- Claude Code takes env from
+# settings.json, so the only reader was this line. Two files meant
+# one provider's key was defined in both, and because the second was sourced
+# last it silently won: editing it in secrets.env did nothing at all. Merged
+# away 2026-09-17. If a tool ever really does read its own env file, source it
+# here explicitly and say which tool -- do not add one on a hunch.
 [ -f "$XDG_CONFIG_HOME/shell/secrets.env" ] && . "$XDG_CONFIG_HOME/shell/secrets.env"
-# Claude Code's own keys, kept in its config dir rather than moved here so
-# `claude` and the shell read one file. Same rule: gitignored, never on the
-# remote target.
-[ -f "$XDG_CONFIG_HOME/claude-code/env.sh" ] && . "$XDG_CONFIG_HOME/claude-code/env.sh"
+[ -f "$XDG_CONFIG_HOME/shell/local.env" ] && . "$XDG_CONFIG_HOME/shell/local.env"
 
 # Other program settings:
+export UV_NATIVE_TLS=1
 export FZF_DEFAULT_OPTS="--layout=reverse --height 40%"
 export LESS=-R
 export LESS_TERMCAP_mb="$(printf '%b' '[1;31m')"

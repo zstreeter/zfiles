@@ -60,8 +60,18 @@ fi
 if [[ ! -f "$SECRETS_FILE" ]]; then
     mkdir -p "$(dirname "$SECRETS_FILE")"
     cat > "$SECRETS_FILE" << 'SECRETS'
-# API keys — fill these in, this file is never tracked by git.
-# Sourced by shell/.config/shell/env.sh on every shell start.
+# THE single home for every API key and token. Real credentials only.
+# Never tracked by git, chmod 600, sourced by shell/.config/shell/env.sh on
+# every shell start. If a tool needs a credential, it reads an env var and the
+# export goes here -- not into a committed config file, not into a second env
+# file beside the tool. (There was one of those for Claude Code; it shadowed a
+# key defined here and was merged back in on 2026-09-17.)
+#
+# Not a credential? Two other homes:
+#   env.sh    tracked -- model names, flags, anything safe to publish
+#   local.env untracked -- private but not secret: internal endpoints, an
+#             employer's site names, paths under a corporate profile
+#
 # Uncomment and set the providers you actually use.
 
 # --- AI providers (used by pi, opencode, claude code, etc.) ---
@@ -82,11 +92,25 @@ if [[ ! -f "$SECRETS_FILE" ]]; then
 
 # --- Source-control / registry tokens ---
 # export GITHUB_TOKEN=""
+
+# --- Research ---
+# alphaXiv bookmarks, read by `paperctl pull` and by the alphaxiv CLI. Mint at
+# alphaxiv.org -> Settings -> API Keys. arXiv, Crossref and OpenAlex need no
+# key at all, so paperctl's other sources have nothing to put here.
+# export ALPHAXIV_API_KEY=""
 SECRETS
     chmod 600 "$SECRETS_FILE"
     info "Created $SECRETS_FILE — add your API keys there."
 else
     info "Secrets file already exists at $SECRETS_FILE"
+fi
+
+# Private-but-not-secret settings. Only created on demand -- most machines have
+# nothing to put in it, and an empty file invites someone to put a key in it.
+LOCAL_ENV="${XDG_CONFIG_HOME:-$HOME/.config}/shell/local.env"
+if [[ -f "$LOCAL_ENV" ]]; then
+    chmod 600 "$LOCAL_ENV"
+    info "Machine-local settings already exist at $LOCAL_ENV"
 fi
 
 ZAP_DIR="$HOME/.local/share/zap"
