@@ -67,8 +67,6 @@ _SELECT = ("id,ids,title,display_name,publication_year,authorships,biblio,"
 
 
 def search(fetch, query: str, limit: int = 10) -> list[Record]:
-    # search on title_and_abstract, not the default fulltext index, for the
-    # same reason as Crossref: citing papers should not outrank the cited one.
     q = urllib.parse.urlencode({
         "filter": f"title_and_abstract.search:{query}",
         "per-page": limit,

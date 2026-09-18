@@ -4,12 +4,8 @@ Documentation=file:%h/.local/bin/herdr-navd
 
 [Service]
 ExecStart=%h/.local/bin/herdr-navd
-# The daemon holds no state worth preserving -- a restart costs one dropped
-# keypress -- and it must come back if GlazeWM or WSL hiccups underneath it.
 Restart=always
 RestartSec=2
-# A systemd user session starts with a bare PATH; both herdr and nvim live in
-# ~/.local/bin here (mise installs there, not into a shims dir).
 Environment=PATH=%h/.local/bin:/usr/local/bin:/usr/bin:/bin
 
 [Install]

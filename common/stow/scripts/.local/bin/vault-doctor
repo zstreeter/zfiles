@@ -1,0 +1,79 @@
+#!/usr/bin/env bash
+set -uo pipefail
+
+ok=0; bad=0
+say()  { printf '  [ ok ] %s\n' "$*"; ok=$((ok+1)); }
+err()  { printf '  [FAIL] %s\n' "$*"; bad=$((bad+1)); }
+note() { printf '         %s\n' "$*"; }
+
+ARG="${1:-$PWD}"
+if [[ -d $ARG ]]; then
+    VAULT=$(cd "$ARG" && pwd)
+elif command -v obsidian-vault >/dev/null 2>&1; then
+    VAULT=$(obsidian-vault path "$ARG" 2>/dev/null) || { echo "no vault '$ARG'" >&2; exit 2; }
+else
+    echo "not a directory and obsidian-vault unavailable: $ARG" >&2; exit 2
+fi
+NAME=$(basename "$VAULT")
+echo "vault-doctor: $NAME"
+echo "  $VAULT"
+echo
+
+mapfile -t broken < <(find "$VAULT" -xtype l 2>/dev/null)
+if ((${#broken[@]})); then
+    err "${#broken[@]} dangling symlink(s)"
+    for b in "${broken[@]}"; do note "${b#"$VAULT"/}"; done
+    note "fix: re-copy from \${XDG_DATA_HOME:-\$HOME/.local/share}/zfiles/vault-template with cp -L"
+else
+    say "no dangling symlinks"
+fi
+
+for f in _quarto.yml _extensions/obsidian/obsidian.lua; do
+    if [[ -f $VAULT/$f && -s $VAULT/$f ]]; then
+        say "$f present"
+    else
+        err "$f missing or empty"
+        [[ $f == _quarto.yml ]] && note "without it Quarto renders with no filter, no reader extensions, no pdf -- and reports no error"
+    fi
+done
+
+if [[ -f $VAULT/_quarto.yml ]]; then
+    if grep -q 'notes/' "$VAULT/_quarto.yml" && grep -q 'drafts/' "$VAULT/_quarto.yml"; then
+        say "render list covers notes/ and drafts/"
+    else
+        err "_quarto.yml render list misses notes/ or drafts/"
+        note "files outside the list render with none of this config, silently"
+    fi
+fi
+
+LIB="${PAPERCTL_LIBRARY:-$HOME/Library}/$NAME"
+if [[ -d $LIB ]]; then
+    say "library $LIB"
+else
+    err "no library at $LIB"
+    note "new-research-project creates this; make it with: mkdir -p '$LIB'"
+fi
+
+if compgen -G "$VAULT/notes/*.md" >/dev/null || compgen -G "$VAULT/drafts/*" >/dev/null; then
+    keys=$(find "$VAULT/notes" "$VAULT/drafts" -type f \( -name '*.md' -o -name '*.qmd' \) \
+             -not -path '*_files/*' -print0 2>/dev/null \
+           | xargs -0 -r grep -hoE '\[\[@[A-Za-z0-9]+\]\]|(^|[^[:alnum:]])@[A-Za-z][A-Za-z0-9]{6,}' 2>/dev/null \
+           | grep -oE '@[A-Za-z0-9]+' | sed 's/^@//' | sort -u)
+    if [[ -n $keys ]]; then
+        bibs=$(cat "$VAULT"/*.bib 2>/dev/null)
+        miss=0
+        while IFS= read -r k; do
+            [[ -z $k ]] && continue
+            grep -qE "^@[a-zA-Z]+\{$k," <<<"$bibs" || { err "citekey @$k not in any .bib"; miss=$((miss+1)); }
+        done <<<"$keys"
+        ((miss == 0)) && say "$(wc -l <<<"$keys") citekey(s) all resolve"
+        ((miss > 0)) && note "run: vault-sync-bib   (regenerates library.bib from paperctl)"
+    else
+        say "no citekeys to check"
+    fi
+fi
+
+echo
+printf 'ok=%d fail=%d\n' "$ok" "$bad"
+((bad == 0)) && echo "Vault is wired correctly." || echo "Fix the FAIL lines above."
+exit $(( bad > 0 ))

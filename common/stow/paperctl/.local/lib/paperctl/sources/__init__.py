@@ -20,10 +20,6 @@ import sys
 from ..record import Record, score_title
 from . import arxiv, crossref, openalex
 
-# Order is the merge order, and it is deliberate: arXiv first because it is the
-# only one of the three that reliably yields a PDF, Crossref next because its
-# metadata is publisher-authoritative, OpenAlex last as the widest net and the
-# weakest titles.
 REGISTRY = {
     "arxiv": arxiv,
     "crossref": crossref,
@@ -62,8 +58,6 @@ def search_all(fetch, query: str, names: list[str], limit: int = 10) -> list[Rec
             if key not in merged:
                 merged[key] = rec
                 continue
-            # Same paper from two sources: fill gaps rather than overwrite, and
-            # keep the better score so ranking still reflects the best match.
             have = merged[key]
             for f in rec.__dataclass_fields__:
                 if f == "score":

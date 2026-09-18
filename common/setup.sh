@@ -4,17 +4,10 @@
 # guard themselves on $REMOTE.
 # shellcheck shell=bash
 
-# GPG agent — skipped on remote: a work server's gpg setup is the server's
-# business, and relocating GNUPGHOME under someone else's machine is exactly
-# the kind of surprise that target avoids.
-# shell/env.sh sets GNUPGHOME=$XDG_DATA_HOME/gnupg. Bootstrap may run under
-# bash without that loaded, so derive the target path the same way.
 if ! $REMOTE; then
     info "Configuring GPG Agent..."
     GNUPGHOME_TARGET="${GNUPGHOME:-${XDG_DATA_HOME:-$HOME/.local/share}/gnupg}"
 
-    # Relocate legacy ~/.gnupg once. Stop the running agent first so it doesn't
-    # hold open file handles in the source tree mid-move.
     if [[ -d "$HOME/.gnupg" && ! -e "$GNUPGHOME_TARGET" ]]; then
         info "Relocating $HOME/.gnupg → $GNUPGHOME_TARGET"
         gpgconf --kill gpg-agent 2>/dev/null || true
@@ -25,20 +18,14 @@ if ! $REMOTE; then
     mkdir -p "$GNUPGHOME_TARGET"
     chmod 700 "$GNUPGHOME_TARGET"
 
-    # Idempotent: the target's setup.sh picks PINENTRY (GUI on Omarchy, curses
-    # on WSL) so pass and signed commits work in a bare terminal.
     if ! grep -q "pinentry-program $PINENTRY" "$GNUPGHOME_TARGET/gpg-agent.conf" 2>/dev/null; then
         echo "pinentry-program $PINENTRY" >> "$GNUPGHOME_TARGET/gpg-agent.conf"
         echo "    Added $(basename "$PINENTRY") to gpg-agent.conf"
     fi
 
-    # Reload agent (auto-starts under the new GNUPGHOME) to apply changes
     GNUPGHOME="$GNUPGHOME_TARGET" gpg-connect-agent reloadagent /bye || true
 fi
 
-# Configure zsh with XDG and Zap — skipped on remote, which is bash-only
-# (that's why the shared config lives in `shell`, not `zsh`). No chsh on a
-# machine whose login shell isn't ours to change.
 if ! $REMOTE; then
 info "Configuring zsh..."
 
@@ -60,8 +47,18 @@ fi
 if [[ ! -f "$SECRETS_FILE" ]]; then
     mkdir -p "$(dirname "$SECRETS_FILE")"
     cat > "$SECRETS_FILE" << 'SECRETS'
-# API keys — fill these in, this file is never tracked by git.
-# Sourced by shell/.config/shell/env.sh on every shell start.
+# THE single home for every API key and token. Real credentials only.
+# Never tracked by git, chmod 600, sourced by shell/.config/shell/env.sh on
+# every shell start. If a tool needs a credential, it reads an env var and the
+# export goes here -- not into a committed config file, not into a second env
+# file beside the tool. (There was one of those for Claude Code; it shadowed a
+# key defined here and was merged back in on 2026-09-17.)
+#
+# Not a credential? Two other homes:
+#   env.sh    tracked -- model names, flags, anything safe to publish
+#   local.env untracked -- private but not secret: internal endpoints, an
+#             employer's site names, paths under a corporate profile
+#
 # Uncomment and set the providers you actually use.
 
 # --- AI providers (used by pi, opencode, claude code, etc.) ---
@@ -82,11 +79,25 @@ if [[ ! -f "$SECRETS_FILE" ]]; then
 
 # --- Source-control / registry tokens ---
 # export GITHUB_TOKEN=""
+
+# --- Research ---
+# alphaXiv bookmarks, read by `paperctl pull` and by the alphaxiv CLI. Mint at
+# alphaxiv.org -> Settings -> API Keys. arXiv, Crossref and OpenAlex need no
+# key at all, so paperctl's other sources have nothing to put here.
+# export ALPHAXIV_API_KEY=""
 SECRETS
     chmod 600 "$SECRETS_FILE"
     info "Created $SECRETS_FILE — add your API keys there."
 else
     info "Secrets file already exists at $SECRETS_FILE"
+fi
+
+# Private-but-not-secret settings. Only created on demand -- most machines have
+# nothing to put in it, and an empty file invites someone to put a key in it.
+LOCAL_ENV="${XDG_CONFIG_HOME:-$HOME/.config}/shell/local.env"
+if [[ -f "$LOCAL_ENV" ]]; then
+    chmod 600 "$LOCAL_ENV"
+    info "Machine-local settings already exist at $LOCAL_ENV"
 fi
 
 ZAP_DIR="$HOME/.local/share/zap"
@@ -105,19 +116,12 @@ if [[ "$SHELL" != */zsh ]]; then
 fi
 fi  # ! $REMOTE
 
-# Hook bash into the zfiles config. Deliberately an *append* to whatever
-# ~/.bashrc already exists rather than a stowed file: on a work server that
-# file carries site setup (lmod, `module`, conda init) we must not clobber, and
-# on this side it keeps the machine's bashrc outside Stow ownership.
-# Same pattern as the generated ~/.zshenv above. Idempotent via the marker.
 ensure_bash_hook() {
     local target="$1" body="$2"
     if [[ -f "$target" ]] && grep -qF '# >>> zfiles >>>' "$target"; then
         info "bash hook already present in $target"
         return
     fi
-    # Keep a copy of a pre-existing file before touching it — same safety net
-    # the stow step applies, and the reason it lives outside the stow tree.
     if [[ -s "$target" ]]; then
         local backup="${XDG_STATE_HOME:-$HOME/.local/state}/zfiles/backup"
         mkdir -p "$backup"
@@ -127,11 +131,6 @@ ensure_bash_hook() {
     info "Appended zfiles hook to $target"
 }
 
-# A bash *login* shell — which is what ssh hands you — reads the first of
-# .bash_profile / .bash_login / .profile that exists, and never .bashrc. Most
-# distros' stock .profile already bridges to .bashrc, so only intervene when
-# nothing in the chain does. Creating a .bash_profile unconditionally would
-# shadow an existing ~/.profile and silently drop whatever it sets up.
 ensure_login_chain() {
     local f first=""
     for f in "$HOME/.bash_profile" "$HOME/.bash_login" "$HOME/.profile"; do
@@ -166,9 +165,6 @@ ensure_bash_hook "$HOME/.bashrc" \
     '[ -f "$HOME/.config/bash/rc.sh" ] && . "$HOME/.config/bash/rc.sh"'
 ensure_login_chain
 
-# ble.sh — bash syntax highlighting/autosuggestions/autopair, giving the
-# bash config (bash/.config/bash/rc.sh) parity with the zsh plugins. On remote
-# this *is* the line editor, since bash is the only shell there.
 BLESH_DIR="${XDG_DATA_HOME:-$HOME/.local/share}/blesh"
 if [[ -f "$BLESH_DIR/ble.sh" ]]; then
     info "ble.sh already installed."
@@ -183,8 +179,6 @@ else
     warn "make/gawk not found — skipping ble.sh (bash highlighting)."
 fi
 
-# Clone neovim config (SMART INSTALL). Runs on every target including
-# remote — neovim is one of the three things a work server is supposed to get.
 info "Setting up neovim config..."
 NVIM_DIR="$HOME/.config/nvim"
 NVIM_REPO_URL="https://github.com/zstreeter/nvim.git"
@@ -193,9 +187,6 @@ install_my_nvim() {
     git clone "$NVIM_REPO_URL" "$NVIM_DIR"
 }
 
-# Displace a foreign config to a timestamped backup rather than deleting it.
-# The plugin state in ~/.local/share/nvim belongs to that config, so it moves
-# with it — on a work server someone else's nvim data is not ours to delete.
 displace_nvim() {
     local stamp; stamp=$(date +%Y%m%d%H%M%S)
     warn "Backing up existing neovim config → ~/.config/nvim.bak.$stamp"
@@ -224,7 +215,6 @@ else
     install_my_nvim
 fi
 
-# Symlink Omarchy theme to neovim plugins
 OMARCHY_THEME="$HOME/.local/state/omarchy/current/theme/neovim.lua"
 NVIM_THEME_LINK="$NVIM_DIR/lua/plugins/theme.lua"
 LEGACY_NVIM_THEME_LINK="$NVIM_DIR/lua/plugins/omarchy-theme.lua"
@@ -239,9 +229,6 @@ else
     info "No Omarchy theme here — neovim uses its own default colorscheme."
 fi
 
-# Install herdr (agent/terminal multiplexer; replaces tmux). Not in the Arch
-# repos, so use the official installer. Never on remote: herdr runs on the
-# *local* machine, and the server is just what's inside one of its panes.
 if $REMOTE; then
     :
 elif ! command -v herdr &>/dev/null; then
@@ -251,12 +238,8 @@ else
     info "herdr already installed."
 fi
 
-# The remaining agent/$HOME steps don't run on remote: a work server's home
-# directory layout is not ours to reorganize, and pi/mamba/docker aren't part
-# of the three things the remote target promises.
 if ! $REMOTE; then
 
-# Install pi coding agent via upstream installer (used by pi.nvim).
 info "Checking pi coding agent..."
 if command -v pi &>/dev/null; then
     info "pi is already installed ($(pi --version 2>/dev/null || echo unknown))."
@@ -280,16 +263,6 @@ if [[ -d "$PI_OLD_DIR" && -n "$(ls -A "$PI_OLD_DIR" 2>/dev/null)" ]]; then
     rmdir "$HOME/.pi" 2>/dev/null || true
 fi
 
-# Install the pi packages listed in the stowed settings.example.json.
-# settings.json itself is untracked (pi rewrites it), so the template is
-# the source of truth and `pi install` merges each entry in. Idempotent:
-# entries already present in settings.json are skipped.
-#
-# Theme: on Omarchy, pi follows the system theme — Omarchy renders pi.json on
-# every theme switch and the zfiles theme-set hook syncs it into pi's themes
-# dir, where pi hot-reloads it. Elsewhere, the template's theme (catppuccin
-# from pi-community-themes) is the default. Applied after the packages so
-# the theme exists when pi validates it.
 PI_TEMPLATE="$PI_NEW_DIR/settings.example.json"
 PI_SETTINGS="$PI_NEW_DIR/settings.json"
 if command -v pi &>/dev/null && [[ -f "$PI_TEMPLATE" ]]; then
@@ -307,7 +280,6 @@ if command -v pi &>/dev/null && [[ -f "$PI_TEMPLATE" ]]; then
 
     if $OMARCHY; then
         PI_THEME="omarchy-system"
-        # Seed the theme file now; the hook keeps it current from here on.
         PI_OMARCHY_SRC="$HOME/.local/state/omarchy/current/theme/pi.json"
         if [[ -f "$PI_OMARCHY_SRC" ]]; then
             mkdir -p "$PI_NEW_DIR/themes"
@@ -324,9 +296,6 @@ if command -v pi &>/dev/null && [[ -f "$PI_TEMPLATE" ]]; then
     fi
 fi
 
-# AgentPal pi extension (SMART INSTALL). The AgentPal repo owns the file;
-# link it rather than copy so it can't drift. Skipped when the repo isn't
-# checked out on this machine.
 AGENTPAL_REPO="${AGENTPAL_REPO:-$HOME/Documents/DevicePals/AgentPal}"
 AGENTPAL_EXT="$AGENTPAL_REPO/integrations/pi/agentpal.ts"
 if [[ -f "$AGENTPAL_EXT" ]]; then
@@ -337,9 +306,6 @@ if [[ -f "$AGENTPAL_EXT" ]]; then
     fi
 fi
 
-# XDG hygiene — relocate well-known dotfiles to XDG paths and remove
-# dead artifacts. Each relocate runs only when the legacy path exists and
-# the XDG target doesn't, so this is safe to rerun.
 xdg_relocate() {
     local old="$1" new="$2"
     if [[ -e "$old" && ! -e "$new" ]]; then
@@ -356,25 +322,14 @@ xdg_relocate "$HOME/.cargo"          "${XDG_DATA_HOME:-$HOME/.local/share}/cargo
 xdg_relocate "$HOME/.npm"            "${XDG_CACHE_HOME:-$HOME/.cache}/npm"
 xdg_relocate "$HOME/.bun"            "${XDG_DATA_HOME:-$HOME/.local/share}/bun"
 
-# Dead artifacts — recreated on demand by their tools if ever needed.
-# ~/.zshrc gets clobbered by `mamba shell init`; the canonical zshrc lives
-# in $ZDOTDIR (zsh/.config/zsh/.zshrc) so any $HOME/.zshrc is leftover noise.
 rm -f "$HOME/.cdb_history" "$HOME/.zshrc"
 rm -rf "$HOME/.mamba" "$HOME/.nv"
 
-# ~/.tmux.conf is a leftover from the pre-herdr days (see 9f0a6e6) and now
-# dangles at a target that no package provides. stow trips over it with a
-# "BUG in find_stowed_path?" warning on every run. Only removed when it is in
-# fact a broken symlink — a real tmux.conf is left alone.
 if [[ -L "$HOME/.tmux.conf" && ! -e "$HOME/.tmux.conf" ]]; then
     info "Removing dangling ~/.tmux.conf (pre-herdr leftover)"
     rm -f "$HOME/.tmux.conf"
 fi
 
-# Wire herdr agent-state integrations (live working/blocked/done in the
-# sidebar). Hook files are herdr-versioned generated code, so we invoke the
-# generator instead of vendoring them — re-run this anytime to upgrade. Each
-# install self-guards on the agent being present; pi needs its extensions dir.
 if command -v herdr &>/dev/null; then
     info "Installing herdr agent integrations..."
     mkdir -p "$HOME/.config/pi/agent/extensions"
@@ -384,17 +339,6 @@ if command -v herdr &>/dev/null; then
     done
 fi
 
-# Pre-install opencode's plugin SDK with npm.
-#
-# A file in ~/.config/opencode/plugins (the herdr integration above puts one
-# there) makes opencode install @opencode-ai/plugin on every launch, using the
-# bun it bundles. Behind the corporate MITM proxy that install cannot complete
-# — bun ships its own CA store and never sees the injected root, unlike curl and
-# npm, which read /etc/ssl/certs. It is not fatal, just slow: bun retries for
-# ~70s before giving up, and opencode holds the first TUI frame until it does.
-# The pane sits blank and empty the whole time, which reads as "opencode didn't
-# launch". npm resolves the same dependency in ~15s and the check below skips
-# it once node_modules exists, so this costs nothing on later runs.
 if [[ -d "$HOME/.config/opencode/plugins" ]] \
     && ! [[ -d "$HOME/.config/opencode/node_modules/@opencode-ai/plugin" ]] \
     && command -v npm &>/dev/null; then
@@ -405,19 +349,8 @@ fi
 
 fi  # ! $REMOTE
 
-# Install Yazi plugins, and fill the flavor slot on non-Omarchy targets.
-#
-# theme.toml asks for a flavor called "zfiles" on every machine. Omarchy points
-# that name at the rendered theme in omarchy/setup.sh so yazi tracks theme
-# switches; WSL and servers have no theme engine, so the name resolves to
-# Catppuccin Mocha here. Without this, yazi errors out on an unknown flavor.
 info "Setting up Yazi plugins..."
 if command -v ya &>/dev/null; then
-    # The four plugins we use are vendored in the repo and arrive as stowed
-    # symlinks, so they work on a machine with no network and stay pinned to a
-    # reviewed revision. `ya pkg` can't manage them in that state — it sees the
-    # symlink as a locally-modified package and aborts with a scary warning —
-    # so only fetch a plugin that isn't already there.
     YAZI_PLUGINS=(full-border smart-enter git jump-to-char)
     missing=()
     for plugin in "${YAZI_PLUGINS[@]}"; do
@@ -448,18 +381,6 @@ else
     warn "Yazi (ya) binary not found, skipping plugin setup."
 fi
 
-# Static sioyek colors on non-Omarchy desktops — same idea as the yazi flavor
-# slot above. ~/.local/bin/sioyek always launches in custom color mode, and
-# Omarchy's theme-set hook is what normally symlinks prefs_user.config at the
-# rendered theme. A target with no theme engine gets the same Catppuccin Mocha
-# palette the yazi flavor falls back to. Never clobber: sioyek itself writes to
-# this file when settings change in the UI.
-#
-# Not on WSL. There is no Linux sioyek to configure there — ~/.local/bin/sioyek
-# routes to the Windows build, whose prefs are a portable-install file next to
-# the exe that wsl/windows/install.ps1 writes from wsl/windows/sioyek/
-# prefs_user.config. Writing a Linux prefs file here would only be a decoy for
-# the next person wondering why editing it changes nothing.
 if ! $OMARCHY && ! $REMOTE && ! $WSL && [[ -d "$HOME/.config/sioyek" ]]; then
     SIOYEK_PREFS="$HOME/.config/sioyek/prefs_user.config"
     if [[ -e "$SIOYEK_PREFS" ]]; then
@@ -482,13 +403,10 @@ EOF
     fi
 fi
 
-# Research workspace (the `scripts` package isn't stowed on remote, and a work
-# server isn't where the Obsidian/Zotero workflow lives)
 if ! $REMOTE; then
     info "Setting up research workspace..."
     mkdir -p "$HOME/research"
 
-    # Seed the research workflow README on first install (don't clobber user edits)
     RESEARCH_README="$HOME/research/README.md"
     README_TEMPLATE="${XDG_DATA_HOME:-$HOME/.local/share}/zfiles/research-readme.md"
     if [[ ! -f "$RESEARCH_README" && -f "$README_TEMPLATE" ]]; then
@@ -501,35 +419,14 @@ if ! $REMOTE; then
     fi
 fi
 
-# Agent skills. Stow puts them in ~/.agents/skills (one per program package:
-# measure, obsidian, quarto, pandoc, zotero, latex, reverify). pi reads that
-# directory natively; Claude Code and Codex each need a link, which is all this does.
-# Runs on remote too — the skill packages are stowed there.
 if command -v agent-skills &>/dev/null; then
     info "Linking agent skills..."
     agent-skills || warn "agent-skills failed; run it by hand to see why"
 elif [[ -d "$HOME/.agents/skills" ]]; then
-    # Remote doesn't stow `scripts`, so the linker isn't there. pi still sees
-    # the skills; say so rather than leaving it looking broken.
     info "Agent skills in ~/.agents/skills (pi reads these natively)"
 fi
 
-# reverify — binary analysis, installed on demand rather than at bootstrap.
-#
-# Deliberately NOT installed or registered here. It is an MCP server for
-# verifying claims about compiled artifacts, and nothing in this setup's daily
-# work asks a binary question; registering it would put nine tool schemas in
-# every request of every session forever to buy an option that never gets
-# exercised. The skill under ~/.agents/skills/reverify/ is the resident part,
-# and it says to run `reverify-setup` first.
-#
-# The general "check, don't assume" job this was originally reached for belongs
-# to `measure`, checked below.
 
-# measure — the empirical ledger. Nothing to install: one stdlib-only Python
-# script, stowed onto PATH. This just confirms it landed, since a skill telling
-# an agent to run `measure recall` before quoting a number is worse than no
-# skill at all if the command isn't there.
 if [[ -d "$HOME/.agents/skills/measure" ]] && ! command -v measure &>/dev/null; then
     warn "measure skill is installed but 'measure' is not on PATH.
       Check that ~/.local/bin is in PATH and that the 'measure' package stowed."

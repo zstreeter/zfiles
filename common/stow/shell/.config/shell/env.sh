@@ -1,8 +1,4 @@
-# Shell-agnostic environment. Plain exports only — sourced by zsh (via
-# $ZDOTDIR/.zshenv) and by bash (via ~/.config/bash/rc.sh), so nothing in here
-# may use zsh-only syntax.
 
-# Default programs:
 export EDITOR="nvim"
 if command -v ghostty >/dev/null 2>&1; then
     export TERMINAL="ghostty"
@@ -15,7 +11,6 @@ export XDG_DATA_HOME="$HOME/.local/share"
 export XDG_CACHE_HOME="$HOME/.cache"
 export XDG_STATE_HOME="$HOME/.local/state"
 
-# Cleanup
 export TMUX_TMPDIR="$XDG_RUNTIME_DIR"
 export ANDROID_SDK_HOME="$XDG_CONFIG_HOME/android"
 export CABAL_CONFIG="$XDG_DATA_HOME/cabal"
@@ -48,20 +43,11 @@ export STACK_XDG=1
 
 export CONDA_ROOT="$HOME/.local/miniconda"
 
-# Bun
 export BUN_INSTALL="$XDG_DATA_HOME/bun"
 export PATH="$BUN_INSTALL/bin:$PATH"
 
-# Cargo
 export PATH="$CARGO_HOME/bin:$PATH"
 
-# Omarchy environment (mirrors omarchy/default/bash/envs so SSH/non-omarchy
-# zsh sessions get the same baseline). Only prepend Omarchy's bin where it
-# actually exists (not on WSL/servers).
-# Omarchy 4 installs to /usr/share/omarchy (~/.local/share/omarchy is a
-# compat symlink). Never clobber a value the session already exported: the
-# shell's menu runs actions via `bash -lc`, and `qs ipc` finds the running
-# shell by *path* — a different spelling of the same dir reads as "not running".
 if [[ -z "$OMARCHY_PATH" ]]; then
     if [[ -d /usr/share/omarchy ]]; then
         export OMARCHY_PATH=/usr/share/omarchy
@@ -74,15 +60,35 @@ export BAT_THEME=ansi
 export PATH="$PATH:$HOME/.local/bin"
 [[ -d "$OMARCHY_PATH/bin" ]] && export PATH="$OMARCHY_PATH/bin:$PATH"
 
-# API keys (gitignored)
-# API keys (gitignored, created by bootstrap). Never created on the remote target.
-[ -f "$XDG_CONFIG_HOME/shell/secrets.env" ] && . "$XDG_CONFIG_HOME/shell/secrets.env"
-# Claude Code's own keys, kept in its config dir rather than moved here so
-# `claude` and the shell read one file. Same rule: gitignored, never on the
-# remote target.
-[ -f "$XDG_CONFIG_HOME/claude-code/env.sh" ] && . "$XDG_CONFIG_HOME/claude-code/env.sh"
+# AI on/off switches: public strings, the same on every machine. Model NAMES
+# are not here -- a machine behind a corporate gateway needs that gateway's
+# deployment names (ANTHROPIC_MODEL, ANTHROPIC_DEFAULT_*_MODEL,
+# CLAUDE_CODE_SUBAGENT_MODEL), which are wrong everywhere else. Those go in
+# local.env below. The key that talks to the models goes in secrets.env.
+export CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC=1
+export CLAUDE_CODE_DISABLE_EXPERIMENTAL_BETAS=1
 
-# Other program settings:
+# Secrets and machine-local values, both outside the repo, both gitignored,
+# both chmod 600, sourced last so they win over anything above.
+#
+#   secrets.env  real credentials only -- API keys and tokens. Created by
+#                bootstrap from the template in common/setup.sh.
+#   local.env    private but not secret: internal endpoints, an employer's
+#                Confluence site, paths under a corporate profile. Not
+#                credentials, but their *values* match ~/.config/zfiles/
+#                leak-patterns, so they cannot be committed either.
+#
+# There used to be a third file, ~/.config/claude-code/env.sh, on the theory
+# that `claude` read it too. It did not -- Claude Code takes env from
+# settings.json, so the only reader was this line. Two files meant
+# one provider's key was defined in both, and because the second was sourced
+# last it silently won: editing it in secrets.env did nothing at all. Merged
+# away 2026-09-17. If a tool ever really does read its own env file, source it
+# here explicitly and say which tool -- do not add one on a hunch.
+[ -f "$XDG_CONFIG_HOME/shell/secrets.env" ] && . "$XDG_CONFIG_HOME/shell/secrets.env"
+[ -f "$XDG_CONFIG_HOME/shell/local.env" ] && . "$XDG_CONFIG_HOME/shell/local.env"
+
+export UV_NATIVE_TLS=1
 export FZF_DEFAULT_OPTS="--layout=reverse --height 40%"
 export LESS=-R
 export LESS_TERMCAP_mb="$(printf '%b' '[1;31m')"

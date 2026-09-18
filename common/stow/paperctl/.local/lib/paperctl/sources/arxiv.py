@@ -15,7 +15,6 @@ from ..record import Record, score_title
 
 API = "http://export.arxiv.org/api/query"
 
-# 2506.19243, 2506.19243v2, or the pre-2007 form math.AP/0701001.
 ID_RE = re.compile(r"(?:arxiv[:/]|abs/|pdf/)?"
                    r"(\d{4}\.\d{4,5}|[a-z-]+(?:\.[A-Z]{2})?/\d{7})(v\d+)?",
                    re.I)
@@ -71,9 +70,6 @@ def _parse(body: str) -> Record | None:
 
 
 def search(fetch, query: str, limit: int = 10) -> list[Record]:
-    # ti: rather than all: -- searching every field turns a title query into a
-    # full-text query, and a paper that merely cites the one being looked for
-    # then outranks it.
     q = urllib.parse.urlencode({
         "search_query": f'ti:"{query}"' if " " in query else f"all:{query}",
         "start": 0,
@@ -86,8 +82,6 @@ def search(fetch, query: str, limit: int = 10) -> list[Record]:
         if rec:
             rec.score = score_title(query, rec.title)
             out.append(rec)
-    # A quoted-title search that finds nothing is common for slightly misquoted
-    # titles; fall back to the loose form rather than reporting no such paper.
     if not out and " " in query:
         q = urllib.parse.urlencode({"search_query": f"all:{query}",
                                     "start": 0, "max_results": limit})

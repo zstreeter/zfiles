@@ -20,12 +20,7 @@ from collections.abc import Sequence
 from dataclasses import dataclass, field
 from html.parser import HTMLParser
 
-# --------------------------------------------------------------------------
-# Shapes we never want in the index
-# --------------------------------------------------------------------------
 
-# NOTE: written without a trailing slash. normalize() strips those, so a
-# pattern spelled "/owa/" matches nothing. That bug shipped once already.
 NOISE_PATTERNS = [
     r"^https?://outlook\.office(365)?\.com/owa\b",
     r"^https?://outlook\.office\.com/mail\b",
@@ -37,8 +32,6 @@ NOISE_PATTERNS = [
     r"^https?://[^/]*\.?linkedin\.com/(comm|e)/",
 ]
 
-# Resolved before classification, because the destination decides paper-vs-not.
-# lnkd.in dominates in forwarded LinkedIn posts.
 SHORTENERS = {
     "lnkd.in", "bit.ly", "t.co", "tinyurl.com", "ow.ly", "buff.ly",
     "goo.gl", "dlvr.it", "trib.al", "rb.gy", "shorturl.at",
@@ -72,7 +65,6 @@ PAPER_HOST_PATTERNS = [
     (r"\.pdf(\?|$)", "pdf"),
 ]
 
-# Clearly worth keeping, clearly not papers.
 NONPAPER_KIND_PATTERNS = [
     (r"(youtube\.com/watch|youtu\.be/)", "video"),
     (r"scholar\.google\.[a-z.]+/citations", "author-profile"),
@@ -102,7 +94,7 @@ class Link:
     anchor: str = ""
     kind: str = "other"
     is_paper: bool = False
-    resolved_from: str = ""        # original short URL, if expanded
+    resolved_from: str = ""
     first_seen_msg: str = ""
     first_seen_from: str = ""
     first_seen_at: str = ""
@@ -216,8 +208,6 @@ def normalize(url: str) -> str:
     query = urllib.parse.urlencode(keep)
     path = p.path.rstrip("/") or "/"
 
-    # arXiv: collapse versioned and pdf forms onto the abs page, so /pdf/2506.1v2
-    # and /abs/2506.1 are recognised as one paper.
     m = re.match(r"^/(abs|pdf)/(.+?)(v\d+)?$", path)
     if netloc == "arxiv.org" and m:
         path, query = f"/abs/{m.group(2)}", ""
@@ -304,7 +294,7 @@ def extract_from_html(body_html: str) -> tuple[list[tuple[str, str]], str, bool]
         parser.feed(body_html)
         parser.close()
     except Exception:
-        pass       # malformed markup from some clients; the regex sweep still runs
+        pass
 
     flattened = (parser.saw_any_tag and not parser.pairs
                  and "http" in (body_html or "").lower())
@@ -320,7 +310,7 @@ def extract_from_html(body_html: str) -> tuple[list[tuple[str, str]], str, bool]
             continue
         seen.add(url)
         if anchor and anchor.strip().lower().rstrip("/") == url.lower().rstrip("/"):
-            anchor = ""        # anchor text that is just the URL adds nothing
+            anchor = ""
         found.append((url, anchor))
 
     for m in _BARE_URL_RE.finditer(parser.text or body_html):

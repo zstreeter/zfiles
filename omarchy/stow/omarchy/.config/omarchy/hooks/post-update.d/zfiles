@@ -1,10 +1,4 @@
 #!/bin/bash
-# Omarchy post-update hook for zfiles.
-#
-# Called by omarchy update after package changes and migrations.
-#
-# User theme templates are whole-file overrides. This hook detects matching
-# upstream template changes and warns so the user can merge them.
 
 set -e
 
@@ -13,8 +7,6 @@ REPO_USER_TPL="$HOME/.config/omarchy/themed"
 UPSTREAM_TPL="$OMARCHY_SOURCE/default/themed"
 REPO_DIR=$(git -C "$(dirname "$(readlink -f "$0")")" rev-parse --show-toplevel)
 
-# 1. Rebuild generated state without restarting applications. Normal theme
-# switching signals opencode; headless mode only refreshes files on disk.
 if [[ -f "$HOME/.local/state/omarchy/current/theme.name" ]]; then
     THEME=$(cat "$HOME/.local/state/omarchy/current/theme.name")
     if OMARCHY_THEME_HEADLESS=1 OMARCHY_THEME_SKIP_BACKGROUND=1 omarchy-theme-set "$THEME"; then
@@ -24,9 +16,6 @@ if [[ -f "$HOME/.local/state/omarchy/current/theme.name" ]]; then
     fi
 fi
 
-# 2. Drift check on overridden templates. We track the upstream content we
-# last reconciled against in a tiny snapshot dir; if upstream has moved on,
-# warn the user to review.
 SNAPSHOT_DIR="${XDG_STATE_HOME:-$HOME/.local/state}/zfiles/upstream-tpl-seen"
 mkdir -p "$SNAPSHOT_DIR"
 
@@ -46,8 +35,6 @@ for user_tpl in "$REPO_USER_TPL"/*.tpl; do
     fi
 done
 
-# 3. Overlay sanity. Omarchy may rewrite its managed user modules during an
-# update; bootstrap deploys the repository copies again.
 REPO_HYPR="$REPO_DIR/omarchy/config/hypr"
 broken=()
 for f in "$REPO_HYPR"/*.lua; do

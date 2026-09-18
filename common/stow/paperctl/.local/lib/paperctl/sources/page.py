@@ -31,8 +31,6 @@ def _metas(doc: str, name: str) -> list[str]:
 
 
 def fetch_one(fetch, url: str) -> Record | None:
-    # A .pdf link has no HTML to scrape, and fetching it would pull the whole
-    # binary just to fail a regex.
     if url.lower().split("?")[0].endswith(".pdf"):
         return None
     try:
@@ -59,5 +57,5 @@ def fetch_one(fetch, url: str) -> Record | None:
         url=url,
         pdf_url=pdf,
         source="page",
-        score=0.5,      # scraped, so never outranks a real source's answer
+        score=0.5,
     )

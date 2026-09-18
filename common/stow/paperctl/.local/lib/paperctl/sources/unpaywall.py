@@ -29,6 +29,4 @@ def pdf_url(fetch, doi: str, email: str) -> str:
     except Exception:
         return ""
     loc = data.get("best_oa_location") or {}
-    # url_for_pdf is the direct file; url is the landing page. Preferring the
-    # landing page would hand the downloader an HTML page to reject.
     return loc.get("url_for_pdf") or loc.get("url") or ""

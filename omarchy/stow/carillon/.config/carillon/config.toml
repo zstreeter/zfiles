@@ -1,6 +1,3 @@
-# =============================================================================
-# Gmail (Personal)
-# =============================================================================
 [accounts.gmail]
 default = true
 
@@ -10,9 +7,6 @@ imap.sasl.plain.username = "zacharylouis42@gmail.com"
 imap.sasl.plain.password.command = "pass show email/gmail-himalaya"
 imap.hook.on-message-added.cmd = 'notify-send -c email.personal -i mail-message-new "Personal Email" "$sender: $subject"'
 
-# =============================================================================
-# Work (JBI Tools)
-# =============================================================================
 [accounts.work]
 
 imap.mailbox = "INBOX"

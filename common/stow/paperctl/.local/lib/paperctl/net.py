@@ -17,11 +17,6 @@ import urllib.request
 
 DEFAULT_UA = "paperctl/1.0 (+https://github.com/zstreeter/zfiles)"
 
-# Retried: transient by definition. 429 is included because every one of these
-# APIs prefers a slow client to a blocked one, and 5xx is the publisher having
-# a bad minute. 403 and 404 are deliberately absent -- a paywall does not open
-# on the second ask, and retrying it just makes the run take four times longer
-# to reach the same "link-only".
 RETRY_STATUS = {408, 425, 429, 500, 502, 503, 504}
 
 
@@ -33,37 +28,33 @@ class Fetch:
         self.ua = user_agent
         self.timeout = timeout
         self.retries = max(0, int(retries))
-        # Crossref and OpenAlex both route a request carrying a contact address
-        # into a faster, more reliable pool. It is not authentication and it is
-        # not required; it is the difference between the polite and the common
-        # pool. Empty is fine and simply forgoes that.
         self.mailto = mailto
         self._ctx = _ssl_ctx()
 
-    def _open(self, url: str, accept: str, timeout: int | None):
-        req = urllib.request.Request(url, headers={
+    def _open(self, url: str, accept: str, timeout: int | None,
+              headers: dict | None = None):
+        head = {
             "User-Agent": (f"{self.ua} mailto:{self.mailto}"
                            if self.mailto else self.ua),
             "Accept": accept,
-        })
+        }
+        head.update(headers or {})
+        req = urllib.request.Request(url, headers=head)
         return urllib.request.urlopen(
             req, timeout=timeout or self.timeout, context=self._ctx)
 
-    def get(self, url: str, accept: str = "*/*",
-            timeout: int | None = None) -> bytes:
+    def get(self, url: str, accept: str = "*/*", timeout: int | None = None,
+            headers: dict | None = None) -> bytes:
         """Bytes, or raise. Retries only what is worth retrying."""
         last: Exception | None = None
         for attempt in range(self.retries + 1):
             try:
-                with self._open(url, accept, timeout) as r:
+                with self._open(url, accept, timeout, headers) as r:
                     return r.read()
             except urllib.error.HTTPError as e:
                 last = e
                 if e.code not in RETRY_STATUS:
                     raise
-                # Retry-After is authoritative when present; a server that
-                # tells you when to come back has already answered the
-                # question backoff is guessing at.
                 wait = _retry_after(e) or (2 ** attempt)
             except (urllib.error.URLError, TimeoutError, OSError) as e:
                 last = e
@@ -73,8 +64,8 @@ class Fetch:
         raise last if last else RuntimeError(f"unreachable: {url}")
 
     def get_text(self, url: str, accept: str = "*/*",
-                 timeout: int | None = None) -> str:
-        return self.get(url, accept, timeout).decode("utf-8", "replace")
+                 timeout: int | None = None, headers: dict | None = None) -> str:
+        return self.get(url, accept, timeout, headers).decode("utf-8", "replace")
 
     def final_url(self, url: str, timeout: int = 20) -> str:
         """Where a shortener actually lands. Never raises: the original URL is

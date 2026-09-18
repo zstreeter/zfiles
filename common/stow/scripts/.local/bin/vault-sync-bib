@@ -1,0 +1,22 @@
+#!/usr/bin/env bash
+set -uo pipefail
+
+VAULT="${QUARTO_PROJECT_DIR:-$PWD}"
+NAME=$(basename "$VAULT")
+OUT="$VAULT/library.bib"
+
+command -v paperctl >/dev/null 2>&1 || {
+    echo "vault-sync-bib: paperctl not installed, skipping" >&2
+    exit 0
+}
+
+LIB_ROOT="${PAPERCTL_LIBRARY:-$HOME/Library}"
+if [[ ! -d "$LIB_ROOT/$NAME" ]]; then
+    echo "vault-sync-bib: no library at $LIB_ROOT/$NAME — skipping (vault '$NAME')" >&2
+    exit 0
+fi
+
+paperctl bib --folder "$NAME" --out "$OUT" || {
+    echo "vault-sync-bib: paperctl bib failed for '$NAME'" >&2
+    exit 0   # never break a render over a bibliography refresh
+}

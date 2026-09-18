@@ -1,0 +1,378 @@
+#!/usr/bin/env python3
+"""publish-confluence -- publish a Markdown/Quarto note to Confluence WITH working math.
+
+    publish-confluence <file.md|file.qmd> [--title "..."] [--page-id ID] [--space KEY]
+
+Creates a page (or updates one with --page-id) in Confluence, rendering every
+LaTeX expression to an SVG attachment so the maths actually displays.
+
+WHY THE MATH NEEDS SPECIAL HANDLING
+The MCP server converts Markdown with python-markdown's `arithmatex` extension,
+which wraps maths in `<div class="arithmatex">` and leaves the LaTeX as raw
+text. Confluence ships no CSS or JS for that class, so every formula renders as
+literal `\\lambda_i(A) = ...`. Measured on page 1975425755, 2026-09-16.
+Confluence Cloud has no native maths support and this tenant's installed-app set
+cannot be detected through the API, so depending on a marketplace macro would be
+a guess. Rendering to images depends on nothing.
+
+HOW IT WORKS -- and why in this order
+  1. Replace each maths span with a unique placeholder token, publish the rest as
+     Markdown, and let the SERVER do the Markdown->storage conversion. Its
+     conversion is good (headings, pipe tables, inline code all verified) and
+     reimplementing it here would be a worse copy.
+  2. Upload one SVG per formula. Attachments need a page to hang on, so the page
+     must exist first -- hence create-then-decorate rather than one shot.
+  3. Read back the server-generated storage body, swap each placeholder for an
+     <ac:image> pointing at its attachment, and update the page as `storage`.
+
+Placeholders are alphanumeric with no Markdown-significant characters, so the
+converter passes them through untouched -- a token containing `_` or `$` gets
+mangled into <em> or re-parsed as maths.
+
+PORTABLE. Every site-specific value -- server, site url, space, bridge path --
+comes from the environment, so this file names no employer, tenant or account
+and is safe in public dotfiles. Put the values in ~/.config/shell/secrets.env,
+which is gitignored.
+"""
+import argparse
+import base64
+import json
+import os
+import re
+import subprocess
+import sys
+
+# Every site-specific value comes from the environment. Nothing about a
+# particular employer, tenant or account belongs in this file -- it lives in a
+# public dotfiles repo. Set these in ~/.config/shell/secrets.env (gitignored):
+#
+#   CONFLUENCE_MCP_BRIDGE  path to an mcp-bridge mcp.py CLI
+#   CONFLUENCE_MCP_URL     MCP server endpoint exposing confluence_* tools
+#   CONFLUENCE_SITE        wiki base url, e.g. https://example.atlassian.net/wiki
+#   CONFLUENCE_SPACE       default space key
+def _env(name, hint):
+    v = os.environ.get(name)
+    if not v:
+        raise SystemExit(
+            f"{name} is not set.\n"
+            f"  {hint}\n"
+            f"  Add it to ~/.config/shell/secrets.env (gitignored).")
+    return v
+
+
+MB = SRV = SITE = BRIDGE_CWD = None
+def _bridge_cwd(mcp_py):
+    """Directory the bridge must run from: the one holding .config/mcp-bridge.
+
+    mcp-bridge resolves its credential store relative to the working directory,
+    so running it from the wrong place reports "Server requires authentication
+    during session setup" even when `mcp.py list` says the token is valid with
+    hours left. Walk up and look for the marker rather than counting dirname()
+    levels -- an earlier version counted three, landed one short, and produced
+    exactly that misleading error.
+    """
+    d = os.path.dirname(os.path.abspath(mcp_py))
+    for _ in range(6):
+        if os.path.isdir(os.path.join(d, ".config", "mcp-bridge")):
+            return d
+        parent = os.path.dirname(d)
+        if parent == d:
+            break
+        d = parent
+    return os.path.dirname(os.path.abspath(mcp_py))
+
+
+def _load_env():
+    """Read the site config. Called from main, not at import, so --help works
+    on a machine with none of it set."""
+    global MB, SRV, SITE, BRIDGE_CWD
+    MB = _env("CONFLUENCE_MCP_BRIDGE", "path to mcp-bridge's mcp.py")
+    SRV = _env("CONFLUENCE_MCP_URL", "MCP endpoint exposing confluence_* tools")
+    SITE = _env("CONFLUENCE_SITE", "e.g. https://example.atlassian.net/wiki")
+    BRIDGE_CWD = os.environ.get("CONFLUENCE_MCP_CWD") or _bridge_cwd(MB)
+
+
+TEXSVG = os.path.expanduser("~/.local/lib/texsvg/tex2svg.js")
+CA = "/etc/ssl/certs/ca-certificates.crt"
+
+
+def mcp(tool, args):
+    """Call one MCP tool, return its parsed payload. Raises on isError."""
+    p = subprocess.run(
+        [sys.executable, MB, "call", SRV, tool, json.dumps(args)],
+        capture_output=True, text=True, cwd=BRIDGE_CWD,
+    )
+    if p.returncode != 0:
+        raise SystemExit(f"{tool}: bridge exited {p.returncode}\n{p.stderr[-800:]}")
+    line = next((l for l in p.stdout.splitlines() if l.startswith("{")), "")
+    if not line:
+        raise SystemExit(f"{tool}: no JSON in output\n{p.stdout[-800:]}\n{p.stderr[-400:]}")
+    d = json.loads(line)
+    if d.get("isError"):
+        raise SystemExit(f"{tool} failed: {d['content'][0]['text'][:600]}")
+    text = d["content"][0]["text"]
+    try:
+        payload = json.loads(text)
+    except ValueError:
+        return {"text": text}
+    def check(node, path=""):
+        if isinstance(node, dict):
+            if node.get("success") is False:
+                raise SystemExit(
+                    f"{tool} reported failure at {path or '<root>'}: "
+                    f"{node.get('error', node)}")
+            for k, v in node.items():
+                check(v, f"{path}.{k}" if path else k)
+    check(payload)
+    return payload
+
+
+def render_svg(tex, display):
+    """LaTeX -> SVG bytes, offline via MathJax 3."""
+    env = dict(os.environ, NODE_EXTRA_CA_CERTS=CA)
+    cmd = ["node", TEXSVG, tex] + ([] if display else ["--inline"])
+    p = subprocess.run(cmd, capture_output=True, text=True, env=env)
+    if p.returncode != 0 or not p.stdout.strip():
+        raise SystemExit(f"math render failed for {tex!r}\n{p.stderr[:400]}")
+    return p.stdout.encode()
+
+
+def extract_math(md):
+    """Pull $$..$$ and $..$ out of the body, leaving placeholders behind.
+
+    Fenced code is masked first: a `$` inside a shell snippet is a prompt or a
+    variable, not maths, and rendering it produces garbage or a hard failure.
+    """
+    blocks = []
+    code = []
+
+    def hide(m):
+        code.append(m.group(0))
+        return f"\x00CODE{len(code)-1}\x00"
+
+    md = re.sub(r"```.*?```", hide, md, flags=re.S)
+    md = re.sub(r"`[^`\n]+`", hide, md)
+
+    def take(m, display):
+        blocks.append((m.group(1).strip(), display))
+        return f"MATHSPLACEHOLDER{len(blocks)-1}ENDMATHS"
+
+    md = re.sub(r"\$\$(.+?)\$\$", lambda m: take(m, True), md, flags=re.S)
+    md = re.sub(r"(?<!\$)\$([^$\n]+?)\$(?!\$)", lambda m: take(m, False), md)
+
+    md = re.sub(r"\x00CODE(\d+)\x00", lambda m: code[int(m.group(1))], md)
+    return md, blocks
+
+
+def quarto_title(path):
+    m = re.search(r'^---\n(.*?)\n---\n', open(path, encoding="utf-8").read(), re.S)
+    if not m:
+        return None
+    t = re.search(r'^title:\s*"?(.+?)"?\s*$', m.group(1), re.M)
+    return t.group(1) if t else None
+
+
+def quarto_body(path):
+    """Render through Quarto, return (confluence-storage body, math count).
+
+    Quarto is the project's only renderer, and going around it -- as the
+    markdown path below does -- means reimplementing citations, and doing it
+    worse: [[@citekey]] gets flattened to plain "Saad (2003)" text with no
+    bibliography. Rendering to HTML first gets real CSL citations and a
+    reference list for free.
+
+    Maths still needs converting: Quarto emits MathJax spans for the browser to
+    typeset, and Confluence runs no JavaScript. So the SVG pass survives -- it
+    just operates on Quarto's output instead of replacing Quarto.
+    """
+    import html as _html
+    src = os.path.abspath(path)
+    proj = os.path.dirname(os.path.dirname(src))
+    rel = os.path.relpath(src, proj)
+    r = subprocess.run(["quarto", "render", rel, "--to", "html"],
+                       cwd=proj, capture_output=True, text=True)
+    if r.returncode != 0:
+        raise SystemExit(f"quarto render failed:\n{r.stdout[-800:]}{r.stderr[-800:]}")
+    out = os.path.splitext(src)[0] + ".html"
+    if not os.path.exists(out):
+        raise SystemExit(f"quarto produced no html at {out}")
+    doc = open(out, encoding="utf-8").read()
+
+    m = re.search(r'<main[^>]*>(.*?)</main>', doc, re.S) or \
+        re.search(r'<body[^>]*>(.*?)</body>', doc, re.S)
+    body = m.group(1) if m else doc
+
+    body = re.sub(r'<(script|style)\b.*?</\1>', '', body, flags=re.S)
+    body = re.sub(r'<div[^>]*class="[^"]*(quarto-title-meta|toc|code-tools)[^"]*".*?</div>',
+                  '', body, flags=re.S)
+
+    count = 0
+
+    def sub_math(mm):
+        nonlocal count
+        display = mm.group(1) == "display"
+        tex = _html.unescape(mm.group(2))
+        tex = re.sub(r'^\s*\\[\[(]\s*|\s*\\[\])]\s*$', '', tex).strip()
+        svg = render_svg(tex, display)
+        uri = "data:image/svg+xml;base64," + base64.b64encode(svg).decode()
+        alt = tex.replace('"', "&quot;")[:120]
+        count += 1
+        img = f'<img src="{uri}" alt="{alt}"/>'
+        return f'<p style="text-align: center;">{img}</p>' if display else img
+
+    body = re.sub(r'<span class="math (display|inline)">(.*?)</span>',
+                  sub_math, body, flags=re.S)
+
+    def refs_span(text):
+        """(start, end, inner) of the refs div, matched by balanced <div> depth.
+
+        A non-greedy `<div id="refs">(.*?)</div>` stops at the FIRST nested
+        `</div>`, which is the end of entry one -- so exactly one reference
+        survived and the rest were left as raw csl-entry divs for the
+        sanitiser to drop. Measured on a 19-citation draft: 1 of 19 reached
+        the page. Depth counting is the only thing that gets the whole block.
+        """
+        m0 = re.search(r'<div id="refs"[^>]*>', text)
+        if not m0:
+            return None
+        depth, i = 1, m0.end()
+        for tok in re.finditer(r'<div\b[^>]*>|</div>', text[m0.end():]):
+            depth += 1 if tok.group(0).startswith('<div') else -1
+            if depth == 0:
+                i = m0.end() + tok.end()
+                return m0.start(), i, text[m0.end():m0.end() + tok.start()]
+        return m0.start(), len(text), text[m0.end():]
+
+    span = refs_span(body)
+    if span:
+        start, end, inner = span
+        entries = re.findall(
+            r'<div[^>]*class="[^"]*csl-entry[^"]*"[^>]*>(.*?)</div>', inner, re.S)
+        if not entries:
+            entries = [x for x in re.split(r'</div>\s*<div[^>]*>', inner) if x.strip()]
+        rows = "".join(f"<p>{e.strip()}</p>" for e in entries)
+        body = body[:start] + rows + body[end:]
+    return body, count
+
+
+def push(a, title, body, fmt):
+    """Create or update, returning (page_id, url). Shared by both paths."""
+    if a.page_id:
+        mcp("confluence_update_page", {
+            "page_id": a.page_id, "title": title,
+            "content": body, "content_format": fmt,
+            "version_comment": "published from vault"})
+        return a.page_id, f"{SITE}/spaces/{a.space}/pages/{a.page_id}"
+    r = mcp("confluence_create_page", {
+        "space_key": a.space, "title": title,
+        "content": body, "content_format": fmt})
+    return r["page"]["id"], r["page"]["url"]
+
+
+def main():
+    ap = argparse.ArgumentParser()
+    ap.add_argument("file")
+    ap.add_argument("--title")
+    ap.add_argument("--space", default=os.environ.get("CONFLUENCE_SPACE"))
+    ap.add_argument("--page-id")
+    ap.add_argument("--keep-frontmatter", action="store_true")
+    ap.add_argument("--via-quarto", action="store_true",
+                    help="render through Quarto first: resolves [[@citekeys]] "
+                         "into real citations and appends a bibliography, "
+                         "instead of flattening them to author-year text")
+    a = ap.parse_args()
+    _load_env()
+
+    if not a.space:
+        raise SystemExit("no space: pass --space or set CONFLUENCE_SPACE")
+
+    if a.via_quarto:
+        body, n = quarto_body(a.file)
+        title = a.title or quarto_title(a.file) or \
+            os.path.splitext(os.path.basename(a.file))[0]
+        print(f"{n} formula(e) rendered, citations resolved by Quarto")
+        page_id, url = push(a, title, body, "storage")
+        print(f"\n{url}")
+        return
+
+    md = open(a.file, encoding="utf-8").read()
+
+    title = a.title
+    fm = re.match(r"^---\n(.*?)\n---\n", md, re.S)
+    if fm:
+        if not title:
+            t = re.search(r'^title:\s*"?(.+?)"?\s*$', fm.group(1), re.M)
+            if t:
+                title = t.group(1)
+        if not a.keep_frontmatter:
+            md = md[fm.end():]
+    title = title or os.path.splitext(os.path.basename(a.file))[0]
+
+    md = re.sub(r"\[\[@?([^\]|]+?)(?:\|([^\]]+))?\]\]", lambda m: m.group(2) or m.group(1), md)
+
+    md, blocks = extract_math(md)
+    print(f"{len(blocks)} formula(e) found")
+
+    if a.page_id:
+        page_id = a.page_id
+        mcp("confluence_update_page", {
+            "page_id": page_id, "title": title,
+            "content": md, "content_format": "markdown"})
+        url = f"{SITE}/spaces/{a.space}/pages/{page_id}"
+    else:
+        r = mcp("confluence_create_page", {
+            "space_key": a.space, "title": title,
+            "content": md, "content_format": "markdown"})
+        page_id = r["page"]["id"]
+        url = r["page"]["url"]
+    print(f"page {page_id}")
+
+    if blocks:
+        # 2. render each formula and splice it in as a data URI.
+        #
+        # NOT as an attachment. confluence_upload_attachment is outside this
+        # token's OAuth scopes and returns 403 -- while *reporting* success at
+        # the top level, so the page ends up full of <img> tags pointing at
+        # attachments that do not exist. Measured 2026-09-16 on page 1975425755:
+        # attachments=[] , total=0 after four "successful" uploads.
+        #
+        # A base64 data URI needs no scope and no attachment. Verified to
+        # survive the storage round-trip; a bare inline <svg> element does NOT
+        # (Confluence strips it), so the data URI is the form that works.
+        body = mcp("confluence_get_page",
+                   {"page_id": page_id, "convert_to_markdown": False})
+        stored = body.get("metadata", {}).get("content", {}).get("value") \
+            or body.get("content", {}).get("value") or ""
+        if not stored:
+            raise SystemExit("could not read stored body to splice maths")
+
+        missing = 0
+        for i, (tex, disp) in enumerate(blocks):
+            svg = render_svg(tex, disp)
+            uri = "data:image/svg+xml;base64," + base64.b64encode(svg).decode()
+            alt = tex.replace('"', "&quot;")[:120]
+            img = f'<img src="{uri}" alt="{alt}"/>'
+            if disp:
+                img = f'<p style="text-align: center;">{img}</p>'
+            token = f"MATHSPLACEHOLDER{i}ENDMATHS"
+            if token not in stored:
+                missing += 1
+                continue
+            # A display formula sits alone in its own <p>; replacing the token
+            # inside it would nest <p> in <p>, which Confluence rejects.
+            stored = stored.replace(f"<p>{token}</p>", img) if disp and f"<p>{token}</p>" in stored \
+                else stored.replace(token, img)
+            print(f"  math-{i}  {len(svg)}B  {tex[:50]}")
+        if missing:
+            print(f"  WARNING: {missing} placeholder(s) not found in stored body")
+
+        mcp("confluence_update_page", {
+            "page_id": page_id, "title": title,
+            "content": stored, "content_format": "storage",
+            "version_comment": "render LaTeX to inline SVG"})
+
+    print(f"\n{url}")
+
+
+if __name__ == "__main__":
+    main()

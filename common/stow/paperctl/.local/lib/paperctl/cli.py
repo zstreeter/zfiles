@@ -19,7 +19,7 @@ import shutil
 import sys
 from pathlib import Path
 
-from . import config, library, naming, net, resolve
+from . import alphaxiv, config, library, naming, net, resolve
 from .record import Record
 from .sources import REGISTRY, enabled
 
@@ -55,9 +55,6 @@ def sources_for(args, cfg) -> list[str]:
     return enabled(getattr(args, "source", None), cfg.get("sources.enabled"))
 
 
-# --------------------------------------------------------------------------
-# doctor
-# --------------------------------------------------------------------------
 
 def cmd_doctor(args, cfg) -> int:
     """What works on THIS machine, and for anything that does not, why not."""
@@ -89,6 +86,8 @@ def cmd_doctor(args, cfg) -> int:
             url = getattr(mod, "API", "")
             check(f"source: {name}", fetch.reachable(url), url)
 
+    check("alphaxiv", *alphaxiv.probe(cfg, None if args.offline else fetch))
+
     for m in mail_probe(cfg):
         check(f"mail: {m['backend']}", m["ok"], m["detail"], m.get("fix", ""))
 
@@ -108,15 +107,9 @@ def cmd_doctor(args, cfg) -> int:
         print(f"  [{mark}] {ch['name']:<22} {ch['detail']}")
         if not ch["ok"] and ch["fix"]:
             print(f"         {c('2', ch['fix'])}")
-    # Exit 0 even with failures: doctor reports, it does not judge. A missing
-    # himalaya on WSL is correct, not broken, and a non-zero exit here would
-    # make every wrapper script treat a healthy machine as failing.
     return 0
 
 
-# --------------------------------------------------------------------------
-# add
-# --------------------------------------------------------------------------
 
 def cmd_add(args, cfg) -> int:
     fetch = fetcher(cfg)
@@ -155,9 +148,71 @@ def cmd_add(args, cfg) -> int:
     return 0
 
 
-# --------------------------------------------------------------------------
-# search-web / search
-# --------------------------------------------------------------------------
+
+def cmd_adopt(args, cfg) -> int:
+    """File PDFs you already have against entries already in the index.
+
+    `add` fetches; it has no way to say "the PDF is already on disk". So a
+    library assembled by hand before paperctl -- or one whose papers are books
+    and technical reports with no open-access copy -- reports "0 available as
+    local PDFs" while the files sit in the folder. The metadata is right and
+    citations work; only paperctl's own view of the files is wrong.
+
+    Matching is on title similarity against the filename, and the score is
+    always reported. Below the same 0.55 floor `add` uses, the file is skipped
+    rather than filed against the wrong paper: misfiling a PDF is worse than
+    leaving it loose, because the index then asserts something false.
+    """
+    import difflib
+    import re
+
+    dest = library.folder(cfg, getattr(args, "to", None))
+    index = library.load_index(dest)
+    entries = index.get("entries") or []
+    if not entries:
+        emit(args, {"adopted": 0}, [f"no index at {dest} -- `paperctl add` first"])
+        return 1
+
+    papers = dest / "papers"
+    files = [Path(f) for f in (args.files or [])] or \
+        sorted(p for p in dest.glob("*.pdf") if p.is_file())
+    if not files:
+        emit(args, {"adopted": 0}, [f"no loose PDFs in {dest}"])
+        return 0
+
+    style = cfg.get("library.filename_style") or "title_case"
+    norm = lambda t: re.sub(r"[^a-z0-9]+", " ", (t or "").lower()).strip()
+    done, skipped = [], []
+
+    for f in files:
+        stem = norm(f.stem)
+        best, score = None, 0.0
+        for e in entries:
+            r = difflib.SequenceMatcher(None, stem, norm(e.get("title"))).ratio()
+            if r > score:
+                best, score = e, r
+        if not best or score < 0.55:
+            skipped.append((f.name, score))
+            continue
+        target = papers / library.pdf_name(library.record_of(best), style)
+        if not args.dry_run:
+            papers.mkdir(parents=True, exist_ok=True)
+            shutil.move(str(f), target)
+            best["pdf"] = target.name
+            best["status"] = "have"
+            best["note"] = "adopted from local file"
+        done.append((f.name, best.get("citekey"), score))
+
+    if done and not args.dry_run:
+        library.save_index(dest, index)
+        library.write_projections(cfg, dest, index)
+
+    lines = [f"{'would adopt' if args.dry_run else 'adopted'} {len(done)} into {dest}"]
+    lines += [f"  {n}  ->  @{k}  ({s:.2f})" for n, k, s in done]
+    lines += [f"  SKIPPED {n}  (best match {s:.2f} < 0.55)" for n, s in skipped]
+    emit(args, {"adopted": len(done), "skipped": len(skipped)}, lines)
+    return 0
+
 
 def cmd_search_web(args, cfg) -> int:
     from .sources import search_all
@@ -224,9 +279,6 @@ def cmd_search(args, cfg) -> int:
     return 0
 
 
-# --------------------------------------------------------------------------
-# bib
-# --------------------------------------------------------------------------
 
 def cmd_bib(args, cfg) -> int:
     """Regenerate BibTeX. Writes library.bib, NEVER references.bib.
@@ -268,9 +320,6 @@ def cmd_bib(args, cfg) -> int:
     return 0
 
 
-# --------------------------------------------------------------------------
-# retry
-# --------------------------------------------------------------------------
 
 def cmd_retry(args, cfg) -> int:
     """Re-attempt papers that had no open-access copy last time.
@@ -315,9 +364,6 @@ def cmd_retry(args, cfg) -> int:
     return 0
 
 
-# --------------------------------------------------------------------------
-# tidy
-# --------------------------------------------------------------------------
 
 def cmd_tidy(args, cfg) -> int:
     """Report duplicate PDFs by content hash. Report-only unless --apply."""
@@ -352,9 +398,6 @@ def cmd_tidy(args, cfg) -> int:
     return 0
 
 
-# --------------------------------------------------------------------------
-# parser
-# --------------------------------------------------------------------------
 
 def build_parser() -> argparse.ArgumentParser:
     ap = argparse.ArgumentParser(
@@ -393,6 +436,12 @@ def build_parser() -> argparse.ArgumentParser:
     a.add_argument("--source", help="comma-separated subset of "
                                     + ",".join(REGISTRY))
 
+    ad = add_cmd("adopt", cmd_adopt,
+                 "file PDFs you already have against existing entries", dry=True)
+    ad.add_argument("files", nargs="*", metavar="PDF",
+                    help="PDFs to adopt; default: loose *.pdf in the folder")
+    ad.add_argument("--to", metavar="FOLDER", help="folder under the library root")
+
     s = add_cmd("search", cmd_search, "search the local library")
     s.add_argument("query")
     s.add_argument("--limit", type=int, default=20)
@@ -416,6 +465,8 @@ def build_parser() -> argparse.ArgumentParser:
     t.add_argument("--apply", action="store_true",
                    help="actually remove duplicates (default is report-only)")
 
+    alphaxiv.register_cli(sub, add_cmd)
+
     from .mail import register_cli
     register_cli(sub, add_cmd)
     return ap
@@ -428,7 +479,6 @@ def main(argv: list[str] | None = None) -> int:
     if getattr(args, "config", None):
         os.environ["PAPERCTL_CONFIG"] = args.config
 
-    # Only dotted names are config overrides; the rest are command arguments.
     overrides = {k: v for k, v in vars(args).items() if "." in k}
     cfg = config.load(overrides)
     return args.fn(args, cfg)

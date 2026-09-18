@@ -1,4 +1,3 @@
---- @since 25.2.26
 
 local function setup(_, opts)
 	local type = opts and opts.type or ui.Border.ROUNDED
@@ -20,7 +19,6 @@ local function setup(_, opts)
 		local c = self._chunks
 		self._chunks = {
 			c[1]:pad(ui.Pad.y(1)),
-			-- TODO: remove this compatibility hack
 			fs.unique and c[2]:pad(ui.Pad.y(1)) or c[2]:pad(ui.Pad(1, c[3].w > 0 and 0 or 1, 1, c[1].w > 0 and 0 or 1)),
 			c[3]:pad(ui.Pad.y(1)),
 		}

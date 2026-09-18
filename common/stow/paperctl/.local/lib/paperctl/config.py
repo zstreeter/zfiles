@@ -31,26 +31,20 @@ CONFIG_DIR = Path(
     os.environ.get("XDG_CONFIG_HOME") or Path.home() / ".config"
 ) / "paperctl"
 
-# Not a nested dict: flat dotted keys make the env-var mapping ("library.root"
-# -> PAPERCTL_LIBRARY_ROOT) mechanical, and make "did the user set this?" a
-# single lookup rather than a walk.
 DEFAULTS: dict[str, object] = {
     "library.root": "~/Library",
-    "library.filename_style": "title_case",   # title_case | kebab | as_is
+    "library.filename_style": "title_case",
     "library.write_refs_bib": True,
     "library.write_readme": True,
 
     "sources.enabled": ["arxiv", "crossref", "openalex"],
     "sources.unpaywall_email": "",
 
-    "mail.backend": "auto",                   # auto | graph | himalaya | none
+    "mail.backend": "auto",
     "mail.graph.token": "~/.config/microsoft-graph/token.json",
     "mail.himalaya.bin": "himalaya",
-    "mail.himalaya.accounts": [],             # empty = himalaya's own default
+    "mail.himalaya.accounts": [],
 
-    # Regexes for hosts private to this operator -- an intranet, a wiki behind
-    # SSO. Empty by default and set in local.toml, because which hosts are
-    # internal is a property of the machine, not of paperctl.
     "links.internal_domains": [],
 
     "quarto.projects_root": "~/research",
@@ -68,9 +62,6 @@ def detect_target() -> str:
     if forced:
         return forced.strip().lower()
     home = Path.home()
-    # Order matters and is bootstrap's, not alphabetical. remote is never
-    # sniffed there either -- a server looks like any other Linux box -- so it
-    # only ever arrives through the environment, handled above.
     if (home / ".local/share/omarchy").is_dir() or (home / ".config/omarchy").is_dir():
         return "omarchy"
     try:
@@ -164,8 +155,6 @@ def load(overrides: dict[str, object] | None = None) -> Config:
     target = detect_target()
     read: list[Path] = []
 
-    # PAPERCTL_CONFIG=/dev/null is the documented way to run on defaults alone,
-    # which is also how the flexibility tests pin behaviour.
     main = Path(os.environ["PAPERCTL_CONFIG"]).expanduser() if os.environ.get(
         "PAPERCTL_CONFIG") else CONFIG_DIR / "config.toml"
 
@@ -176,8 +165,6 @@ def load(overrides: dict[str, object] | None = None) -> Config:
             continue
         read.append(path)
 
-        # [target.*] is peeled off before flattening: it is not settings, it is
-        # a set of alternative settings, and only one of them applies here.
         targets = doc.pop("target", {}) if isinstance(doc.get("target"), dict) else {}
         for k, v in _flatten(doc).items():
             values[k] = v
@@ -193,7 +180,7 @@ def load(overrides: dict[str, object] | None = None) -> Config:
             origins[k] = f"${env}"
 
     for k, v in (overrides or {}).items():
-        if v is None:          # argparse fills unset flags with None
+        if v is None:
             continue
         values[k] = v
         origins[k] = "command line"
