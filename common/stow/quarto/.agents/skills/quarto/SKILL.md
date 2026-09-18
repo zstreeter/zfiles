@@ -129,9 +129,14 @@ The blog is a separate Quarto project at `~/Documents/Repos/zstreeter.github.io`
 
 - **Never edit `posts/` directly.** Source of truth is `drafts/<slug>.qmd` in
   the vault.
-- `publish-post drafts/<file>.qmd [slug]` copies the draft and its images into
-  `posts/YYYY-MM-DD-<slug>/index.qmd`.
-- Deploy: `cd ~/Documents/Repos/zstreeter.github.io && quarto publish gh-pages`.
+- `publish-post drafts/<file>.qmd [slug]` copies the draft, its images, the
+  vault's bibliographies and its Obsidian filter into
+  `posts/YYYY-MM-DD-<slug>/index.qmd`. The blog's `_quarto.yml` loads that
+  filter with the same `from:`/`filters:` pair as the vault, so a draft renders
+  identically in both.
+- Deploy: `publish-post ... --push`, or commit and push the post yourself. The
+  blog's GitHub Action renders and publishes to Pages on every push to main;
+  nothing runs `quarto publish` locally.
 
 Don't add executable cells to a draft unless asked — the blog repo commits its
 freeze cache, so executed output gets committed too.

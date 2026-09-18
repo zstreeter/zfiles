@@ -60,9 +60,7 @@ def _env(name, hint):
     return v
 
 
-MB = _env("CONFLUENCE_MCP_BRIDGE", "path to mcp-bridge's mcp.py")
-SRV = _env("CONFLUENCE_MCP_URL", "MCP endpoint exposing confluence_* tools")
-SITE = _env("CONFLUENCE_SITE", "e.g. https://example.atlassian.net/wiki")
+MB = SRV = SITE = BRIDGE_CWD = None
 def _bridge_cwd(mcp_py):
     """Directory the bridge must run from: the one holding .config/mcp-bridge.
 
@@ -84,7 +82,16 @@ def _bridge_cwd(mcp_py):
     return os.path.dirname(os.path.abspath(mcp_py))
 
 
-BRIDGE_CWD = os.environ.get("CONFLUENCE_MCP_CWD") or _bridge_cwd(MB)
+def _load_env():
+    """Read the site config. Called from main, not at import, so --help works
+    on a machine with none of it set."""
+    global MB, SRV, SITE, BRIDGE_CWD
+    MB = _env("CONFLUENCE_MCP_BRIDGE", "path to mcp-bridge's mcp.py")
+    SRV = _env("CONFLUENCE_MCP_URL", "MCP endpoint exposing confluence_* tools")
+    SITE = _env("CONFLUENCE_SITE", "e.g. https://example.atlassian.net/wiki")
+    BRIDGE_CWD = os.environ.get("CONFLUENCE_MCP_CWD") or _bridge_cwd(MB)
+
+
 TEXSVG = os.path.expanduser("~/.local/lib/texsvg/tex2svg.js")
 CA = "/etc/ssl/certs/ca-certificates.crt"
 
@@ -274,6 +281,7 @@ def main():
                          "into real citations and appends a bibliography, "
                          "instead of flattening them to author-year text")
     a = ap.parse_args()
+    _load_env()
 
     if not a.space:
         raise SystemExit("no space: pass --space or set CONFLUENCE_SPACE")

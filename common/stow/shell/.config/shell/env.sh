@@ -60,15 +60,11 @@ export BAT_THEME=ansi
 export PATH="$PATH:$HOME/.local/bin"
 [[ -d "$OMARCHY_PATH/bin" ]] && export PATH="$OMARCHY_PATH/bin:$PATH"
 
-# AI settings. Model names and on/off switches only -- public strings, safe to
-# commit, and the same on every machine. The key that talks to these models is
-# not here; see secrets.env below.
-export ANTHROPIC_MODEL="claude-opus-5"
-export ANTHROPIC_DEFAULT_OPUS_MODEL="claude-opus-5"
-export ANTHROPIC_DEFAULT_FABLE_MODEL="claude-fable-5"
-export ANTHROPIC_DEFAULT_SONNET_MODEL="Claude-Sonnet-4.8"
-export ANTHROPIC_DEFAULT_HAIKU_MODEL="Claude-Haiku-4.5"
-export CLAUDE_CODE_SUBAGENT_MODEL="${ANTHROPIC_DEFAULT_OPUS_MODEL}"
+# AI on/off switches: public strings, the same on every machine. Model NAMES
+# are not here -- a machine behind a corporate gateway needs that gateway's
+# deployment names (ANTHROPIC_MODEL, ANTHROPIC_DEFAULT_*_MODEL,
+# CLAUDE_CODE_SUBAGENT_MODEL), which are wrong everywhere else. Those go in
+# local.env below. The key that talks to the models goes in secrets.env.
 export CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC=1
 export CLAUDE_CODE_DISABLE_EXPERIMENTAL_BETAS=1
 

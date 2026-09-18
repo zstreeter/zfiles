@@ -48,7 +48,7 @@ fi
 mkdir -p "$RESEARCH_ROOT"
 cp -rL "$TEMPLATE_DIR" "$VAULT_DIR"
 
-touch "$VAULT_DIR/references.bib"
+touch "$VAULT_DIR/references.bib" "$VAULT_DIR/library.bib"
 
 mkdir -p "$LIBRARY_DIR"
 

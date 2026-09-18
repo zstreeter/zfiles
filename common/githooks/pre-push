@@ -9,7 +9,13 @@
 P="${XDG_CONFIG_HOME:-$HOME/.config}/zfiles/leak-patterns"
 [ -r "$P" ] || { echo "pre-push: no pattern file at $P" >&2; exit 1; }
 
+# Not `grep -f "$P"` directly: -f reads every line as a pattern, so a blank
+# line becomes the empty pattern, which matches all input and blocks every
+# push. Strip comments and blanks; newline-separated patterns are alternatives.
 PATS=$(grep -vE '^[[:space:]]*(#|$)' "$P")
+# bootstrap seeds this file with a sentinel, so the default state is loud. Once
+# it is deleted an empty list is a real answer -- this machine has nothing to
+# hide -- rather than a file nobody ever filled in.
 case "$PATS" in *UNCONFIGURED*)
 	echo "pre-push: $P is unconfigured (fill it in, delete its UNCONFIGURED line)" >&2
 	exit 1
@@ -17,10 +23,26 @@ case "$PATS" in *UNCONFIGURED*)
 esac
 [ -n "$PATS" ] || exit 0
 
-while read -r _ local _ _; do
-	case "$local" in *[!0]*) ;; *) continue ;; esac # a deletion publishes nothing
-	if git log -p "$local" --not --remotes | grep '^+' | grep -iE "$PATS"; then
-		echo "pre-push: identifiers above would become public" >&2
+# A malformed regex makes grep exit 2, which the loop below would read as "no
+# match" -- and since every pattern is joined into one -E expression, one bad
+# line would silently disable all of them. Validate each pattern first.
+printf '%s\n' "$PATS" | while IFS= read -r pat; do
+	printf '' | grep -E -- "$pat" >/dev/null 2>&1
+	if [ $? -eq 2 ]; then
+		echo "pre-push: invalid pattern in $P: $pat" >&2
 		exit 1
 	fi
+done || exit 1
+
+while read -r _ local _ _; do
+	case "$local" in *[!0]*) ;; *) continue ;; esac # a deletion publishes nothing
+	# Added lines of commits not yet on any remote. Added-only, because a line
+	# this push *removes* is a scrub, not a leak. Not-yet-pushed only, because
+	# flagging what went public years ago teaches you to reach for --no-verify.
+	git log -p "$local" --not --remotes | grep '^+' | grep -iE -- "$PATS"
+	case $? in
+	0) echo "pre-push: identifiers above would become public" >&2; exit 1 ;;
+	1) ;;
+	*) echo "pre-push: grep failed; refusing to push unchecked" >&2; exit 1 ;;
+	esac
 done

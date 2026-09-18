@@ -33,6 +33,13 @@ target_packages() {
 }
 
 target_setup() {
+    # publish-confluence renders maths with ~/.local/lib/texsvg/tex2svg.js, which
+    # needs mathjax-full beside it. The dir is stowed, so install in place.
+    if [[ -f "$HOME/.local/lib/texsvg/package.json" ]]; then
+        (cd "$HOME/.local/lib/texsvg" && npm install --no-audit --no-fund) \
+            || warn "mathjax-full install failed; publish-confluence will not render maths"
+    fi
+
     info "Enabling herdr-navd..."
     systemctl --user daemon-reload
     if systemctl --user enable --now herdr-navd 2>/dev/null; then

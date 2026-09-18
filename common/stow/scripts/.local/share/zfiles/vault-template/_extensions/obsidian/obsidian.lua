@@ -1,3 +1,4 @@
+--[==[
 obsidian.lua — teach Quarto to read Obsidian Flavored Markdown.
 
 (Long-bracket comment: the text below contains `]]`, which would close an
@@ -56,6 +57,9 @@ local IMAGE_EXT = {
   svg = true, webp = true, pdf = true, bmp = true, tif = true, tiff = true,
 }
 
+-- Obsidian ships far more callout types than Quarto has, and Quarto drops an
+-- unrecognized one silently, so the tail of this table matters as much as the
+-- head. Left: everything Obsidian accepts, aliases included.
 local CALLOUTS = {
   note = 'note', info = 'note', abstract = 'note', summary = 'note',
   tldr = 'note', example = 'note', quote = 'note', cite = 'note',
@@ -67,6 +71,7 @@ local CALLOUTS = {
   failure = 'caution', fail = 'caution', missing = 'caution', bug = 'caution',
 }
 
+-- --- filesystem ------------------------------------------------------------
 
 local function is_dir(path)
   return (pcall(pandoc.system.list_directory, path))
@@ -80,6 +85,7 @@ local function read_file(path)
   return text
 end
 
+--- Nearest ancestor of `start` containing a .obsidian directory.
 local function find_vault(start)
   local dir = start
   for _ = 1, 40 do
@@ -92,6 +98,11 @@ local function find_vault(start)
   return nil
 end
 
+--- Index the vault once.
+--
+-- Obsidian addresses files by NAME, not by path, so resolving one link means
+-- knowing every file in the vault. Doing that per link would be
+-- O(links x files); once here is the difference between instant and not.
 local notes, assets = {}, {}
 
 local function index_vault(root)
@@ -100,6 +111,8 @@ local function index_vault(root)
     local ok, entries = pcall(pandoc.system.list_directory, dir)
     if not ok then return end
     for _, name in ipairs(entries) do
+      -- Skip dotted dirs: .obsidian is the app's own state and .quarto is a
+      -- render cache. Both contain markdown that is not vault content.
       if name:sub(1, 1) ~= '.' then
         local full = pandoc.path.join{ dir, name }
         if is_dir(full) then
@@ -123,6 +136,19 @@ local function index_vault(root)
   walk(root, 0)
 end
 
+--- Where the source document actually lives.
+--
+-- Not where Pandoc says it does. Quarto never hands Pandoc the file you wrote:
+-- it stages a copy into /tmp/quarto-session-XXXX/quarto-input-XXXX.md and
+-- passes that, so PANDOC_STATE.input_files points at a temp directory outside
+-- the vault, and walking up from it finds no .obsidian, ever. The failure is
+-- quiet in the worst way -- links still render as text and embeds still render
+-- as a broken image, so the paper builds and is simply missing a section.
+--
+-- Quarto does export the real directory, and also chdirs into it. Plain
+-- `pandoc note.md` exports neither but gives a usable input path. The filter
+-- has to work under both runners, so try every anchor and take the first that
+-- sits in a vault.
 local function resolve_document()
   local candidates = {}
   local function add(d)
@@ -148,6 +174,7 @@ end
 local input_dir, vault = resolve_document()
 if vault then index_vault(vault) end
 
+--- A path Quarto can resolve, i.e. relative to the file being rendered.
 local function relative_to_input(path)
   local ok, rel = pcall(pandoc.path.make_relative, path, input_dir)
   if ok and rel and rel ~= '' then return rel end
@@ -158,7 +185,9 @@ local function warn(msg)
   io.stderr:write('obsidian.lua: ' .. msg .. '\n')
 end
 
+-- --- transclusion ----------------------------------------------------------
 
+--- The `## Heading` block of a document, up to the next same-or-higher heading.
 local function extract_section(blocks, heading)
   local want = heading:lower():gsub('^%s+', ''):gsub('%s+$', '')
   local out, level = {}, nil
@@ -177,6 +206,7 @@ local function extract_section(blocks, heading)
   return out
 end
 
+--- Is this block a bare `![[...]]` pointing at a note rather than an image?
 local function embed_target(block)
   local inner
   if block.t == 'Figure' then
@@ -196,10 +226,24 @@ local function embed_target(block)
   return target
 end
 
+--- What an unresolved embed becomes: text the reader can see.
+--
+-- Leaving the Image node in place is not an option. The LaTeX writer turns it
+-- into \includegraphics{Note#Section} and fails far from the cause, the HTML
+-- writer into a broken <img>, and the Typst writer into #image("Note#Section"),
+-- which Typst refuses to compile at all. Same rule as unmapped callouts:
+-- losing the author's text is worse than losing the box.
 local function missing(what, target)
   return pandoc.Strong{ pandoc.Str('[missing ' .. what .. ': ' .. target .. ']') }
 end
 
+--- Replace every bare ![[Note]] / ![[Note#Section]] with the note's content.
+--
+-- This is the one OFM feature with no Pandoc equivalent whatsoever, and the one
+-- that matters most for a paper: it is how a vault keeps method and results
+-- sections as separate notes and assembles them at render time. Resolved by
+-- inlining, recursively, with a depth cap -- two notes embedding each other
+-- would otherwise not terminate.
 local function transclude(blocks, depth)
   local out = {}
   for _, b in ipairs(blocks) do
@@ -230,7 +274,9 @@ local function transclude(blocks, depth)
   return out
 end
 
+-- --- comments --------------------------------------------------------------
 
+--- Drop %% ... %% spans inside a paragraph.
 local function strip_inline_comments(inlines)
   local out, skipping, changed = {}, false, false
   for _, el in ipairs(inlines) do
@@ -248,6 +294,7 @@ local function strip_inline_comments(inlines)
     end
   end
   if not changed then return nil end
+  -- Removing a leading %% strands the space that followed it.
   while out[1] and (out[1].t == 'Space' or out[1].t == 'SoftBreak') do
     table.remove(out, 1)
   end
@@ -257,6 +304,8 @@ local function strip_inline_comments(inlines)
   return out
 end
 
+--- Drop whole blocks between a lone %% and the next lone %%, and any block
+--- that inline stripping emptied out (a %%...%% on its own line leaves one).
 local function strip_comment_blocks(blocks)
   local out, skipping = {}, false
   for _, b in ipairs(blocks) do
@@ -266,6 +315,7 @@ local function strip_comment_blocks(blocks)
     if lone then
       skipping = not skipping
     elseif textish and #b.content == 0 then
+      -- emptied by strip_inline_comments; drop it
     elseif not skipping then
       out[#out + 1] = b
     end
@@ -273,7 +323,9 @@ local function strip_comment_blocks(blocks)
   return out
 end
 
+-- --- callouts --------------------------------------------------------------
 
+--- > [!warning] Title  ->  ::: {.callout-warning title="Title"}
 local function callout(bq)
   local first = bq.content[1]
   if not first or (first.t ~= 'Para' and first.t ~= 'Plain') then return nil end
@@ -285,6 +337,8 @@ local function callout(bq)
   if not kind then return nil end
   kind = kind:lower()
 
+  -- The rest of the first line is the callout's title; everything after the
+  -- first SoftBreak is body.
   local title, body_head, seen_break = {}, {}, false
   for i = 2, #first.content do
     local el = first.content[i]
@@ -303,6 +357,9 @@ local function callout(bq)
 
   local quarto = CALLOUTS[kind]
   if not quarto then
+    -- An unmapped type must stay VISIBLE. Quarto renders an unknown callout
+    -- class as nothing at all, so falling back to a blockquote is the only
+    -- option that cannot lose the author's text.
     warn('unmapped callout type [!' .. kind .. '] -- kept as a blockquote')
     if #title > 0 then
       table.insert(body, 1, pandoc.Para{ pandoc.Strong(title) })
@@ -312,12 +369,14 @@ local function callout(bq)
 
   local attr = {}
   if #title > 0 then attr.title = stringify(pandoc.Para(title)) end
+  -- `-` is Obsidian's start-collapsed marker; Quarto spells it `collapse`.
   if fold == '-' then attr.collapse = 'true'
   elseif fold == '+' then attr.collapse = 'false' end
 
   return pandoc.Div(body, pandoc.Attr('', { 'callout-' .. quarto }, attr))
 end
 
+-- --- links and images ------------------------------------------------------
 
 local function wikilink(el)
   if not el.classes:includes('wikilink') then return nil end
@@ -330,6 +389,8 @@ local function wikilink(el)
       { pandoc.Citation(id, 'NormalCitation') })
   end
 
+  -- An internal note link has no meaning in a PDF. Flatten it to its display
+  -- text rather than leaving a dangling link to a file the reader lacks.
   return el.content
 end
 
@@ -342,6 +403,7 @@ local function wikiimage(el)
 
   local path = assets[target] or assets[target:gsub('%.[^.]+$', '')]
   if not path then
+    -- A path relative to the note that exists on disk is fine as it is.
     local fh = io.open(pandoc.path.join{ input_dir, target })
     if fh then fh:close(); return nil end
     warn('asset not found in vault: ' .. target)
@@ -349,6 +411,8 @@ local function wikiimage(el)
   end
 
   el.src = relative_to_input(path)
+  -- ![[figure.png|400]] sets a width; with the pipe extension that lands in
+  -- the link's text, not its target.
   local caption = stringify(el.caption)
   local width = caption:match('^(%d+)$')
   if width then
@@ -358,6 +422,13 @@ local function wikiimage(el)
   return el
 end
 
+--- Drop the caption Pandoc invents for an image wikilink.
+--
+-- `![[figure.png]]` carries the filename as alt text, and Pandoc promotes alt
+-- text on a lone image to a figure caption. Left alone, every figure in the
+-- paper is captioned "figure.png" -- or, for `![[figure.png|400]]`, "400".
+-- Obsidian has no caption syntax for embeds, so there is never anything here
+-- worth keeping; a real caption is added in Quarto syntax instead.
 local function wikifigure(fig)
   local first = fig.content[1]
   if not first or not first.content or #first.content ~= 1 then return nil end
@@ -372,6 +443,12 @@ local function strip_block_id(el)
   return nil
 end
 
+--- ==highlight== for Typst.
+--
+-- Pandoc's +mark extension yields a Span with class "mark". The HTML writer
+-- turns that into <mark> and the LaTeX writer into \hl{}, but the Typst writer
+-- drops the class and emits plain text. Measured on Quarto 1.8.27 / Pandoc
+-- 3.6.3: `==hl==` rendered to PDF via Typst as bare "hl". Wrap it ourselves.
 local function mark(el)
   if not el.classes:includes('mark') or not FORMAT:match('typst') then return nil end
   local out = { pandoc.RawInline('typst', '#highlight[') }
@@ -380,6 +457,12 @@ local function mark(el)
   return out
 end
 
+-- --- pipeline --------------------------------------------------------------
+--
+-- Order is load-bearing. Transclusion runs first so that inlined content is
+-- then processed by every later pass exactly like the host note's own -- an
+-- embedded note's callouts, citations and images all work. Comments are
+-- stripped next so a commented-out callout never becomes one.
 return {
   { Pandoc = function(doc)
       if not vault then
