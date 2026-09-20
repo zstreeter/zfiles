@@ -1,3 +1,4 @@
+--- @since 25.5.31
 
 local AVAILABLE_CHARS = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789."
 
