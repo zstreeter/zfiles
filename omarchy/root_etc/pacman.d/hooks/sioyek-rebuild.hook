@@ -1,0 +1,9 @@
+[Trigger]
+Operation = Upgrade
+Type = Package
+Target = libmupdf
+
+[Action]
+Description = libmupdf changed: sioyek-git links its exact soname and must be rebuilt
+When = PostTransaction
+Exec = /usr/bin/sh -c 'echo ">>> sioyek-git was built against the previous libmupdf soname and will not start. Rebuild it: paru -S --rebuild sioyek-git (or re-run zfiles bootstrap.sh)."'

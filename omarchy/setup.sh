@@ -23,6 +23,14 @@ target_packages() {
 
     grep -v '^#' "$REPO_DIR/omarchy/pkglist.txt" | grep -v '^$' \
         | $AUR_HELPER -S --needed --noconfirm -
+
+    # sioyek-git links the exact libmupdf soname (libmupdf.so.28.0, not .28),
+    # so a libmupdf point release leaves it unable to start until rebuilt.
+    # The pacman hook in root_etc warns at upgrade time; this repairs it.
+    if ldd /usr/bin/sioyek 2>/dev/null | grep -q 'not found'; then
+        warn "sioyek is linked against a library that is gone; rebuilding sioyek-git..."
+        $AUR_HELPER -S --rebuild --noconfirm sioyek-git
+    fi
 }
 
 target_setup() {
@@ -30,6 +38,10 @@ target_setup() {
     sudo mkdir -p /etc/keyd
     sudo cp "$REPO_DIR/omarchy/root_etc/keyd/default.conf" /etc/keyd/default.conf
     sudo systemctl enable --now keyd
+
+    info "Installing pacman hook (warn when libmupdf changes under sioyek-git)..."
+    sudo install -Dm644 "$REPO_DIR/omarchy/root_etc/pacman.d/hooks/sioyek-rebuild.hook" \
+        /etc/pacman.d/hooks/sioyek-rebuild.hook
 
     info "Checking Pimalaya tools..."
     if command -v cargo &>/dev/null; then
