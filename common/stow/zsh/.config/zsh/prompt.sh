@@ -48,9 +48,9 @@ function set-prompt() {
 
   if [ ! -z "$CONDA_DEFAULT_ENV" ]
   then
-    local top_left="%B%F{$ZF_PROMPT_ENV}($CONDA_DEFAULT_ENV)%f %F{$ZF_PROMPT_BRACKET}[%f%F{$ZF_PROMPT_USER}%n%f%F{$ZF_PROMPT_AT}@%f%F{$ZF_PROMPT_HOST}%M %f%F{$ZF_PROMPT_DIR}%1d%f%F{$ZF_PROMPT_BRACKET}]%f%b"
+    local top_left="%B%F{$ZF_PROMPT_ENV}($CONDA_DEFAULT_ENV)%f %F{$ZF_PROMPT_BRACKET}[%f%F{$ZF_PROMPT_USER}%n%f%F{$ZF_PROMPT_AT}@%f%F{$ZF_PROMPT_HOST}${ZF_HOST} %f%F{$ZF_PROMPT_DIR}%1d%f%F{$ZF_PROMPT_BRACKET}]%f%b"
   else
-      local top_left="%B%F{$ZF_PROMPT_BRACKET}[%f%F{$ZF_PROMPT_USER}%n%f%F{$ZF_PROMPT_AT}@%f%F{$ZF_PROMPT_HOST}%M %f%F{$ZF_PROMPT_DIR}%1d%f%F{$ZF_PROMPT_BRACKET}]%f%b"
+      local top_left="%B%F{$ZF_PROMPT_BRACKET}[%f%F{$ZF_PROMPT_USER}%n%f%F{$ZF_PROMPT_AT}@%f%F{$ZF_PROMPT_HOST}${ZF_HOST} %f%F{$ZF_PROMPT_DIR}%1d%f%F{$ZF_PROMPT_BRACKET}]%f%b"
   fi
 
   local gh_group=""
