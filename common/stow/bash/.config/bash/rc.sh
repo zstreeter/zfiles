@@ -19,15 +19,9 @@ shopt -s histappend checkwinsize globstar autocd 2>/dev/null
 
 set -o vi
 
-[[ -f "$HOME/.config/shell/aliases.sh" ]] && source "$HOME/.config/shell/aliases.sh"
+# commands.sh first: it activates mise, and aliases.sh guards on tools mise may provide (eza).
 [[ -f "$HOME/.config/shell/commands.sh" ]] && source "$HOME/.config/shell/commands.sh"
-
-if command -v eza &>/dev/null; then
-    alias ls='eza --icons=auto'
-    alias l='eza -lbF'
-    alias ll='eza -la'
-    alias lt='eza --tree --level=2'
-fi
+[[ -f "$HOME/.config/shell/aliases.sh" ]] && source "$HOME/.config/shell/aliases.sh"
 
 if command -v fzf &>/dev/null; then
     if fzf --bash &>/dev/null; then
