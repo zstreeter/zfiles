@@ -94,7 +94,10 @@ fi
 # build -- static musl, or neovim's glibc-2.17 release -- drop the broken one from mise's
 # config so the two don't compete, and run it again. What still fails is reported at the end.
 declare -A PORTABLE_BUILD=(
-    [yazi]='ubi:sxyazi/yazi[matching=musl]'
+    # github: backend unpacks the whole release, so ya (plugin/flavor manager) comes too; ubi
+    # would install only the yazi executable, and setup.sh then skips the flavor without ya.
+    [yazi]="github:sxyazi/yazi[asset_pattern=yazi-$(uname -m)-unknown-linux-musl.zip]"
+    [ya]="github:sxyazi/yazi[asset_pattern=yazi-$(uname -m)-unknown-linux-musl.zip]"
     [rg]='ubi:BurntSushi/ripgrep[matching=musl,exe=rg]'
     [fd]='ubi:sharkdp/fd[matching=musl]'
     [bat]='ubi:sharkdp/bat[matching=musl]'
@@ -118,7 +121,17 @@ verify_tools() {
         BROKEN_TOOLS+=("$bin")
     done
 }
-verify_tools "${!CORE_CLI_TOOLS[@]}" yazi
+verify_tools "${!CORE_CLI_TOOLS[@]}" yazi ya
+
+# yazi previews PDFs with pdftoppm (poppler), which a root-less box may lack and mise doesn't
+# package. conda-forge's poppler (needs glibc >= 2.17) installs under $HOME through mise's
+# conda backend; that backend is experimental only to install -- the shim runs without it.
+if command -v yazi &>/dev/null && ! command -v pdftoppm &>/dev/null && command -v mise &>/dev/null; then
+    info "pdftoppm not found -- installing poppler (conda-forge) for yazi's PDF previews..."
+    MISE_EXPERIMENTAL=1 mise use -g conda:poppler@latest &>/dev/null || true
+    eval "$(mise activate bash --shims)"; hash -r
+    if pdftoppm -v &>/dev/null; then info "pdftoppm: runs."; else BROKEN_TOOLS+=(pdftoppm); fi
+fi
 
 # A root-less box (an HPC login node) may have no stow, and mise doesn't package it. GNU stow
 # is a Perl program: build a pinned, checksummed release into ~/.local -- perl + make is all
