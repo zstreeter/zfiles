@@ -21,8 +21,8 @@ __zfiles_prompt() {
         conda_plain="(${CONDA_DEFAULT_ENV}) "
         conda="${bold}${c_env}(${CONDA_DEFAULT_ENV})${reset} "
     fi
-    local left_plain="${conda_plain}[${USER}@${HOSTNAME} ${dir}]"
-    local left="${conda}${bold}${c_bracket}[${c_user}${USER}${c_at}@${c_host}${HOSTNAME} ${c_dir}${dir}${c_bracket}]${reset}"
+    local left_plain="${conda_plain}[${USER}@${ZF_HOST} ${dir}]"
+    local left="${conda}${bold}${c_bracket}[${c_user}${USER}${c_at}@${c_host}${ZF_HOST} ${c_dir}${dir}${c_bracket}]${reset}"
 
     local branch account
     branch=$(__git_ps1 '%s')

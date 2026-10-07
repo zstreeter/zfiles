@@ -16,3 +16,15 @@ ZF_PROMPT_ARROW=4     # the second-line ➜
 ZF_PROMPT_CTX_OK=2
 ZF_PROMPT_CTX_WARN=3
 ZF_PROMPT_CTX_CRIT=1
+
+# Host label for both prompts (sourced only by them, so this lookup never runs in scripts).
+# The short name, plus the site label when the FQDN is deep enough to have one:
+# login09.frontier.olcf.ornl.gov -> login09.frontier, but host.example.com -> host.
+# Login nodes often set only the short hostname, so ask for the FQDN.
+__zf_fq=$(hostname -f 2>/dev/null)
+[ -n "$__zf_fq" ] || __zf_fq=${HOSTNAME:-${HOST:-}}
+case $__zf_fq in
+    *.*.*.*) __zf_rest=${__zf_fq#*.}; ZF_HOST=${__zf_fq%%.*}.${__zf_rest%%.*} ;;
+    *)       ZF_HOST=${__zf_fq%%.*} ;;
+esac
+unset __zf_fq __zf_rest
