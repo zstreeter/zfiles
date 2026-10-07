@@ -120,10 +120,19 @@ files stay mergeable.
 paperctl retry              # re-attempt link-only papers
 paperctl tidy               # duplicate PDFs by content hash — REPORT ONLY
 paperctl tidy --apply       # actually remove them
+paperctl remove @key1 @key2 --from FOLDER --dry-run   # un-file entries
 ```
 
 `tidy` without `--apply` deletes nothing. It reports duplicate *content*, found
 by hash, not by filename.
+
+`remove` is the only way to take an entry out of a folder; editing
+`.paperctl.json` by hand leaves `README.md` and `refs.bib` stale. It matches by
+citekey (`@` optional) or ident, **`--from` is required**, and it is
+all-or-nothing: one unknown ref and nothing is written. A PDF paperctl
+*downloaded* is deleted with its entry; any other PDF (status `have`, e.g. one
+you `adopt`ed) is left in `papers/` and reported, since nothing could fetch it
+again. Regenerate a vault's `library.bib` afterwards with `paperctl bib`.
 
 ## Flags that apply everywhere
 

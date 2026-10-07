@@ -365,6 +365,24 @@ def cmd_retry(args, cfg) -> int:
 
 
 
+def cmd_remove(args, cfg) -> int:
+    """Remove entries from one folder and regenerate its README.md and refs.bib."""
+    dest = library.folder(cfg, args.from_)
+    try:
+        gone = library.remove(cfg, dest, args.refs, dry_run=args.dry_run)
+    except ValueError as e:
+        emit(args, {"removed": [], "error": str(e)}, [c("31", f"paperctl remove: {e}"),
+                                                      "Nothing was changed."])
+        return 1
+    kept = [e for e in gone if e.get("pdf") and e.get("status") != "downloaded"]
+    lines = ([c("33", "--dry-run: nothing written.")] if args.dry_run else [])
+    lines.append(f"{'would remove' if args.dry_run else 'removed'} {len(gone)} from {dest}")
+    lines += [f"  @{e.get('citekey')}  {e.get('title', '')}" for e in gone]
+    lines += [f"  kept papers/{e['pdf']} (status {e.get('status')}: not re-fetchable)" for e in kept]
+    emit(args, {"removed": gone, "kept_pdfs": [e["pdf"] for e in kept]}, lines)
+    return 0
+
+
 def cmd_tidy(args, cfg) -> int:
     """Report duplicate PDFs by content hash. Report-only unless --apply."""
     import hashlib
@@ -460,6 +478,12 @@ def build_parser() -> argparse.ArgumentParser:
     r = add_cmd("retry", cmd_retry, "re-attempt papers with no open-access copy",
                 dry=True)
     r.add_argument("--folder")
+
+    rm = add_cmd("remove", cmd_remove, "remove entries from a folder by citekey or ident",
+                 dry=True)
+    rm.add_argument("refs", nargs="+", metavar="REF", help="citekey (@ optional) or ident")
+    rm.add_argument("--from", dest="from_", metavar="FOLDER", required=True,
+                    help="folder under the library root")
 
     t = add_cmd("tidy", cmd_tidy, "find duplicate PDFs by content hash")
     t.add_argument("--apply", action="store_true",
