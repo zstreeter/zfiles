@@ -109,11 +109,13 @@ BROKEN_TOOLS=()
 verify_tools() {
     local bin tool
     for bin in "$@"; do
-        command -v "$bin" &>/dev/null || continue          # absence is reported above
+        # Absent tools with a portable build are installed too: a backfill that failed gets a
+        # second chance, and a box patched by an older bootstrap can have yazi but no ya.
+        command -v "$bin" &>/dev/null || [[ -n ${PORTABLE_BUILD[$bin]:-} ]] || continue
         "$bin" --version &>/dev/null && continue
         tool=${CORE_CLI_TOOLS[$bin]:-$bin}
         if [[ -n ${PORTABLE_BUILD[$bin]:-} ]] && command -v mise &>/dev/null; then
-            warn "$bin is installed but does not run here ($("$bin" --version 2>&1 | head -1 | cut -c1-80)) — switching to ${PORTABLE_BUILD[$bin]}"
+            warn "$bin is missing or does not run here ($(command -v "$bin" &>/dev/null && "$bin" --version 2>&1 | head -1 | cut -c1-80 || echo "not installed")) — installing ${PORTABLE_BUILD[$bin]}"
             mise use -g "${PORTABLE_BUILD[$bin]}@latest" &>/dev/null && mise unuse -g "$tool" &>/dev/null
             eval "$(mise activate bash --shims)"; hash -r
             "$bin" --version &>/dev/null && { info "$bin: portable build runs."; continue; }
