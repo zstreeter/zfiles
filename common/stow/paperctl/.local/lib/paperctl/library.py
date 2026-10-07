@@ -175,6 +175,69 @@ def add(cfg, fetch, rec: Record, dest: Path, dry_run: bool = False,
     return entry
 
 
+def remove(cfg, dest: Path, refs: list[str], dry_run: bool = False) -> list[dict]:
+    """Drop entries from a folder by citekey (with or without @) or ident. Returns them.
+
+    All or nothing: an unknown ref raises ValueError before anything is written,
+    so a typo can't leave half a cleanup done. A PDF paperctl downloaded goes with
+    its entry -- `add` can fetch it again. Any other PDF is left in papers/: status
+    "have" may be a file the user adopted, which nothing could bring back.
+    """
+    index = load_index(dest)
+    want = {r.lstrip("@") for r in refs}
+    hit = [e for e in index["entries"] if want & {e.get("citekey"), e.get("ident")}]
+    missing = want - {k for e in hit for k in (e.get("citekey"), e.get("ident"))}
+    if missing:
+        raise ValueError(f"not in {dest}: {', '.join(sorted(missing))}")
+    if dry_run:
+        return hit
+    for e in hit:
+        pdf = dest / "papers" / e["pdf"] if e.get("pdf") else None
+        if pdf and e.get("status") == "downloaded" and pdf.is_file():
+            pdf.unlink()
+    index["entries"] = [e for e in index["entries"] if e not in hit]
+    save_index(dest, index)
+    write_projections(cfg, dest, index)
+    return hit
+
+
+def _selftest_remove(tmp: Path | None = None) -> None:
+    """remove(): all-or-nothing on unknown refs; downloaded PDF deleted, adopted PDF kept.
+
+    python3 -c 'from paperctl.library import _selftest_remove; _selftest_remove()'
+    """
+    if tmp is None:
+        import tempfile
+        with tempfile.TemporaryDirectory() as t:
+            return _selftest_remove(Path(t))
+    root = tmp
+    cfg = {"library.write_refs_bib": True, "library.write_readme": True}   # dict.get is all it reads
+    lib = root / "Lib"
+    (lib / "papers").mkdir(parents=True)
+    (lib / "papers" / "a.pdf").write_text("a")
+    (lib / "papers" / "b.pdf").write_text("b")
+    save_index(lib, {"entries": [
+        {"ident": "doi:1", "citekey": "aKey2020", "title": "A", "status": "downloaded", "pdf": "a.pdf"},
+        {"ident": "doi:2", "citekey": "bKey2021", "title": "B", "status": "have", "pdf": "b.pdf"},
+        {"ident": "url:3", "citekey": "cKey2022", "title": "C", "status": "link-only"}]})
+    try:
+        remove(cfg, lib, ["@aKey2020", "nope"])
+        raise AssertionError("unknown ref must raise")
+    except ValueError:
+        pass
+    assert len(load_index(lib)["entries"]) == 3                   # nothing written
+    assert [e["ident"] for e in remove(cfg, lib, ["aKey2020"], dry_run=True)] == ["doi:1"]
+    assert (lib / "papers" / "a.pdf").exists()                    # dry run touches nothing
+    gone = remove(cfg, lib, ["@aKey2020", "doi:2"])
+    assert sorted(e["ident"] for e in gone) == ["doi:1", "doi:2"]
+    assert [e["ident"] for e in load_index(lib)["entries"]] == ["url:3"]
+    assert not (lib / "papers" / "a.pdf").exists()                # downloaded: deleted
+    assert (lib / "papers" / "b.pdf").exists()                    # "have": kept
+    assert "aKey2020" not in (lib / "refs.bib").read_text()
+    assert "cKey2022" in (lib / "refs.bib").read_text()
+    print("remove selftest: ok")
+
+
 def dedupe_citekeys(entries: list[dict]) -> None:
     """Suffix a, b, c on collision, in place.
 

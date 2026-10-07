@@ -89,8 +89,35 @@ else
     info "All core CLI tools present."
 fi
 
+# A root-less box (an HPC login node) may have no stow, and mise doesn't package it. GNU stow
+# is a Perl program: build a pinned, checksummed release into ~/.local -- perl + make is all
+# it needs. The sha256 matches Arch's PKGBUILD for 2.4.1.
+install_stow_from_source() {
+    local v=2.4.1 sha=2a671e75fc207303bfe86a9a7223169c7669df0a8108ebdf1a7fe8cd2b88780b
+    local tmp mirror
+    command -v perl &>/dev/null && command -v make &>/dev/null || return 1
+    tmp=$(mktemp -d) || return 1
+    for mirror in https://ftpmirror.gnu.org/gnu https://mirrors.kernel.org/gnu https://ftp.gnu.org/gnu; do
+        curl -fsSL --connect-timeout 15 --max-time 120 -o "$tmp/stow.tgz" "$mirror/stow/stow-$v.tar.gz" && break
+    done
+    if echo "$sha  $tmp/stow.tgz" | sha256sum -c --quiet - 2>/dev/null \
+        && tar -xzf "$tmp/stow.tgz" -C "$tmp" \
+        && (cd "$tmp/stow-$v" && ./configure --prefix="$HOME/.local" && make install) \
+            >"$tmp/build.log" 2>&1; then
+        rm -rf "$tmp"
+        return 0
+    fi
+    warn "stow download, checksum or build failed (no mirror reachable, or sha256 mismatch); see $tmp"
+    return 1
+}
+
 info "Stowing dotfiles..."
-command -v stow &>/dev/null || error "stow not installed — rerun the package step or install it manually."
+if ! command -v stow &>/dev/null; then
+    info "stow not found — building GNU stow into ~/.local (perl + make, no root)..."
+    install_stow_from_source \
+        || error "stow not installed and could not be built — install GNU stow manually."
+    export PATH="$HOME/.local/bin:$PATH"
+fi
 
 STOW_FLAGS=(--no-folding --target="$HOME")
 STOW_BACKUP_DIR="${XDG_STATE_HOME:-$HOME/.local/state}/zfiles/backup/$(date +%Y%m%d%H%M%S).$$"
