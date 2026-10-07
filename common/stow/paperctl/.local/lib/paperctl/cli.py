@@ -246,9 +246,9 @@ def cmd_search(args, cfg) -> int:
 
     root = library.root(cfg)
     hits = []
-    for index_file in sorted(root.glob(f"*/{library.INDEX_NAME}")):
-        folder_name = index_file.parent.name
-        for e in library.load_index(index_file.parent).get("entries", []):
+    for d in library.index_dirs(root):
+        folder_name = str(d.relative_to(root))
+        for e in library.load_index(d).get("entries", []):
             hay = " ".join([e.get("title", ""), " ".join(e.get("authors") or []),
                             e.get("venue", ""), e.get("citekey", "")])
             if args.query.lower() in hay.lower():
@@ -288,8 +288,8 @@ def cmd_bib(args, cfg) -> int:
         bibliography: [references.bib, library.bib]
     """
     root = library.root(cfg)
-    folders = ([library.folder(cfg, args.folder)] if args.folder
-               else sorted(p.parent for p in root.glob(f"*/{library.INDEX_NAME}")))
+    base = library.folder(cfg, args.folder) if args.folder else root
+    folders = library.index_dirs(base)
 
     entries: list[dict] = []
     for f in folders:
@@ -305,7 +305,7 @@ def cmd_bib(args, cfg) -> int:
                   "instead and list both in _quarto.yml.", file=sys.stderr)
             return 2
     else:
-        out = (folders[0] / "refs.bib") if len(folders) == 1 else root / str(
+        out = (base / "refs.bib") if args.folder else root / str(
             cfg.get("quarto.bib_name"))
 
     if args.dry_run:
@@ -329,8 +329,7 @@ def cmd_retry(args, cfg) -> int:
     """
     fetch = fetcher(cfg)
     root = library.root(cfg)
-    folders = ([library.folder(cfg, args.folder)] if args.folder
-               else sorted(p.parent for p in root.glob(f"*/{library.INDEX_NAME}")))
+    folders = library.index_dirs(library.folder(cfg, args.folder) if args.folder else root)
     email = str(cfg.get("sources.unpaywall_email") or "")
 
     changed, attempted = [], 0
@@ -430,6 +429,12 @@ def build_parser() -> argparse.ArgumentParser:
                     help="override the library root for this run")
     ap.add_argument("--config", metavar="FILE",
                     help="use this config file instead of the default")
+    ap.add_argument("--secrets", metavar="FILE",
+                    help="load API keys (KEY=value or export KEY=value lines) from FILE into the environment "
+                         "for this run, e.g. ~/.config/shell/secrets.env -- keeps keys off the command line")
+    ap.add_argument("--openalex-key", metavar="KEY",
+                    help="OpenAlex API key for this run (sets OPENALEX_API_KEY). Note: a key on the command line "
+                         "is visible in shell history and `ps`; prefer --secrets or an exported variable")
     sub = ap.add_subparsers(dest="cmd", required=True)
 
     def add_cmd(name, fn, help_, json_=True, dry=False):
@@ -496,12 +501,36 @@ def build_parser() -> argparse.ArgumentParser:
     return ap
 
 
+def load_secrets(path: Path) -> list[str]:
+    """Read KEY=value / export KEY=value lines into os.environ; return the names set (never the values)."""
+    import re
+    try:
+        text = path.read_text()
+    except OSError as e:
+        sys.exit(f"paperctl: cannot read secrets file {path}: {e.strerror}")
+    names = []
+    for line in text.splitlines():
+        m = re.match(r"\s*(?:export\s+)?([A-Za-z_][A-Za-z0-9_]*)=(.*)$", line)
+        if not m or line.lstrip().startswith("#"):
+            continue
+        val = m.group(2).strip()
+        if len(val) >= 2 and val[0] == val[-1] and val[0] in "'\"":
+            val = val[1:-1]
+        os.environ[m.group(1)] = val
+        names.append(m.group(1))
+    return names
+
+
 def main(argv: list[str] | None = None) -> int:
     ap = build_parser()
     args = ap.parse_args(argv)
 
     if getattr(args, "config", None):
         os.environ["PAPERCTL_CONFIG"] = args.config
+    if getattr(args, "secrets", None):
+        load_secrets(Path(args.secrets).expanduser())
+    if getattr(args, "openalex_key", None):
+        os.environ["OPENALEX_API_KEY"] = args.openalex_key
 
     overrides = {k: v for k, v in vars(args).items() if "." in k}
     cfg = config.load(overrides)

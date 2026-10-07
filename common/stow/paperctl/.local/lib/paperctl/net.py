@@ -61,7 +61,7 @@ class Fetch:
                 wait = 2 ** attempt
             if attempt < self.retries:
                 time.sleep(min(wait, 30))
-        raise last if last else RuntimeError(f"unreachable: {url}")
+        raise last if last else RuntimeError(f"unreachable: {redact(url)}")
 
     def get_text(self, url: str, accept: str = "*/*",
                  timeout: int | None = None, headers: dict | None = None) -> str:
@@ -113,3 +113,9 @@ def qs(**params) -> str:
     """Query string from keyword args, dropping the empty ones."""
     return urllib.parse.urlencode(
         {k: v for k, v in params.items() if v not in (None, "", [])})
+
+
+def redact(url: str) -> str:
+    """Strip credentials from a URL before it can reach a message or a log."""
+    import re
+    return re.sub(r"(api_key|apikey|key|token)=[^&#]*", r"\1=REDACTED", url, flags=re.I)

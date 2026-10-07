@@ -8,6 +8,7 @@ nothing. Its titles are the least clean of the three, so it merges last.
 from __future__ import annotations
 
 import json
+import os
 import urllib.parse
 
 from ..record import Record, score_title
@@ -66,11 +67,22 @@ _SELECT = ("id,ids,title,display_name,publication_year,authorships,biblio,"
            "primary_location,best_oa_location,abstract_inverted_index")
 
 
+def _key_param() -> dict:
+    """OpenAlex API key, from the environment only (set by --openalex-key or --secrets, or exported).
+
+    Anonymous requests share a small daily budget and are throttled first under load (HTTP 503/429); a free key
+    (openalex.org/settings/api) lifts that. Never stored in config -- same rule as ALPHAXIV_API_KEY.
+    """
+    k = os.environ.get("OPENALEX_API_KEY", "").strip()
+    return {"api_key": k} if k else {}
+
+
 def search(fetch, query: str, limit: int = 10) -> list[Record]:
     q = urllib.parse.urlencode({
         "filter": f"title_and_abstract.search:{query}",
         "per-page": limit,
         "select": _SELECT,
+        **_key_param(),
     })
     data = json.loads(fetch.get_text(f"{API}?{q}", accept="application/json"))
     out = []
@@ -94,7 +106,8 @@ def fetch_one(fetch, ident: str) -> Record | None:
     if not key:
         return None
     data = json.loads(fetch.get_text(
-        f"{API}/{urllib.parse.quote(key)}?select={_SELECT}",
+        f"{API}/{urllib.parse.quote(key)}?"
+        + urllib.parse.urlencode({"select": _SELECT, **_key_param()}),
         accept="application/json"))
     rec = _parse(data)
     if rec:
