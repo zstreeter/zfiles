@@ -43,6 +43,15 @@ def folder(cfg, name: str | None) -> Path:
     return p if p.is_absolute() else root(cfg) / name
 
 
+def index_dirs(base: Path) -> list[Path]:
+    """Every folder at or below `base` that has an index -- topics may nest.
+
+    A project folder such as `Tensor_Networks/` can hold topic subfolders, each
+    with its own index; search, bib and retry must see all of them.
+    """
+    return sorted(p.parent for p in base.rglob(INDEX_NAME))
+
+
 def load_index(path: Path) -> dict:
     f = path / INDEX_NAME
     try:
@@ -349,3 +358,24 @@ def _rows(entries: list[dict]) -> list[str]:
             rows.append(f"  shared by {e['shared_by']}"
                         + (f", {e['shared_at'][:10]}" if e.get("shared_at") else ""))
     return rows
+
+
+def _selftest() -> None:
+    """Nested topic folders are found at any depth, and nothing outside `base`."""
+    import tempfile
+    with tempfile.TemporaryDirectory() as t:
+        root = Path(t)
+        for d in ("A", "Proj/Topic1", "Proj/Topic2", "Other"):
+            save_index(root / d, {"entries": []})
+        (root / "Proj" / "Topic1" / "papers").mkdir()
+        assert [p.relative_to(root).as_posix() for p in index_dirs(root)] == \
+            ["A", "Other", "Proj/Topic1", "Proj/Topic2"]
+        assert [p.name for p in index_dirs(root / "Proj")] == ["Topic1", "Topic2"]
+        assert index_dirs(root / "Missing") == []
+
+        _selftest_remove(root)
+    print("library selftest: ok")
+
+
+if __name__ == "__main__":
+    _selftest()

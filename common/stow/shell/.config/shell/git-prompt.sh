@@ -501,7 +501,7 @@ __gh_ps1_gitdir_account() {
         local pattern="${key#includeif.gitdir:}"
         pattern="${pattern%.path}"
 
-        local dir
+        local dir=
         case "$pattern" in
             '~/'*) dir="$HOME/${pattern#\~/}" ;;
             /*)    dir="$pattern" ;;
