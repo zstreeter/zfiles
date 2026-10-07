@@ -89,6 +89,37 @@ else
     info "All core CLI tools present."
 fi
 
+# A prebuilt release can install fine and then not run: linked against a newer glibc than an
+# older distro (an HPC login node) ships. Run every tool; if one fails, swap in a portable
+# build -- static musl, or neovim's glibc-2.17 release -- drop the broken one from mise's
+# config so the two don't compete, and run it again. What still fails is reported at the end.
+declare -A PORTABLE_BUILD=(
+    [yazi]='ubi:sxyazi/yazi[matching=musl]'
+    [rg]='ubi:BurntSushi/ripgrep[matching=musl,exe=rg]'
+    [fd]='ubi:sharkdp/fd[matching=musl]'
+    [bat]='ubi:sharkdp/bat[matching=musl]'
+    [eza]='ubi:eza-community/eza[matching=musl]'
+    [zoxide]='ubi:ajeetdsouza/zoxide[matching=musl]'
+    [nvim]='github:neovim/neovim-releases'
+)
+BROKEN_TOOLS=()
+verify_tools() {
+    local bin tool
+    for bin in "$@"; do
+        command -v "$bin" &>/dev/null || continue          # absence is reported above
+        "$bin" --version &>/dev/null && continue
+        tool=${CORE_CLI_TOOLS[$bin]:-$bin}
+        if [[ -n ${PORTABLE_BUILD[$bin]:-} ]] && command -v mise &>/dev/null; then
+            warn "$bin is installed but does not run here ($("$bin" --version 2>&1 | head -1 | cut -c1-80)) — switching to ${PORTABLE_BUILD[$bin]}"
+            mise use -g "${PORTABLE_BUILD[$bin]}@latest" &>/dev/null && mise unuse -g "$tool" &>/dev/null
+            eval "$(mise activate bash --shims)"; hash -r
+            "$bin" --version &>/dev/null && { info "$bin: portable build runs."; continue; }
+        fi
+        BROKEN_TOOLS+=("$bin")
+    done
+}
+verify_tools "${!CORE_CLI_TOOLS[@]}" yazi
+
 # A root-less box (an HPC login node) may have no stow, and mise doesn't package it. GNU stow
 # is a Perl program: build a pinned, checksummed release into ~/.local -- perl + make is all
 # it needs. The sha256 matches Arch's PKGBUILD for 2.4.1.
@@ -255,6 +286,11 @@ fi
 # 3. Shared setup (every target; remote-hostile steps guard themselves)
 # shellcheck source=common/setup.sh
 source common/setup.sh
+
+# Only claim success for tools that were actually run.
+if ((${#BROKEN_TOOLS[@]})); then
+    error "Dotfiles are stowed, but these installed tools do not run on this machine: ${BROKEN_TOOLS[*]}. Try \`${BROKEN_TOOLS[0]} --version\` to see why."
+fi
 
 target_setup
 
