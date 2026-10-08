@@ -47,6 +47,10 @@ command = "himalaya-tui"
 [ui]
 pane_borders = true             # line between panes on split
 pane_gaps    = false            # zen: no spacing between panes
+# Scrollbars make herdr widen panes by one column on alternate-screen entry;
+# nvim races that resize, keeps the old width, and autowraps a cell late,
+# leaving stray characters it thinks are blank.
+pane_scrollbars = false
 
 host_cursor = "native"
 

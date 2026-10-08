@@ -77,7 +77,7 @@ media/clipboard/tiling-v2/utilities + `~/.config/hypr/bindings.conf` +
 | Caps+Shift+F (nautilus) | Win+E / Explorer |
 | Caps+Shift+M/Alt+M (music), Shift+G/Alt+G/Ctrl+G (messengers), Shift+P (photos), Shift+Y (youtube), Shift+/ (1password) | personal apps — not for the work laptop |
 | Caps+Shift+N (editor), Caps+Shift+T (btop), Caps+Shift+D (lazydocker) | run them in a WezTerm/WSL pane instead |
-| Caps+Shift+E (email: nvim +Himalaya) | himalaya is Omarchy-only (excluded from `wsl/pkglist.txt` at charting) — work email is Outlook on the Windows side |
+| Caps+Shift+E (email: nvim +Mail) | himalaya is Omarchy-only (excluded from `wsl/pkglist.txt` at charting) — work email is Outlook on the Windows side |
 
 ## Windows-only — no Omarchy counterpart
 

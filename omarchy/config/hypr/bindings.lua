@@ -33,7 +33,7 @@ o.bind("SUPER + SHIFT + A", "Claude", { webapp = "https://claude.ai" })
 o.bind("SUPER + SHIFT + ALT + A", "Gemini", { webapp = "https://gemini.google.com" })
 
 unbind("SUPER + SHIFT + E") -- was Hey Email
-o.bind("SUPER + SHIFT + E", "Email", { launch = "xdg-terminal-exec -e nvim +Himalaya" })
+o.bind("SUPER + SHIFT + E", "Email", { launch = "xdg-terminal-exec -e nvim +Mail" })
 
 unbind("SUPER + SHIFT + C") -- Hey Calendar
 unbind("SUPER + SHIFT + W") -- Omawrite/Typora
