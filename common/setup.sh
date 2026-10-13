@@ -229,8 +229,8 @@ else
     info "No Omarchy theme here — neovim uses its own default colorscheme."
 fi
 
-if $REMOTE; then
-    :
+if $REMOTE || $OMARCHY; then
+    :  # omarchy ships herdr itself
 elif ! command -v herdr &>/dev/null; then
     info "Installing herdr..."
     curl -fsSL https://herdr.dev/install.sh | sh
