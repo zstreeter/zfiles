@@ -32,6 +32,9 @@ if [[ ! -f "$DRAFT" ]]; then
     exit 1
 fi
 
+# Nothing local is ever published: refuse before touching the blog repo.
+publish-lint "$DRAFT" --target blog
+
 if [[ ! -d "$BLOG_DIR" ]]; then
     echo "ERR: blog repo not found at $BLOG_DIR" >&2
     exit 1
