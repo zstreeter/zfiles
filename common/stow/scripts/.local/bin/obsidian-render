@@ -1,4 +1,12 @@
 #!/usr/bin/env bash
+# obsidian-render — render an Obsidian note through Quarto.
+#
+#   obsidian-render note.md                 # PDF, via Typst (no TeX needed)
+#   obsidian-render note.md --to pdf        # PDF, via lualatex
+#   obsidian-render note.md --to tex        # .tex for arXiv or a journal
+#   obsidian-render note.md --to html
+#   obsidian-render note.md --preview       # live reload while you edit
+#   obsidian-render note.md --paper         # scholarly preamble for a loose note
 set -uo pipefail
 
 die() { echo "obsidian-render: $*" >&2; exit 1; }

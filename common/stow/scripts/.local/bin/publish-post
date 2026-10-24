@@ -63,7 +63,8 @@ shopt -u nullglob
 # Otherwise the post renders against whatever the blog configures (nothing),
 # and every citekey silently resolves to nothing -- Quarto does not fail on an
 # unresolved @key.
-VAULT_ROOT=$(cd "$DRAFT_DIR/.." && pwd)
+# The vault is wherever .obsidian/ is above the draft, however deep it sits.
+VAULT_ROOT=$(obsidian-vault of "$DRAFT" 2>/dev/null) || VAULT_ROOT=$(cd "$DRAFT_DIR/.." && pwd)
 BIBS=()
 for b in references.bib library.bib; do
     if [[ -s "$VAULT_ROOT/$b" ]]; then

@@ -1,4 +1,9 @@
 #!/usr/bin/env bash
+# reverify-setup — install the reverify CLI on demand.
+#
+#   reverify-setup            # install/upgrade into a venv, symlink onto PATH
+#   reverify-setup --full     # also capstone + unicorn + lief + z3 (see below)
+#   reverify-setup --status   # whether it is installed, and where
 set -uo pipefail
 
 PREFIX="${XDG_DATA_HOME:-$HOME/.local/share}/reverify"

@@ -8,27 +8,7 @@ fi
 
 NAME="$1"
 
-is_wsl() { grep -qi microsoft /proc/version 2>/dev/null; }
-
-if [[ -n ${ZFILES_VAULT_ROOT:-} ]]; then
-    RESEARCH_ROOT="$ZFILES_VAULT_ROOT"
-elif is_wsl; then
-    _appdata=$(cd /mnt/c && cmd.exe /c 'echo %APPDATA%' 2>/dev/null | tr -d '\r\n')
-    if [[ -n $_appdata && $_appdata != '%APPDATA%' ]]; then
-        _appdata=$(wslpath -u "$_appdata" 2>/dev/null) || _appdata=""
-    else
-        _appdata=""
-    fi
-    if [[ -n $_appdata ]]; then
-        RESEARCH_ROOT="${_appdata%/AppData/Roaming}/vaults"
-    else
-        echo "ERR: cannot resolve %USERPROFILE% -- is cmd.exe reachable?" >&2
-        echo "     Set ZFILES_VAULT_ROOT to the vault root and re-run." >&2
-        exit 1
-    fi
-else
-    RESEARCH_ROOT="$HOME/research"
-fi
+RESEARCH_ROOT=$(obsidian-vault root) || exit 1
 
 VAULT_DIR="$RESEARCH_ROOT/$NAME"
 LIBRARY_DIR="$HOME/Library/$NAME"

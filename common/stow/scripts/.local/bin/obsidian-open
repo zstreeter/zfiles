@@ -1,4 +1,11 @@
 #!/usr/bin/env bash
+# obsidian-open — open Obsidian at a specific note, on any zfiles target.
+#
+#   obsidian-open                          the default vault, wherever it was left
+#   obsidian-open notes/spectral.md        that note in the default vault
+#   obsidian-open -v Research notes/a.md   that note in a named vault
+#   obsidian-open ~/research/x/notes/a.md  absolute path, vault inferred
+#
 set -uo pipefail
 
 die() { echo "obsidian-open: $*" >&2; exit 1; }
