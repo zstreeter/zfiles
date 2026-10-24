@@ -6,6 +6,8 @@
 # --no-verify. This covers only what GitHub cannot know -- an employer's name,
 # its internal hosts, its unreleased hardware -- which is also why the list
 # lives outside the repository: committing it would publish what it hides.
+"$(git rev-parse --show-toplevel)/common/githooks/check" || exit 1
+
 P="${XDG_CONFIG_HOME:-$HOME/.config}/zfiles/leak-patterns"
 [ -r "$P" ] || { echo "pre-push: no pattern file at $P" >&2; exit 1; }
 
