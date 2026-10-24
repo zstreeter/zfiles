@@ -692,8 +692,9 @@ Obsidian itself is `obsidian` in `omarchy/pkglist.txt` (installed with
    the previous manifest, then stows every package under `common/stow/` and the
    target's `stow/` (`--no-folding`, never `--adopt`)
 4. Runs `common/setup.sh`: GPG agent, zsh + Zap, the bash hook, ble.sh,
-   neovim clone, herdr + agent integrations, pi, XDG hygiene, yazi plugins,
-   research workspace
+   neovim clone, herdr agent integrations, pi, XDG hygiene, yazi plugins,
+   research workspace. Optional third-party installers (pi, Zap, herdr) warn
+   and continue when they fail; they never abort the run
 5. Runs the target's `target_setup()`: keyd/Hyprland/theme hooks/email/services
    on Omarchy; `herdr-navd` and `wsl/windows/install.ps1` (AutoHotkey, GlazeWM,
    WezTerm, `.wslconfig`) on WSL
@@ -713,3 +714,14 @@ common/stow/newpkg/
 No arrays to edit — bootstrap auto-discovers it on the next run and removes
 retired target links using its state manifest. (Remote is
 the one exception: its whitelist is `STOW_ONLY` in `remote/setup.sh`.)
+
+## Testing
+
+- `common/githooks/check` — runs before every push (~1s, offline): every shell
+  and Lua file parses, `--help` headers are intact, then `tests/unit.sh`
+  (obsidian-vault, publish-post, paperctl) against a throwaway `$HOME`.
+- `tests/e2e.sh [remote|linux]` — installs for real in a clean Ubuntu container,
+  twice (install, then the update path), and checks links, tools on `PATH`, and
+  that nvim starts. Needs docker and the network; run it before changing
+  `bootstrap.sh` or a `setup.sh`. `remote` installs what is pushed to GitHub.
+- Omarchy and WSL can't run in a container: run `./bootstrap.sh` on the machine.

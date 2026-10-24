@@ -5,7 +5,7 @@
 #
 # Each check is one class of bug that reached main before: a script that no
 # longer parses, a Lua file broken by a comment pass, a --help that prints code
-# because its header was stripped, and paperctl logic its selftests cover.
+# because its header was stripped -- then tests/unit.sh.
 set -uo pipefail
 cd "$(git rev-parse --show-toplevel)" || exit 1
 
@@ -31,12 +31,7 @@ while IFS= read -r f; do
     fi
 done < <(git ls-files)
 
-(
-    cd common/stow/paperctl/.local/lib || exit 1
-    python3 -I -c 'import sys; sys.path.insert(0, ".")
-from paperctl import library, alphaxiv, resolve
-library._selftest(); alphaxiv.demo(); resolve._selftest()' >/dev/null
-) || bad "paperctl selftests failed"
+tests/unit.sh >/dev/null || bad "unit tests failed (run tests/unit.sh)"
 
 ((fail)) && exit 1
 echo "check: ok"

@@ -108,7 +108,7 @@ else
     info "Installing Zap zsh plugin manager..."
     zsh <(curl -s https://raw.githubusercontent.com/zap-zsh/zap/master/install.zsh) \
         --branch release-v1 \
-        --keep
+        --keep || warn "Zap install failed -- zsh starts without plugins."
 fi
 
 if [[ "$SHELL" != */zsh ]]; then
@@ -223,8 +223,8 @@ if command -v pi &>/dev/null; then
     info "pi is already installed ($(pi --version 2>/dev/null || echo unknown))."
 else
     info "Installing pi via pi.dev installer..."
-    curl -fsSL https://pi.dev/install.sh | sh
-    info "pi installed."
+    curl -fsSL https://pi.dev/install.sh | sh && info "pi installed." \
+        || warn "pi installer failed (it needs Node.js >= 22) -- continuing without pi."
 fi
 
 # Migrate pi data from legacy ~/.pi to XDG (~/.config/pi)
