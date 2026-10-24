@@ -46,11 +46,16 @@ install_mise_stack() {
     eval "$(mise activate bash --shims)"
 }
 
+# The target contract. $TARGET/setup.sh may override any of these; common/setup.sh
+# reads the variables and never branches on which target it is running for.
+#   PINENTRY      pinentry program gpg-agent should use
+#   STOW_ONLY     packages to stow (empty = all of common/stow + $TARGET/stow)
+#   STATIC_THEME  true = no theme engine here; install fixed Catppuccin colors
+#   target_packages / target_setup  run before stow / after common/setup.sh
 export PINENTRY=/usr/bin/pinentry-gtk
 STOW_ONLY=()
-target_packages() {
-    warn "Plain Linux — no package step. Core CLI tools are backfilled via mise below."
-}
+STATIC_THEME=true
+target_packages() { :; }
 target_setup() { :; }
 # shellcheck source=/dev/null
 [[ -f "$TARGET/setup.sh" ]] && source "$TARGET/setup.sh"

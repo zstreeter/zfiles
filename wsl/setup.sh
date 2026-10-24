@@ -13,6 +13,8 @@ target_packages() {
     install_mise_stack go@latest rust@latest bun@latest node@lts \
                        neovim@latest yazi@latest opencode@latest
 
+    command -v herdr &>/dev/null || curl -fsSL https://herdr.dev/install.sh | sh
+
     command -v jupyter-lab &>/dev/null || pipx install jupyterlab
     command -v rga &>/dev/null || cargo install ripgrep_all
 

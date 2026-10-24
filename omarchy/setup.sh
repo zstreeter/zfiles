@@ -3,6 +3,8 @@
 # shellcheck shell=bash
 
 export PINENTRY=/usr/bin/pinentry-gtk
+# shellcheck disable=SC2034  # read by common/setup.sh
+STATIC_THEME=false  # Omarchy renders every theme consumer; see hooks/theme-set.d
 
 target_packages() {
     info "Installing packages (pacman)..."
@@ -96,31 +98,21 @@ target_setup() {
         warn "Hyprland is not running; deployed overlay will load next session."
     fi
 
-    local snapshot_dir="${XDG_STATE_HOME:-$HOME/.local/state}/zfiles/upstream-tpl-seen"
-    mkdir -p "$snapshot_dir"
-    local user_tpl name upstream
-    for user_tpl in "$REPO_DIR"/omarchy/stow/omarchy/.config/omarchy/themed/*.tpl; do
-        [[ -f "$user_tpl" ]] || continue
-        name=$(basename "$user_tpl")
-        upstream="${OMARCHY_PATH:-/usr/share/omarchy}/default/themed/$name"
-        if [[ -f "$upstream" && ! -f "$snapshot_dir/$name" ]]; then
-            cp "$upstream" "$snapshot_dir/$name"
-        fi
-    done
-
     info "Linking theme consumers to rendered theme dir..."
     local theme_dir="$HOME/.local/state/omarchy/current/theme"
     mkdir -p "$HOME/.config/yazi/flavors/zfiles.yazi" "$HOME/.config/sioyek"
     ln -snf "$theme_dir/yazi-omarchy-theme.toml"  "$HOME/.config/yazi/flavors/zfiles.yazi/flavor.toml"
     ln -snf "$theme_dir/sioyek-prefs.config"      "$HOME/.config/sioyek/prefs_user.config"
 
-    if [[ -f "$HOME/.local/state/omarchy/current/theme.name" ]]; then
-        local current_theme
-        current_theme=$(cat "$HOME/.local/state/omarchy/current/theme.name")
-        info "Rendering overlay for theme: $current_theme"
-        OMARCHY_THEME_HEADLESS=1 OMARCHY_THEME_SKIP_BACKGROUND=1 omarchy-theme-set "$current_theme"
-        bash "$HOME/.config/omarchy/hooks/theme-set.d/zfiles" "$current_theme"
+    local nvim_plugins="$HOME/.config/nvim/lua/plugins"
+    if [[ -d "$nvim_plugins" ]]; then
+        ln -sfn "$theme_dir/neovim.lua" "$nvim_plugins/theme.lua"
     fi
+
+    # Same path an Omarchy update takes: re-render the theme, baseline the
+    # upstream templates, and check the overlay just deployed actually loaded.
+    info "Running the post-update hook (theme render + overlay check)..."
+    bash "$HOME/.config/omarchy/hooks/post-update.d/zfiles"
 
     info "Reconciling services..."
     systemctl --user try-restart wireplumber.service

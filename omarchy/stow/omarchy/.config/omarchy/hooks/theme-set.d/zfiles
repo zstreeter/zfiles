@@ -63,5 +63,9 @@ PI_AGENT_DIR="${PI_CODING_AGENT_DIR:-${XDG_CONFIG_HOME:-$HOME/.config}/pi/agent}
 if [[ -f "$THEME_DIR/pi.json" && -d "$PI_AGENT_DIR" ]]; then
     mkdir -p "$PI_AGENT_DIR/themes"
     cat "$THEME_DIR/pi.json" > "$PI_AGENT_DIR/themes/omarchy-system.json"
+    settings="$PI_AGENT_DIR/settings.json"
+    if [[ -f "$settings" && "$(jq -r '.theme // empty' "$settings")" != omarchy-system ]]; then
+        jq '.theme = "omarchy-system"' "$settings" > "$settings.tmp" && mv "$settings.tmp" "$settings"
+    fi
     echo "theme-set hook: Synced pi theme omarchy-system"
 fi

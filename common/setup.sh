@@ -1,5 +1,6 @@
 # Shared setup for every target. Sourced by bootstrap.sh AFTER packages and
-# stow; expects REPO_DIR, OMARCHY, WSL, REMOTE, PINENTRY and info/warn/error.
+# stow; expects REPO_DIR, REMOTE, the target contract variables documented in
+# bootstrap.sh, and info/warn/error.
 # Steps a work server must not run (gpg, zsh/chsh, pi, $HOME rearranging)
 # guard themselves on $REMOTE.
 # shellcheck shell=bash
@@ -215,29 +216,6 @@ else
     install_my_nvim
 fi
 
-OMARCHY_THEME="$HOME/.local/state/omarchy/current/theme/neovim.lua"
-NVIM_THEME_LINK="$NVIM_DIR/lua/plugins/theme.lua"
-LEGACY_NVIM_THEME_LINK="$NVIM_DIR/lua/plugins/omarchy-theme.lua"
-
-[[ -L "$LEGACY_NVIM_THEME_LINK" ]] && rm "$LEGACY_NVIM_THEME_LINK"
-
-if [[ -f "$OMARCHY_THEME" ]]; then
-    mkdir -p "$(dirname "$NVIM_THEME_LINK")"
-    ln -sfn "$OMARCHY_THEME" "$NVIM_THEME_LINK"
-    info "Symlinked Omarchy theme to neovim plugins"
-else
-    info "No Omarchy theme here — neovim uses its own default colorscheme."
-fi
-
-if $REMOTE || $OMARCHY; then
-    :  # omarchy ships herdr itself
-elif ! command -v herdr &>/dev/null; then
-    info "Installing herdr..."
-    curl -fsSL https://herdr.dev/install.sh | sh
-else
-    info "herdr already installed."
-fi
-
 if ! $REMOTE; then
 
 info "Checking pi coding agent..."
@@ -278,16 +256,8 @@ if command -v pi &>/dev/null && [[ -f "$PI_TEMPLATE" ]]; then
         pi install "$pkg" || warn "  failed: $pkg (continuing)"
     done < <(jq -r '.packages[]' "$PI_TEMPLATE")
 
-    if $OMARCHY; then
-        PI_THEME="omarchy-system"
-        PI_OMARCHY_SRC="$HOME/.local/state/omarchy/current/theme/pi.json"
-        if [[ -f "$PI_OMARCHY_SRC" ]]; then
-            mkdir -p "$PI_NEW_DIR/themes"
-            cat "$PI_OMARCHY_SRC" > "$PI_NEW_DIR/themes/omarchy-system.json"
-        fi
-    else
-        PI_THEME=$(jq -r '.theme // empty' "$PI_TEMPLATE")
-    fi
+    PI_THEME=""  # a theme engine sets pi's theme from its own hook
+    $STATIC_THEME && PI_THEME=$(jq -r '.theme // empty' "$PI_TEMPLATE")
     if [[ -n "$PI_THEME" && -f "$PI_SETTINGS" ]] \
         && [[ "$(jq -r '.theme // empty' "$PI_SETTINGS")" != "$PI_THEME" ]]; then
         info "Setting pi theme: $PI_THEME"
@@ -366,7 +336,7 @@ if command -v ya &>/dev/null; then
         info "Yazi plugins already present (vendored in-repo) — nothing to fetch."
     fi
 
-    if ! $OMARCHY; then
+    if $STATIC_THEME; then
         info "Installing Catppuccin Mocha yazi flavor..."
         ya pkg add yazi-rs/flavors:catppuccin-mocha || true
         FLAVOR_DIR="$HOME/.config/yazi/flavors"
@@ -381,7 +351,7 @@ else
     warn "Yazi (ya) binary not found, skipping plugin setup."
 fi
 
-if ! $OMARCHY && ! $REMOTE && ! $WSL && [[ -d "$HOME/.config/sioyek" ]]; then
+if $STATIC_THEME && [[ -d "$HOME/.config/sioyek" ]]; then
     SIOYEK_PREFS="$HOME/.config/sioyek/prefs_user.config"
     if [[ -e "$SIOYEK_PREFS" ]]; then
         info "Sioyek prefs already present at ${SIOYEK_PREFS/#$HOME/\~} — leaving it alone."

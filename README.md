@@ -25,7 +25,7 @@ and its setup steps; `common/` is shared by all of them.
 zfiles/
 ├── bootstrap.sh          # thin dispatcher: facts → packages → stow → setup
 ├── common/               # every machine
-│   ├── setup.sh          # gpg, zsh/zap, bash hook, ble.sh, nvim, herdr, pi…
+│   ├── setup.sh          # gpg, zsh/zap, bash hook, ble.sh, nvim, pi…
 │   └── stow/             # shell zsh bash yazi herdr opencode pi scripts sioyek xdg
 ├── omarchy/              # Arch + Omarchy desktop (Hyprland)
 │   ├── setup.sh          # pacman/AUR, keyd, email tools, Quattro reconciliation
@@ -38,13 +38,17 @@ zfiles/
 │   ├── pkglist.txt
 │   ├── stow/             # wsl (the Linux→Windows routing layer: winapp)
 │   └── windows/          # Windows host configs + install.ps1 — see below
-└── remote/               # root-less work servers reached over ssh
-    ├── setup.sh
-    └── install.sh        # curl-able entry point
+├── remote/               # root-less work servers reached over ssh
+│   ├── setup.sh          # STOW_ONLY: the one list of remote packages
+│   └── install.sh        # curl-able entry point; sparse-checks out STOW_ONLY
+└── linux/                # any other Linux box
+    └── setup.sh          # no package step; herdr; core CLI tools via mise
 ```
 
-Any other Linux box falls back to a plain `linux` target: common packages
-only, core CLI tools backfilled via mise.
+Each target's `setup.sh` fills the target contract documented at the top of
+`bootstrap.sh` (`PINENTRY`, `STOW_ONLY`, `STATIC_THEME`, `target_packages`,
+`target_setup`); `common/setup.sh` reads those and never asks which target it
+is on.
 
 ## Installation
 

@@ -26,7 +26,9 @@ for user_tpl in "$REPO_USER_TPL"/*.tpl; do
     [[ -f "$upstream" ]] || continue   # no upstream pair = pure-zfiles template (e.g., yazi)
 
     seen="$SNAPSHOT_DIR/$name"
-    if [[ ! -f "$seen" ]] || ! cmp -s "$upstream" "$seen"; then
+    # First sight (a fresh bootstrap) is the baseline, not a change to review.
+    [[ -f "$seen" ]] || { cp "$upstream" "$seen"; continue; }
+    if ! cmp -s "$upstream" "$seen"; then
         echo "zfiles post-update: upstream '$name' changed since last review."
         echo "  Compare:  diff $seen $upstream"
         echo "  Override: $user_tpl"
