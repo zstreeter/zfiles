@@ -18,7 +18,7 @@ for arg in "$@"; do
 done
 
 OMARCHY=false
-if ! $REMOTE && [[ -d "$HOME/.local/share/omarchy" || -d "$HOME/.config/omarchy" ]]; then
+if ! $REMOTE && [[ -d /usr/share/omarchy || -d "$HOME/.local/share/omarchy" ]]; then
     OMARCHY=true
 fi
 
