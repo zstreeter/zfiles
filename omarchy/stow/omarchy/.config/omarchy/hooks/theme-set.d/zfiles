@@ -59,32 +59,6 @@ if pgrep -x sioyek >/dev/null; then
     echo "theme-set hook: Pushed colors to running sioyek"
 fi
 
-case "$THEME_NAME" in
-    catppuccin|catppuccin-latte) OC_THEME="catppuccin" ;;
-    everforest)                  OC_THEME="everforest" ;;
-    flexoki-light)               OC_THEME="flexoki" ;;
-    gruvbox)                     OC_THEME="gruvbox" ;;
-    kanagawa)                    OC_THEME="kanagawa" ;;
-    nord)                        OC_THEME="nord" ;;
-    osaka-jade)                  OC_THEME="osaka-jade" ;;
-    rose-pine)                   OC_THEME="rosepine" ;;
-    tokyo-night)                 OC_THEME="tokyonight" ;;
-    matte-black|vantablack)      OC_THEME="amoled" ;;
-    hackerman)                   OC_THEME="matrix" ;;
-    white)                       OC_THEME="github" ;;
-    *)                           OC_THEME="opencode" ;;
-esac
-
-OPENCODE_TUI="$HOME/.config/opencode/tui.json"
-mkdir -p "$(dirname "$OPENCODE_TUI")"
-cat > "$OPENCODE_TUI.tmp" << EOF
-{
-  "\$schema": "https://opencode.ai/tui.json",
-  "theme": "$OC_THEME"
-}
-EOF
-mv "$OPENCODE_TUI.tmp" "$OPENCODE_TUI"
-echo "theme-set hook: Set opencode TUI theme to $OC_THEME"
 PI_AGENT_DIR="${PI_CODING_AGENT_DIR:-${XDG_CONFIG_HOME:-$HOME/.config}/pi/agent}"
 if [[ -f "$THEME_DIR/pi.json" && -d "$PI_AGENT_DIR" ]]; then
     mkdir -p "$PI_AGENT_DIR/themes"

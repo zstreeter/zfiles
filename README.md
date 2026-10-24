@@ -457,8 +457,6 @@ Omarchy renders the active theme into `~/.local/state/omarchy/current/theme/`
 zfiles stows one for yazi). On every theme switch the `theme-set` hook adds:
 - Sioyek — writes `sioyek-prefs.config` into the rendered theme dir;
   `~/.config/sioyek/prefs_user.config` is a symlink to it.
-- Opencode — maps the Omarchy theme name onto `~/.config/opencode/tui.json`;
-  active agent sessions are not re-signalled, so they pick it up on next launch.
 - Yazi — the stowed yazi `theme.toml` always selects a flavor named `zfiles`; each target
   decides what fills `~/.config/yazi/flavors/zfiles.yazi/`. On Omarchy it's a
   symlink to the rendered theme, so yazi follows theme switches. On WSL and

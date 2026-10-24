@@ -4,6 +4,7 @@ common/stow/yazi/.config/yazi/package.toml
 omarchy/stow/cura/.local/share/cura/.sentry-native/
 omarchy/stow/cura/.local/share/cura/stderr.log
 omarchy/stow/cura/.local/share/cura/stdout.log
+omarchy/stow/cura/.local/share/cura/*/cura.log
 
 # API keys. secrets.env is the real path (~/.config/shell/secrets.env, created
 # by bootstrap outside the repo); the other name is a historical/mistyped one

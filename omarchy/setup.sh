@@ -70,15 +70,6 @@ target_setup() {
         warn "Cargo not found! Skipping Pimalaya installation."
     fi
 
-    systemctl --user disable --now mirador@gmail mirador@work 2>/dev/null || true
-    [[ -L "$HOME/.config/mirador/config.toml" ]] && rm "$HOME/.config/mirador/config.toml"
-    [[ -L "$HOME/.config/systemd/user/mirador@.service" ]] && rm "$HOME/.config/systemd/user/mirador@.service"
-    rmdir "$HOME/.config/mirador" 2>/dev/null || true
-    cargo uninstall mirador >/dev/null 2>&1 || true
-    if pacman -Qq mirador-git &>/dev/null; then
-        sudo pacman -Rns --noconfirm mirador-git
-    fi
-
     if [[ -x "$HOME/.local/share/cargo/bin/carillon" ]]; then
         info "Configuring Carillon services..."
         systemctl --user daemon-reload
@@ -96,7 +87,6 @@ target_setup() {
         cp "$source" "$HOME/.config/hypr/$name.tmp"
         mv "$HOME/.config/hypr/$name.tmp" "$HOME/.config/hypr/$name"
     done
-    rm -f "$HOME/.config/hypr/hypridle.conf" "$HOME/.config/hypr/hyprlock.conf"
     if hyprctl reload >/dev/null 2>&1; then
         if [[ -n "$(hyprctl configerrors)" ]]; then
             hyprctl configerrors >&2
@@ -105,14 +95,6 @@ target_setup() {
     else
         warn "Hyprland is not running; deployed overlay will load next session."
     fi
-
-    local legacy_hook
-    for legacy_hook in theme-set post-update; do
-        if [[ -L "$HOME/.config/omarchy/hooks/$legacy_hook" \
-            && "$(readlink -m "$HOME/.config/omarchy/hooks/$legacy_hook")" == "$REPO_DIR/"* ]]; then
-            rm "$HOME/.config/omarchy/hooks/$legacy_hook"
-        fi
-    done
 
     local snapshot_dir="${XDG_STATE_HOME:-$HOME/.local/state}/zfiles/upstream-tpl-seen"
     mkdir -p "$snapshot_dir"
@@ -129,8 +111,6 @@ target_setup() {
     info "Linking theme consumers to rendered theme dir..."
     local theme_dir="$HOME/.local/state/omarchy/current/theme"
     mkdir -p "$HOME/.config/yazi/flavors/zfiles.yazi" "$HOME/.config/sioyek"
-    rm -f "$HOME/.config/yazi/omarchy-theme.toml"
-    rm -rf "$HOME/.config/yazi/flavors/omarchy.yazi"
     ln -snf "$theme_dir/yazi-omarchy-theme.toml"  "$HOME/.config/yazi/flavors/zfiles.yazi/flavor.toml"
     ln -snf "$theme_dir/sioyek-prefs.config"      "$HOME/.config/sioyek/prefs_user.config"
 
@@ -144,6 +124,4 @@ target_setup() {
 
     info "Reconciling services..."
     systemctl --user try-restart wireplumber.service
-    sudo systemctl enable --now docker.socket
-    sudo systemctl disable docker.service 2>/dev/null || true
 }

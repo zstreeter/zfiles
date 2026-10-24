@@ -1,13 +1,6 @@
 keyd
 neovim
 zsh
-eza
-bat
-ripgrep
-fd
-fzf
-zoxide
-git
 gnupg
 curl
 
@@ -29,10 +22,6 @@ sioyek-git
 cura-bin
 yazi
 zotero-bin
-obsidian
-imv
-mpv
-chromium
 
 texlive-meta
 texlive-bibtexextra
