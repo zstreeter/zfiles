@@ -112,3 +112,17 @@ def enrich(fetch, rec: Record, sources: list[str]) -> Record:
         if other and other.pdf_url:
             rec.pdf_url = other.pdf_url
     return rec
+
+
+def _selftest() -> None:
+    """kind_of routes every `paperctl add` input; pin each shape it must tell apart."""
+    cases = {
+        "2506.19243": "arxiv", "arXiv:2506.19243v2": "arxiv",
+        "https://arxiv.org/abs/2506.19243": "arxiv",
+        "10.1038/nature14539": "doi", "doi:10.1038/nature14539": "doi",
+        "https://doi.org/10.1038/nature14539": "url", "www.example.com/paper": "url",
+        "Attention is all you need": "title", "2506.19243 transformers": "title", "": "title",
+    }
+    for text, kind in cases.items():
+        assert kind_of(text) == kind, (text, kind_of(text))
+    print("resolve selftest: ok")

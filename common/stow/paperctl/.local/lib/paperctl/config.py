@@ -57,12 +57,12 @@ DEFAULTS: dict[str, object] = {
 
 
 def detect_target() -> str:
-    """Which machine shape this is. Mirrors bootstrap.sh:31-45."""
+    """Which machine shape this is. Mirrors bootstrap.sh's target detection."""
     forced = os.environ.get("PAPERCTL_TARGET") or os.environ.get("ZFILES_TARGET")
     if forced:
         return forced.strip().lower()
     home = Path.home()
-    if (home / ".local/share/omarchy").is_dir() or (home / ".config/omarchy").is_dir():
+    if Path("/usr/share/omarchy").is_dir() or (home / ".local/share/omarchy").is_dir():
         return "omarchy"
     try:
         if "microsoft" in Path("/proc/version").read_text().lower():
