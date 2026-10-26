@@ -1,0 +1,7 @@
+{
+  "inlineToolDisplay": "summary",
+  "fleetView": true,
+  "fleetViewPlacement": "belowEditor",
+  "asyncWidget": false,
+  "mainWindowRenderer": { "horizontalSpacing": 0 }
+}
