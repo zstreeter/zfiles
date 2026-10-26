@@ -32,12 +32,12 @@ const NAMES = Object.keys(GROUPS) as (keyof typeof GROUPS)[];
 
 /** Menu key + one-line description per group. */
 const MENU: Record<keyof typeof GROUPS, [key: string, desc: string]> = {
-	web: ["w", "web search + fetch"],
-	research: ["r", "papers, datasets (vaults only)"],
-	obsidian: ["o", "vault notes"],
-	lens: ["l", "code navigation + diagnostics"],
-	subagents: ["s", "delegate to child agents"],
-	ask: ["a", "structured questions"],
+	web: ["w", "search the web, read pages"],
+	research: ["r", "search papers + datasets (vaults only)"],
+	obsidian: ["o", "read + write your Obsidian notes"],
+	lens: ["l", "jump to symbols, see code errors"],
+	subagents: ["s", "hand work to background agents"],
+	ask: ["a", "ask you multiple-choice questions"],
 };
 
 const MENU_SHORTCUT = "ctrl+space";
@@ -124,7 +124,14 @@ export default function (pi: ExtensionAPI) {
 						const mark = on.has(g) ? theme.fg("success", "●") : theme.fg("dim", "○");
 						return ` ${theme.fg("accent", key)}  ${mark} ${g.padEnd(10)}${theme.fg("dim", desc)}`;
 					});
-					return [theme.fg("accent", " tools"), ...rows, theme.fg("dim", " esc close")];
+					return [
+						theme.fg("accent", " What the model may use this session"),
+						theme.fg("dim", " ● on  ○ off   (read/edit/bash always on; skills unaffected)"),
+						"",
+						...rows,
+						"",
+						theme.fg("dim", " press a letter to switch on/off · esc done"),
+					];
 				},
 				handleInput(data: string) {
 					if (data === "\x1b" || data === "q" || data === "\r") return done();
