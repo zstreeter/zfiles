@@ -56,6 +56,19 @@ sbx publish-post "$V/drafts/own.md" >/dev/null
 eq "keeps a draft's own bibliography" "$(grep -c '^bibliography:' "$BLOG"/posts/*-own/index.qmd)" 1
 sbx publish-post "$V/drafts/own.md" >/dev/null 2>&1 && bad "publish-post overwrote an existing post"
 
+# --- publish-lint: nothing local is ever published ----------------------------
+L=$T/lint; mkdir -p "$L"; touch "$L/fig.png"
+printf '[a](https://x.org) [m](mailto:a@b.c) [s](#s) $[[n,k,d]]$ ![f](fig.png) ![[fig.png]] [[@k]] @k\n' > "$L/ok.md"
+sbx publish-lint "$L/ok.md" --target blog 2>/dev/null || bad "publish-lint rejected web links, maths, adjacent images or citations"
+sbx publish-lint "$L/ok.md" --target confluence-md 2>/dev/null && bad "publish-lint passed citekeys/local images on confluence-md"
+for case in 'see ~/Library/x' 'cd /home/u/p' 'go /mnt/c/Users' '[n](../notes/a.md)' '[[Vault Note]]' '![[gone.png]]' '```\nls $HOME/x\n```'; do
+    printf "%b\n" "$case" > "$L/bad.md"
+    sbx publish-lint "$L/bad.md" --target blog 2>/dev/null && bad "publish-lint passed: $case"
+done
+printf -- '---\ntitle: R\ndate: 2026-01-03\n---\nsee ~/x\n' > "$V/drafts/leak.md"
+sbx publish-post "$V/drafts/leak.md" >/dev/null 2>&1 && bad "publish-post published a local path"
+[[ -e $BLOG/posts/2026-01-03-leak ]] && bad "publish-post created a post dir before the lint gate"
+
 # --- paperctl ----------------------------------------------------------------
 (cd common/stow/paperctl/.local/lib && python3 -I -c 'import sys; sys.path.insert(0, ".")
 from paperctl import library, alphaxiv, resolve
