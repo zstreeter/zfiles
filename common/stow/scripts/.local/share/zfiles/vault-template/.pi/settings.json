@@ -1,0 +1,11 @@
+{
+  "packages": [
+    {
+      "source": "npm:@companion-ai/feynman",
+      "autoload": false,
+      "extensions": ["extensions/research-tools.ts"],
+      "skills": ["skills/**"],
+      "prompts": ["prompts/*"]
+    }
+  ]
+}
