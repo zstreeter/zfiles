@@ -134,6 +134,9 @@ The blog is a separate Quarto project at `~/Documents/Repos/zstreeter.github.io`
   `posts/YYYY-MM-DD-<slug>/index.qmd`. The blog's `_quarto.yml` loads that
   filter with the same `from:`/`filters:` pair as the vault, so a draft renders
   identically in both.
+- `publish-post` runs `publish-lint --target blog` first and refuses local
+  paths, `[[Note]]` links to vault notes, non-web links and images not next to
+  the draft. Readers never have this machine: use `https://` links or plain text.
 - Deploy: `publish-post ... --push`, or commit and push the post yourself. The
   blog's GitHub Action renders and publishes to Pages on every push to main;
   nothing runs `quarto publish` locally.
