@@ -18,7 +18,7 @@ usage: lean-sandbox <command>
   init                 create the shared sandbox ($SANDBOX), fetch Mathlib cache, build
   path                 print the sandbox directory
   check FILE.lean      compile FILE against the sandbox's Mathlib; fail on errors,
-                       'sorry', or non-standard axioms (honest-proof check)
+                       'sorry', a missing '#print axioms', or non-standard axioms
   new NAME [DIR]       new Mathlib project DIR/NAME (default DIR: .), cache fetched
   update               move the sandbox to Mathlib master's toolchain, lake update, re-fetch
   mcp                  register lean-lsp-mcp with pi (user level), idempotent
@@ -70,14 +70,16 @@ cmd_check() {
     out="$(cd "$SANDBOX" && lake env lean "$file" 2>&1)" || rc=$?
     printf '%s\n' "$out"
     ((rc == 0)) || die "FAIL: lean exited $rc"
-    grep -q "declaration uses 'sorry'\|sorryAx" <<<"$out" && die "FAIL: proof uses sorry"
-    # #print axioms output: anything beyond the three standard axioms is flagged.
-    local extra
-    extra="$(grep -o "depends on axioms: \[.*\]" <<<"$out" | tr -d '[]' | sed 's/.*axioms: //' \
-        | tr ',' '\n' | sed 's/^ *//' | grep -v -x 'propext\|Classical.choice\|Quot.sound' | sort -u || true)"
-    [[ -z "$extra" ]] || die "FAIL: non-standard axioms: $(tr '\n' ' ' <<<"$extra")"
+    grep -q "declaration uses .sorry.\|sorryAx" <<<"$out" && die "FAIL: proof uses sorry"
     grep -q "depends on axioms\|does not depend on any axioms" <<<"$out" \
-        || echo "lean-sandbox: note: no '#print axioms' in file; axiom check skipped" >&2
+        || die "FAIL: no '#print axioms <thm>' in file -- axioms unchecked"
+    # #print axioms output: anything beyond the three standard axioms is flagged. Lean wraps a
+    # long list over several lines, so join them first.
+    local extra
+    extra="$(tr '\n' ' ' <<<"$out" | grep -o "depends on axioms: \[[^]]*\]" | tr -d '[]' \
+        | sed 's/.*axioms: //' | tr ',' '\n' | sed 's/^ *//; s/ *$//' | grep -v '^$' \
+        | grep -v -x 'propext\|Classical.choice\|Quot.sound' | sort -u || true)"
+    [[ -z "$extra" ]] || die "FAIL: non-standard axioms: $(tr '\n' ' ' <<<"$extra")"
     echo "PASS: $file"
 }
 

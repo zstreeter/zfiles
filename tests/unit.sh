@@ -87,6 +87,10 @@ lchk "'t' does not depend on any axioms" || bad "lean check rejected an axiom-fr
 lchk "'t' depends on axioms: [propext, sorryAx]" && bad "lean check passed sorryAx"
 lchk "warning: declaration uses 'sorry'" && bad "lean check passed a sorry warning"
 lchk "'t' depends on axioms: [cheat, propext]" && bad "lean check passed a custom axiom"
+lchk "'t' depends on axioms: [propext,
+  Classical.choice,
+  a_custom_axiom_on_a_wrapped_line]" && bad "lean check passed a custom axiom on a wrapped line"
+lchk "no axioms printed" && bad "lean check passed a file without #print axioms"
 eq "lean path override" "$(env -i HOME="$T/home" LEAN_SANDBOX=/x "$LS" path)" "/x"
 
 ((fails)) && { echo "unit: $fails failed" >&2; exit 1; }

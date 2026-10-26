@@ -253,15 +253,17 @@ if command -v pi &>/dev/null && [[ -f "$PI_TEMPLATE" ]]; then
             continue
         fi
         info "  pi install $pkg"
-        pi install "$pkg" || { warn "  failed: $pkg (continuing)"; continue; }
-        # pi install writes a bare entry; restore the template's filters (e.g. feynman loads nothing globally).
-        entry=$(jq -c --arg p "$pkg" '.packages[] | select(type == "object" and .source == $p)' "$PI_TEMPLATE")
-        if [[ -n "$entry" ]]; then
-            jq --arg p "$pkg" --argjson e "$entry" \
-                '.packages |= map(if . == $p then $e else . end)' "$PI_SETTINGS" >"$PI_SETTINGS.tmp" &&
-                mv "$PI_SETTINGS.tmp" "$PI_SETTINGS"
-        fi
+        pi install "$pkg" || warn "  failed: $pkg (continuing)"
     done < <(jq -r '.packages[] | if type == "string" then . else .source end' "$PI_TEMPLATE")
+    # pi install writes a bare entry; restore the template's filters (e.g. feynman loads nothing
+    # globally) on every run, so machines that installed the package earlier get them too.
+    if [[ -f "$PI_SETTINGS" ]]; then
+        tmp=$(mktemp "$PI_SETTINGS.XXXXXX")
+        jq --slurpfile t "$PI_TEMPLATE" \
+            '($t[0].packages | map(select(type == "object")) | INDEX(.source)) as $o
+             | .packages |= map(if type == "string" and $o[.] then $o[.] else . end)' \
+            "$PI_SETTINGS" > "$tmp" && mv "$tmp" "$PI_SETTINGS" || rm -f "$tmp"
+    fi
 
     PI_THEME=""  # a theme engine sets pi's theme from its own hook
     $STATIC_THEME && PI_THEME=$(jq -r '.theme // empty' "$PI_TEMPLATE")
@@ -392,9 +394,16 @@ else
         | sh -s -- -y --no-modify-path --default-toolchain none \
         || warn "elan install failed — Lean unavailable (run the step by hand to see why)."
 fi
-if ! $REMOTE && command -v pi &>/dev/null && command -v uvx &>/dev/null \
-    && command -v lean-sandbox &>/dev/null; then
-    lean-sandbox mcp || warn "lean-lsp MCP registration failed (continuing)."
+if ! $REMOTE && command -v pi &>/dev/null; then
+    # uvx runs lean-lsp-mcp; nothing else in zfiles installs uv.
+    if ! command -v uvx &>/dev/null; then
+        info "Installing uv (runs the lean-lsp MCP server)..."
+        curl -LsSf https://astral.sh/uv/install.sh | env UV_NO_MODIFY_PATH=1 sh \
+            || warn "uv install failed -- lean-lsp MCP not registered."
+    fi
+    if command -v uvx &>/dev/null; then
+        lean-sandbox mcp || warn "lean-lsp MCP registration failed (continuing)."
+    fi
 fi
 
 if ! $REMOTE; then

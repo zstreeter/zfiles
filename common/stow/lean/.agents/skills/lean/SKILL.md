@@ -31,8 +31,8 @@ first `lake` call. Projects pinned to Mathlib use Mathlib's toolchain.
 2. **Iterate with the MCP tools** (`lean_goal`, `lean_diagnostic_messages`,
    `lean_leansearch` / `lean_loogle` to find Mathlib lemmas, `lean_multi_attempt`
    to try tactics). Search Mathlib before proving a standard fact.
-3. **Check.** `lean-sandbox check FILE` -- PASS requires: compiles, no `sorry`,
-   only `propext`, `Classical.choice`, `Quot.sound`.
+3. **Check.** `lean-sandbox check FILE` -- PASS requires: compiles, no `sorry`, a
+   `#print axioms` line, and only `propext`, `Classical.choice`, `Quot.sound`.
    *Done when:* PASS, and a second reader agrees the Lean statement says what the
    informal claim says.
 4. **Promote** a result worth keeping into a real project:

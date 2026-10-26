@@ -70,7 +70,7 @@ fi
 
 declare -A CORE_CLI_TOOLS=(
     [fd]=fd [rg]=ripgrep [fzf]=fzf [zoxide]=zoxide
-    [eza]=eza [bat]=bat [nvim]=neovim
+    [eza]=eza [bat]=bat [nvim]=neovim [jq]=jq
 )
 
 export PATH="$HOME/.local/bin:$PATH"
