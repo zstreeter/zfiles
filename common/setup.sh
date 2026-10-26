@@ -253,8 +253,15 @@ if command -v pi &>/dev/null && [[ -f "$PI_TEMPLATE" ]]; then
             continue
         fi
         info "  pi install $pkg"
-        pi install "$pkg" || warn "  failed: $pkg (continuing)"
-    done < <(jq -r '.packages[]' "$PI_TEMPLATE")
+        pi install "$pkg" || { warn "  failed: $pkg (continuing)"; continue; }
+        # pi install writes a bare entry; restore the template's filters (e.g. feynman loads nothing globally).
+        entry=$(jq -c --arg p "$pkg" '.packages[] | select(type == "object" and .source == $p)' "$PI_TEMPLATE")
+        if [[ -n "$entry" ]]; then
+            jq --arg p "$pkg" --argjson e "$entry" \
+                '.packages |= map(if . == $p then $e else . end)' "$PI_SETTINGS" >"$PI_SETTINGS.tmp" &&
+                mv "$PI_SETTINGS.tmp" "$PI_SETTINGS"
+        fi
+    done < <(jq -r '.packages[] | if type == "string" then . else .source end' "$PI_TEMPLATE")
 
     PI_THEME=""  # a theme engine sets pi's theme from its own hook
     $STATIC_THEME && PI_THEME=$(jq -r '.theme // empty' "$PI_TEMPLATE")

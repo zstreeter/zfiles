@@ -7,20 +7,29 @@
     "(idempotent). `theme` is the default off Omarchy; on Omarchy setup.sh",
     "sets `omarchy-system` instead, which the theme-set hook keeps in sync",
     "with the active Omarchy theme and pi hot-reloads.",
-    "Providers and credentials belong in models.json, which is also untracked."
+    "Providers and credentials belong in models.json, which is also untracked.",
+    "feynman is installed but loads nothing here; vaults enable it via .pi/settings.json (vault-template)."
   ],
   "packages": [
     "npm:pi-web-access",
     "npm:pi-lens",
-    "npm:@companion-ai/feynman",
+    {
+      "source": "npm:@companion-ai/feynman",
+      "extensions": [],
+      "skills": [],
+      "prompts": [],
+      "themes": []
+    },
     "npm:@narumitw/pi-herdr",
     "npm:@juicesharp/rpiv-ask-user-question",
-    "npm:opencode-pi",
     "git:https://github.com/hasit/pi-community-themes",
     "npm:pi-obsidian",
     "npm:@dietrichgebert/ponytail",
     "npm:pi-vimmode",
     "npm:pi-subagents"
   ],
-  "theme": "catppuccin-macchiato"
+  "theme": "catppuccin-macchiato",
+  "quietStartup": "header",
+  "collapseChangelog": true,
+  "hideThinkingBlock": true
 }
