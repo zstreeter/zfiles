@@ -2,7 +2,7 @@
  * loadout — start each session with only the core tools; load groups on demand.
  *
  *   Header:  tools  core  ·  off: web research obsidian lens subagents   /load <group>
- *   alt+space or /load  -> which-key style menu: press a group's key to toggle it
+ *   ctrl+space or /load  -> which-key style menu: press a group's key to toggle it
  *   /load <group>     /unload <group>     (the model can call load_tools itself)
  *
  * This trims what the model sees (the tool list in its prompt), not startup
@@ -40,7 +40,7 @@ const MENU: Record<keyof typeof GROUPS, [key: string, desc: string]> = {
 	ask: ["a", "structured questions"],
 };
 
-const MENU_SHORTCUT = "alt+space";
+const MENU_SHORTCUT = "ctrl+space";
 
 /** Groups on in a fresh session. */
 const DEFAULT_ON = ["ask"];
