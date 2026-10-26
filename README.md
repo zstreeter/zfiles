@@ -26,7 +26,7 @@ zfiles/
 ├── bootstrap.sh          # thin dispatcher: facts → packages → stow → setup
 ├── common/               # every machine
 │   ├── setup.sh          # gpg, zsh/zap, bash hook, ble.sh, nvim, pi…
-│   └── stow/             # shell zsh bash yazi herdr opencode pi scripts sioyek xdg
+│   └── stow/             # shell zsh bash yazi herdr opencode pi lean paperctl … sioyek xdg
 ├── omarchy/              # Arch + Omarchy desktop (Hyprland)
 │   ├── setup.sh          # pacman/AUR, keyd, email tools, Quattro reconciliation
 │   ├── pkglist.txt

@@ -11,6 +11,7 @@ zoxide
 git
 gnupg
 curl
+jq
 lsof
 pass
 stow

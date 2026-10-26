@@ -373,6 +373,23 @@ EOF
     fi
 fi
 
+# Lean 4: elan only (small, user-local, every target). Mathlib and the shared
+# sandbox are fetched lazily by `lean-sandbox init` -- ~5 GB, not a bootstrap step.
+ELAN_HOME="${ELAN_HOME:-${XDG_DATA_HOME:-$HOME/.local/share}/elan}"
+export ELAN_HOME
+if [[ -x "$ELAN_HOME/bin/elan" ]]; then
+    info "elan already installed ($("$ELAN_HOME/bin/elan" --version 2>/dev/null || echo unknown))."
+else
+    info "Installing elan (Lean toolchain manager) into $ELAN_HOME..."
+    curl -fsSL https://raw.githubusercontent.com/leanprover/elan/master/elan-init.sh \
+        | sh -s -- -y --no-modify-path --default-toolchain none \
+        || warn "elan install failed — Lean unavailable (run the step by hand to see why)."
+fi
+if ! $REMOTE && command -v pi &>/dev/null && command -v uvx &>/dev/null \
+    && command -v lean-sandbox &>/dev/null; then
+    lean-sandbox mcp || warn "lean-lsp MCP registration failed (continuing)."
+fi
+
 if ! $REMOTE; then
     info "Setting up research workspace..."
     mkdir -p "$HOME/research"

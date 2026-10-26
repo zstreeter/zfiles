@@ -19,7 +19,8 @@
     "git:https://github.com/hasit/pi-community-themes",
     "npm:pi-obsidian",
     "npm:@dietrichgebert/ponytail",
-    "npm:pi-vimmode"
+    "npm:pi-vimmode",
+    "npm:pi-subagents"
   ],
   "theme": "catppuccin-macchiato"
 }
