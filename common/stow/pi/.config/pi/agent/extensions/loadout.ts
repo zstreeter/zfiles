@@ -2,6 +2,7 @@
  * loadout — start each session with only the core tools; load groups on demand.
  *
  *   Header:  tools  core  ·  off: web research obsidian lens subagents   /load <group>
+ *   alt+space or /load  -> which-key style menu: press a group's key to toggle it
  *   /load <group>     /unload <group>     (the model can call load_tools itself)
  *
  * This trims what the model sees (the tool list in its prompt), not startup
@@ -28,6 +29,18 @@ const GROUPS = {
 	ask: ["ask_user_question"],
 } satisfies Record<string, string[]>;
 const NAMES = Object.keys(GROUPS) as (keyof typeof GROUPS)[];
+
+/** Menu key + one-line description per group. */
+const MENU: Record<keyof typeof GROUPS, [key: string, desc: string]> = {
+	web: ["w", "web search + fetch"],
+	research: ["r", "papers, datasets (vaults only)"],
+	obsidian: ["o", "vault notes"],
+	lens: ["l", "code navigation + diagnostics"],
+	subagents: ["s", "delegate to child agents"],
+	ask: ["a", "structured questions"],
+};
+
+const MENU_SHORTCUT = "alt+space";
 
 /** Groups on in a fresh session. */
 const DEFAULT_ON = ["ask"];
@@ -70,7 +83,7 @@ export default function (pi: ExtensionAPI) {
 				const loaded = ["core", ...groups.filter((g) => on.has(g))];
 				const off = groups.filter((g) => !on.has(g));
 				let line = `${theme.fg("dim", "tools")}  ${theme.fg("accent", loaded.join(" "))}`;
-				if (off.length) line += theme.fg("dim", `  ·  off: ${off.join(" ")}   /load <group>`);
+				if (off.length) line += theme.fg("dim", `  ·  off: ${off.join(" ")}   ${MENU_SHORTCUT}`);
 				return [line];
 			},
 		}));
@@ -80,7 +93,10 @@ export default function (pi: ExtensionAPI) {
 		const known = present();
 		const bad = groups.filter((g) => !known.includes(g));
 		const ok = groups.filter((g) => known.includes(g));
-		for (const g of ok) enable ? on.add(g) : on.delete(g);
+		for (const g of ok) {
+			if (enable) on.add(g);
+			else on.delete(g);
+		}
 		apply();
 		pi.appendEntry(ENTRY, { on: [...on] });
 		return { ok, bad, known };
@@ -96,6 +112,34 @@ export default function (pi: ExtensionAPI) {
 		setHeader(ctx);
 	});
 
+	/** which-key style popup: one key per group toggles it; esc/q/enter closes. */
+	async function menu(ctx: ExtensionContext) {
+		if (ctx.mode !== "tui") return;
+		await ctx.ui.custom<void>(
+			(tui, theme, _kb, done) => ({
+				invalidate() {},
+				render(): string[] {
+					const rows = present().map((g) => {
+						const [key, desc] = MENU[g];
+						const mark = on.has(g) ? theme.fg("success", "●") : theme.fg("dim", "○");
+						return ` ${theme.fg("accent", key)}  ${mark} ${g.padEnd(10)}${theme.fg("dim", desc)}`;
+					});
+					return [theme.fg("accent", " tools"), ...rows, theme.fg("dim", " esc close")];
+				},
+				handleInput(data: string) {
+					if (data === "\x1b" || data === "q" || data === "\r") return done();
+					const g = present().find((name) => MENU[name][0] === data);
+					if (!g) return;
+					change([g], !on.has(g));
+					tui.requestRender();
+				},
+			}),
+			{ overlay: true },
+		);
+	}
+
+	pi.registerShortcut(MENU_SHORTCUT, { description: "Tool groups menu", handler: menu });
+
 	const complete = (prefix: string) => {
 		const hits = present().filter((g) => g.startsWith(prefix));
 		return hits.length ? hits.map((g) => ({ value: g, label: g })) : null;
@@ -106,6 +150,7 @@ export default function (pi: ExtensionAPI) {
 			description: `${enable ? "Enable" : "Disable"} a tool group: /${name} <group...>`,
 			getArgumentCompletions: complete,
 			handler: async (args, ctx) => {
+				if (enable && !args.trim()) return menu(ctx);
 				const { ok, bad, known } = change(args.split(/\s+/).filter(Boolean), enable);
 				if (bad.length || !ok.length)
 					ctx.ui.notify(`groups: ${known.join(" ")}${bad.length ? `  (unknown: ${bad.join(" ")})` : ""}`, "warning");
