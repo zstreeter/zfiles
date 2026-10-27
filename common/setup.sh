@@ -394,7 +394,7 @@ else
         | sh -s -- -y --no-modify-path --default-toolchain none \
         || warn "elan install failed — Lean unavailable (run the step by hand to see why)."
 fi
-if $OWNS_HOME && command -v pi &>/dev/null; then
+if $OWNS_HOME && { command -v pi || command -v claude || command -v codex; } &>/dev/null; then
     # uvx runs lean-lsp-mcp; nothing else in zfiles installs uv.
     if ! command -v uvx &>/dev/null; then
         info "Installing uv (runs the lean-lsp MCP server)..."

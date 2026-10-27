@@ -21,7 +21,7 @@ usage: lean-sandbox <command>
                        'sorry', a missing '#print axioms', or non-standard axioms
   new NAME [DIR]       new Mathlib project DIR/NAME (default DIR: .), cache fetched
   update               move the sandbox to Mathlib master's toolchain, lake update, re-fetch
-  mcp                  register lean-lsp-mcp with pi (user level), idempotent
+  mcp                  register lean-lsp-mcp with pi, claude, codex (user level), idempotent
 EOF
 }
 
@@ -101,14 +101,28 @@ cmd_update() {
     fetch_and_build "$SANDBOX"
 }
 
+# Every harness installed here gets the same server at user level. opencode reads
+# it from its zfiles-tracked opencode.json instead, so it is not registered here.
 cmd_mcp() {
-    command -v pi >/dev/null || die "pi not installed"
     command -v uvx >/dev/null || die "uvx not found (install uv)"
-    if pi mcp list 2>/dev/null | grep -q 'lean-lsp'; then
-        echo "lean-lsp MCP already registered"
-    else
-        pi mcp add lean-lsp -- uvx lean-lsp-mcp
-    fi
+    local h found=0
+    for h in pi claude codex; do
+        command -v "$h" >/dev/null || continue
+        found=1
+        if case $h in
+            pi) pi mcp list 2>/dev/null | grep -q 'lean-lsp' ;;
+            *) "$h" mcp get lean-lsp >/dev/null 2>&1 ;;
+        esac; then
+            echo "$h: lean-lsp already registered"
+            continue
+        fi
+        case $h in
+            pi) pi mcp add lean-lsp -- uvx lean-lsp-mcp ;;
+            claude) claude mcp add --scope user lean-lsp -- uvx lean-lsp-mcp ;;
+            codex) codex mcp add lean-lsp -- uvx lean-lsp-mcp ;;
+        esac || die "$h: registering lean-lsp failed"
+    done
+    ((found)) || die "no agent harness found (pi, claude, codex)"
 }
 
 case "${1:-}" in

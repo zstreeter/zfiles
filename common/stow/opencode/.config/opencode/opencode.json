@@ -22,6 +22,16 @@
       ]
     }
   },
+  "mcp": {
+    "lean-lsp": {
+      "type": "local",
+      "command": [
+        "uvx",
+        "lean-lsp-mcp"
+      ],
+      "enabled": true
+    }
+  },
   "plugin": [
     "@dietrichgebert/ponytail",
     "opencode-openai-codex-auth"

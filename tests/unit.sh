@@ -135,6 +135,28 @@ lchk "'t' depends on axioms: [propext,
   Classical.choice,
   a_custom_axiom_on_a_wrapped_line]" && bad "lean check passed a custom axiom on a wrapped line"
 lchk "no axioms printed" && bad "lean check passed a file without #print axioms"
+# mcp: every installed harness gets lean-lsp once; a re-run adds nothing; none installed is an error.
+H=$T/harness; mkdir -p "$H"
+for h in pi claude codex; do
+    cat > "$H/$h" <<'FAKE'
+#!/bin/sh
+me=$(basename "$0"); echo "$me $*" >> "$H/log"
+case "$2" in
+    add) touch "$H/$me.reg" ;;
+    get) [ -e "$H/$me.reg" ] ;;
+    list) [ -e "$H/$me.reg" ] && echo "lean-lsp: connected" ;;
+esac
+FAKE
+    chmod +x "$H/$h"
+done
+printf '#!/bin/sh\n' > "$H/uvx"; chmod +x "$H/uvx"
+lmcp() { env -i HOME="$T/home" H="$H" PATH="$H:/usr/bin:/bin" "$LS" mcp >/dev/null 2>&1; }
+lmcp || bad "lean-sandbox mcp failed"
+eq "mcp registers with each harness" "$(grep -c ' mcp add ' "$H/log")" 3
+grep -q '^claude mcp add --scope user lean-lsp -- uvx lean-lsp-mcp$' "$H/log" || bad "claude not registered at user scope"
+: > "$H/log"; lmcp
+eq "mcp re-run adds nothing" "$(grep -c ' mcp add' "$H/log")" 0
+rm "$H/pi" "$H/claude" "$H/codex"; lmcp && bad "lean-sandbox mcp succeeded with no harness installed"
 eq "lean path override" "$(env -i HOME="$T/home" LEAN_SANDBOX=/x "$LS" path)" "/x"
 
 # --- target contract (bootstrap --plan: resolve, print, touch nothing) --------

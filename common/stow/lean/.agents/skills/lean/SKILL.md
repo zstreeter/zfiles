@@ -15,7 +15,7 @@ plan depends on is formalised and checked here before it counts as proved.
 | elan (toolchain manager) | `$ELAN_HOME` = `$XDG_DATA_HOME/elan` | bootstrap, every target |
 | shared sandbox (Mathlib project) | `lean-sandbox path` | `lean-sandbox init`, once per machine (~5 GB) |
 | scratch files | `$(lean-sandbox path)/Scratch/` | any `.lean` file anywhere also works with `check` |
-| agent tools | MCP server `lean-lsp` (`uvx lean-lsp-mcp`) | `lean-sandbox mcp`; `/reload` in pi |
+| agent tools | MCP server `lean-lsp` (`uvx lean-lsp-mcp`) | `lean-sandbox mcp` (pi, Claude Code, Codex); opencode via its zfiles `opencode.json`; restart the harness (`/reload` in pi) |
 
 The toolchain version is per project (`lean-toolchain` file); elan fetches it on
 first `lake` call. Projects pinned to Mathlib use Mathlib's toolchain.
