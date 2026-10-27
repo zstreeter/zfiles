@@ -20,11 +20,11 @@ git_supports_sparse() {
     [ "$major" -gt 2 ] || { [ "$major" -eq 2 ] && [ "$minor" -ge 25 ]; }
 }
 
-# remote/setup.sh's STOW_ONLY is the one list of remote packages; the checkout
-# follows it, so a package added there is never silently missing here.
+# remote/stow.txt is the one list of remote packages; the checkout follows it,
+# so a package added there is never silently missing here.
 sparse_sync() {
-    pkgs=$(sed -n 's/^STOW_ONLY=(\(.*\))$/\1/p' "$REPO_DIR/remote/setup.sh")
-    [ -n "$pkgs" ] || die "could not read STOW_ONLY from remote/setup.sh"
+    pkgs=$(grep -v '^#' "$REPO_DIR/remote/stow.txt" | grep -v '^$') || true
+    [ -n "$pkgs" ] || die "could not read the package list from remote/stow.txt"
     dirs=remote
     for p in $pkgs; do dirs="$dirs common/stow/$p"; done
     # shellcheck disable=SC2086  # word splitting is the point here

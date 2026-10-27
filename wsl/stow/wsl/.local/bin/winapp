@@ -7,7 +7,9 @@ if [[ $# -lt 1 ]]; then
     exit 2
 fi
 
-if ! grep -qi microsoft /proc/version 2>/dev/null; then
+# shellcheck source=/dev/null
+. "${XDG_CONFIG_HOME:-$HOME/.config}/shell/target.sh" 2>/dev/null
+if [[ $(zfiles_target 2>/dev/null) != wsl ]]; then
     echo "winapp: not running under WSL — no Windows side to route to" >&2
     exit 1
 fi

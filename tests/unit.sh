@@ -14,9 +14,11 @@ fails=0
 ok()  { :; }
 bad() { echo "unit: FAIL $*" >&2; fails=$((fails + 1)); }
 eq()  { [[ $2 == "$3" ]] && ok || bad "$1: expected [$3], got [$2]"; }
-# Run a repo script as if installed, in the sandbox home, off the WSL path.
-sbx() { env -i HOME="$T/home" PATH="$REPO/common/stow/scripts/.local/bin:/usr/bin:/bin" "$@"; }
-mkdir -p "$T/home"
+# Run a repo script as if installed, in the sandbox home, on a plain linux
+# target whatever this host is; `sbx env ZFILES_TARGET=wsl ...` steers it.
+sbx() { env -i HOME="$T/home" ZFILES_TARGET=linux PATH="$REPO/common/stow/scripts/.local/bin:/usr/bin:/bin" "$@"; }
+mkdir -p "$T/home/.config/shell"
+ln -s "$REPO/common/stow/shell/.config/shell/target.sh" "$T/home/.config/shell/target.sh"
 
 # --- obsidian-vault ----------------------------------------------------------
 V=$T/home/research/vault
@@ -26,9 +28,12 @@ touch "$V/drafts/2026/oct/post.md" "$T/loose/x.md"
 eq "vault of nested file" "$(sbx obsidian-vault of "$V/drafts/2026/oct/post.md")" "$V"
 eq "vault of vault dir"   "$(sbx obsidian-vault of "$V")" "$V"
 sbx obsidian-vault of "$T/loose/x.md" 2>/dev/null && bad "vault of a file outside any vault succeeded"
-# On WSL the default root is the Windows side (needs cmd.exe), so it is a non-WSL default.
-grep -qi microsoft /proc/version 2>/dev/null \
-    || eq "root default" "$(sbx obsidian-vault root)" "$T/home/research"
+eq "root default" "$(sbx obsidian-vault root)" "$T/home/research"
+# On WSL new vaults go to the Windows side; a cached %APPDATA% stands in for cmd.exe.
+W=$T/home/c/Users/u/AppData/Roaming; mkdir -p "$W" "$T/home/.cache/zfiles"
+echo "$W" > "$T/home/.cache/zfiles/appdata"
+eq "root on wsl" "$(sbx env ZFILES_TARGET=wsl obsidian-vault root)" "$T/home/c/Users/u/vaults"
+rm "$T/home/.cache/zfiles/appdata"
 eq "root override"  "$(sbx env ZFILES_VAULT_ROOT=/elsewhere obsidian-vault root)" "/elsewhere"
 eq "path finds the research vault" "$(sbx obsidian-vault path)" "$V"
 eq "path by name"   "$(sbx obsidian-vault path vault)" "$V"
@@ -131,6 +136,31 @@ lchk "'t' depends on axioms: [propext,
   a_custom_axiom_on_a_wrapped_line]" && bad "lean check passed a custom axiom on a wrapped line"
 lchk "no axioms printed" && bad "lean check passed a file without #print axioms"
 eq "lean path override" "$(env -i HOME="$T/home" LEAN_SANDBOX=/x "$LS" path)" "/x"
+
+# --- target contract (bootstrap --plan: resolve, print, touch nothing) --------
+plan() { env -i HOME="$T/planhome" PATH=/usr/bin:/bin "$@" "$REPO/bootstrap.sh" --plan 2>&1; }
+for t in omarchy wsl linux remote; do
+    p=$(plan env ZFILES_TARGET=$t)
+    grep -qx "TARGET=$t" <<<"$p" || bad "plan $t: $p"
+    grep -qx "STOW=shell" <<<"$p" || bad "plan $t does not stow shell (bootstrap sources its target.sh)"
+    if [[ $t == omarchy ]]; then want=false; else want=true; fi
+    grep -qx "STATIC_THEME=$want" <<<"$p" || bad "plan $t: STATIC_THEME should be $want"
+    if [[ $t == remote ]]; then want=false; else want=true; fi
+    grep -qx "OWNS_HOME=$want" <<<"$p" || bad "plan $t: OWNS_HOME should be $want"
+done
+eq "remote stows exactly remote/stow.txt" \
+    "$(plan env ZFILES_TARGET=remote | sed -n 's/^STOW=//p' | sort | tr '\n' ' ')" \
+    "$(grep -v '^#' remote/stow.txt | grep -v '^$' | sort | tr '\n' ' ')"
+while read -r pkg; do
+    [[ -d common/stow/$pkg ]] || bad "remote/stow.txt names a package not in common/stow: $pkg"
+done < <(grep -v '^#' remote/stow.txt | grep -v '^$')
+grep -qx STOW=wsl <<<"$(plan env ZFILES_TARGET=wsl)" || bad "plan wsl does not stow wsl/stow"
+plan env ZFILES_TARGET=bogus >/dev/null && bad "plan accepted an unknown target"
+mkdir -p "$T/planhome/.local/state/zfiles" && touch "$T/planhome/.local/state/zfiles/remote"
+grep -qx TARGET=remote <<<"$(plan)" || bad "remote marker not honoured"
+rm -rf "$T/planhome"; plan >/dev/null; [[ -e $T/planhome ]] && bad "bootstrap --plan wrote to \$HOME"
+# Shared steps branch on the contract, never on which target they run for.
+grep -nE '\$(REMOTE|OMARCHY|WSL)\b|TARGET ?==' common/setup.sh && bad "common/setup.sh branches on the target"
 
 ((fails)) && { echo "unit: $fails failed" >&2; exit 1; }
 echo "unit: ok"

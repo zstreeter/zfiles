@@ -1,11 +1,11 @@
 # Shared setup for every target. Sourced by bootstrap.sh AFTER packages and
-# stow; expects REPO_DIR, REMOTE, the target contract variables documented in
+# stow; expects REPO_DIR, the target contract variables documented in
 # bootstrap.sh, and info/warn/error.
 # Steps a work server must not run (gpg, zsh/chsh, pi, $HOME rearranging)
-# guard themselves on $REMOTE.
+# guard themselves on $OWNS_HOME.
 # shellcheck shell=bash
 
-if ! $REMOTE; then
+if $OWNS_HOME; then
     info "Configuring GPG Agent..."
     GNUPGHOME_TARGET="${GNUPGHOME:-${XDG_DATA_HOME:-$HOME/.local/share}/gnupg}"
 
@@ -27,7 +27,7 @@ if ! $REMOTE; then
     GNUPGHOME="$GNUPGHOME_TARGET" gpg-connect-agent reloadagent /bye || true
 fi
 
-if ! $REMOTE; then
+if $OWNS_HOME; then
 info "Configuring zsh..."
 
 cat > "$HOME/.zshenv" << 'EOF'
@@ -115,7 +115,7 @@ if [[ "$SHELL" != */zsh ]]; then
     info "Changing default shell to zsh..."
     chsh -s "$(command -v zsh)"
 fi
-fi  # ! $REMOTE
+fi  # OWNS_HOME
 
 ensure_bash_hook() {
     local target="$1" body="$2"
@@ -216,7 +216,7 @@ else
     install_my_nvim
 fi
 
-if ! $REMOTE; then
+if $OWNS_HOME; then
 
 info "Checking pi coding agent..."
 if command -v pi &>/dev/null; then
@@ -326,7 +326,7 @@ if [[ -d "$HOME/.config/opencode/plugins" ]] \
         || warn "opencode plugin SDK install failed — opencode will be slow to first paint."
 fi
 
-fi  # ! $REMOTE
+fi  # OWNS_HOME
 
 info "Setting up Yazi plugins..."
 if command -v ya &>/dev/null; then
@@ -394,7 +394,7 @@ else
         | sh -s -- -y --no-modify-path --default-toolchain none \
         || warn "elan install failed — Lean unavailable (run the step by hand to see why)."
 fi
-if ! $REMOTE && command -v pi &>/dev/null; then
+if $OWNS_HOME && command -v pi &>/dev/null; then
     # uvx runs lean-lsp-mcp; nothing else in zfiles installs uv.
     if ! command -v uvx &>/dev/null; then
         info "Installing uv (runs the lean-lsp MCP server)..."
@@ -406,7 +406,7 @@ if ! $REMOTE && command -v pi &>/dev/null; then
     fi
 fi
 
-if ! $REMOTE; then
+if $OWNS_HOME; then
     info "Setting up research workspace..."
     mkdir -p "$HOME/research"
 

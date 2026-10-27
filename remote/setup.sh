@@ -1,5 +1,12 @@
+# Remote target: someone else's server, everything under $HOME. Sourced by
+# bootstrap.sh; expects REPO_DIR + helpers.
+# shellcheck shell=bash
 
-STOW_ONLY=(shell bash yazi measure paperctl obsidian quarto pandoc zotero latex reverify lean)
+# shellcheck disable=SC2034  # read by bootstrap.sh / common/setup.sh
+OWNS_HOME=false
+mapfile -t STOW_ONLY < <(grep -v '^#' "$REPO_DIR/remote/stow.txt" | grep -v '^$')
+# An empty STOW_ONLY means *every* package -- never let a missing list do that here.
+((${#STOW_ONLY[@]})) || error "no packages read from remote/stow.txt"
 
 target_packages() {
     info "Installing user-local toolchain via mise (no root)..."

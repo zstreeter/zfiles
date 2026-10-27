@@ -9,7 +9,9 @@
 set -uo pipefail
 
 die() { echo "obsidian-open: $*" >&2; exit 1; }
-is_wsl() { grep -qi microsoft /proc/version 2>/dev/null; }
+# shellcheck source=/dev/null
+. "${XDG_CONFIG_HOME:-$HOME/.config}/shell/target.sh" 2>/dev/null
+is_wsl() { [[ $(zfiles_target 2>/dev/null) == wsl ]]; }
 
 VAULT_ARG=""
 while [[ $# -gt 0 ]]; do

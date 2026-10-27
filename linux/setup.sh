@@ -4,6 +4,5 @@
 
 target_packages() {
     warn "Plain Linux — no package step. Core CLI tools are backfilled via mise below."
-    command -v herdr &>/dev/null || curl -fsSL https://herdr.dev/install.sh | sh \
-        || warn "herdr install failed -- continuing without it."
+    install_herdr
 }
