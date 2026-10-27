@@ -89,16 +89,11 @@ vault_root() {
     fi
 }
 
+# The walk itself is zdraft's vault_of, the one every publish script uses.
 cmd_of() {
-    local d
     [[ -e ${1:-} ]] || die "usage: obsidian-vault of <file>"
-    d=$(cd "$(dirname "$1")" && pwd)
-    [[ -d $1 ]] && d=$(cd "$1" && pwd)
-    while [[ $d != / ]]; do
-        is_vault "$d" && { printf '%s\n' "$d"; return 0; }
-        d=${d%/*}; d=${d:-/}
-    done
-    die "$1 is not inside a vault (no .obsidian/ above it)"
+    PYTHONPATH="$(dirname "$(readlink -f "$0")")/../lib" python3 -m zdraft vault "$1" \
+        || die "$1 is not inside a vault (no .obsidian/ above it)"
 }
 
 _all_vaults_raw() {

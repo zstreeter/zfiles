@@ -55,16 +55,17 @@ else
 fi
 
 if compgen -G "$VAULT/notes/*.md" >/dev/null || compgen -G "$VAULT/drafts/*" >/dev/null; then
+    # zdraft's citekey grammar is publish-lint's: BBT keys (smith_2003, a:b), code and maths ignored.
+    ZLIB="$(dirname "$(readlink -f "$0")")/../lib"
     keys=$(find "$VAULT/notes" "$VAULT/drafts" -type f \( -name '*.md' -o -name '*.qmd' \) \
              -not -path '*_files/*' -print0 2>/dev/null \
-           | xargs -0 -r grep -hoE '\[\[@[A-Za-z0-9]+\]\]|(^|[^[:alnum:]])@[A-Za-z][A-Za-z0-9]{6,}' 2>/dev/null \
-           | grep -oE '@[A-Za-z0-9]+' | sed 's/^@//' | sort -u)
+           | xargs -0 -r env PYTHONPATH="$ZLIB" python3 -m zdraft citekeys | sort -u)
     if [[ -n $keys ]]; then
         bibs=$(cat "$VAULT"/*.bib 2>/dev/null)
         miss=0
         while IFS= read -r k; do
             [[ -z $k ]] && continue
-            grep -qE "^@[a-zA-Z]+\{$k," <<<"$bibs" || { err "citekey @$k not in any .bib"; miss=$((miss+1)); }
+            grep -q "^@[a-zA-Z]*{${k//./\\.}," <<<"$bibs" || { err "citekey @$k not in any .bib"; miss=$((miss+1)); }
         done <<<"$keys"
         ((miss == 0)) && say "$(wc -l <<<"$keys") citekey(s) all resolve"
         ((miss > 0)) && note "run: vault-sync-bib   (regenerates library.bib from paperctl)"

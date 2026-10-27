@@ -15,9 +15,14 @@ every offending line.
     @key into a reference, so they would publish as bare keys. The Quarto paths
     resolve them against the bibliography and are fine.
 
-Maths ($...$, $$...$$) is masked first, so $[[n,k,d]]$ is not read as a wikilink.
+Code and maths are masked first (zdraft, the same definition publish-confluence
+uses), so $[[n,k,d]]$ is not read as a wikilink.
 """
 import argparse, os, re, sys
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "lib"))
+import zdraft  # noqa: E402
 
 LOCAL = re.compile(r"~/|\$HOME\b|/home/|/mnt/[a-z]/|\b[A-Za-z]:\\|file://")
 WEB = re.compile(r"^(https?://|mailto:|#)")
@@ -38,23 +43,17 @@ def main():
         if LOCAL.search(line):
             bad.append((n, "local path", line))
 
-    # Mask code and maths (same length, newlines kept) so line numbers survive.
-    def blank(m):
-        return re.sub(r"[^\n]", " ", m.group(0))
-    body = re.sub(r"```.*?```", blank, src, flags=re.S)
-    body = re.sub(r"`[^`\n]+`", blank, body)
-    body = re.sub(r"\$\$.+?\$\$", blank, body, flags=re.S)
-    body = re.sub(r"\$[^$\n]+\$", blank, body)
+    body = zdraft.masked(src)       # same length, newlines kept: line numbers survive
+    lines = src.splitlines()
 
     for n, line in enumerate(body.splitlines(), 1):
-        orig = src.splitlines()[n - 1]
-        # 3./4./5. wikilinks
+        orig = lines[n - 1]
+        # 3./4. wikilinks ([[@key]] is a citation: step 5)
         for m in re.finditer(r"(!?)\[\[([^\]|#]+)[^\]]*\]\]", line):
             embed, target = m.group(1), m.group(2).strip()
             if target.startswith("@"):
-                if a.target == "confluence-md":
-                    bad.append((n, "citation key not resolved on this path", orig))
-            elif embed and target.lower().endswith(IMG_EXT):
+                continue
+            if embed and target.lower().endswith(IMG_EXT):
                 if a.target == "confluence-md":
                     bad.append((n, "local image (not uploaded)", orig))
                 elif not os.path.exists(os.path.join(here, os.path.basename(target))):
@@ -70,13 +69,14 @@ def main():
                     and os.path.exists(os.path.join(here, target)) and "/" not in target:
                 continue
             bad.append((n, "not a web link" if not embed else "local image will not travel", orig))
-        # 5. bare pandoc citations on the confluence markdown path
-        bare = re.sub(r"!?\[\[[^\]]*\]\]", " ", line)          # [[@key]] already reported above
-        if a.target == "confluence-md" and re.search(r"(^|[\s\[;(])-?@[A-Za-z][\w:.-]*", bare) \
-                and not re.search(r"\S+@\S+\.\w", bare):
-            bad.append((n, "citation key not resolved on this path", orig))
+
+    # 5. citations, [[@key]] or @key, on the confluence markdown path
+    if a.target == "confluence-md":
+        for n in sorted({src.count("\n", 0, at) + 1 for at, _ in zdraft.citekeys(src)}):
+            bad.append((n, "citation key not resolved on this path", lines[n - 1]))
 
     if bad:
+        bad.sort(key=lambda b: b[0])
         print(f"publish-lint: {a.file} is not publishable ({a.target}):", file=sys.stderr)
         for n, why, line in bad:
             print(f"  line {n}: {why}\n      {line.strip()[:120]}", file=sys.stderr)

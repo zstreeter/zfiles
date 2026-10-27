@@ -69,6 +69,34 @@ printf -- '---\ntitle: R\ndate: 2026-01-03\n---\nsee ~/x\n' > "$V/drafts/leak.md
 sbx publish-post "$V/drafts/leak.md" >/dev/null 2>&1 && bad "publish-post published a local path"
 [[ -e $BLOG/posts/2026-01-03-leak ]] && bad "publish-post created a post dir before the lint gate"
 
+# --- zdraft: one reading of a draft for every publish script ----------------
+(cd common/stow/scripts/.local/lib && python3 -I -c 'import sys; sys.path.insert(0, ".")
+import zdraft; zdraft._selftest()') || bad "zdraft selftest"
+# Lint and publisher see the same maths: here neither does, so the gate must see [[Note]].
+printf '$x$$[[Note]]$\n' > "$L/adj.md"
+sbx publish-lint "$L/adj.md" --target confluence-md 2>/dev/null && bad "publish-lint masked maths publish-confluence publishes as text"
+PC=$REPO/wsl/stow/wsl/.local/bin/publish-confluence
+eq "confluence finds no maths in \$x\$\$[[Note]]\$" "$(python3 -I -c 'import sys, importlib.util as u, importlib.machinery as m
+pc = u.module_from_spec(u.spec_from_loader("pc", m.SourceFileLoader("pc", sys.argv[1]))); pc.__spec__.loader.exec_module(pc)
+print(pc.extract_math(open(sys.argv[2]).read())[1])' "$PC" "$L/adj.md")" "[]"
+# --via-quarto renders from the vault (the Quarto project), however deep the draft.
+QV=$T/qvault; mkdir -p "$QV/.obsidian" "$QV/drafts/2026/oct"; touch "$QV/_quarto.yml" "$QV/drafts/2026/oct/d.qmd"
+eq "confluence renders a nested draft from its vault" "$(python3 -I -c 'import sys, types, importlib.util as u, importlib.machinery as m
+pc = u.module_from_spec(u.spec_from_loader("pc", m.SourceFileLoader("pc", sys.argv[1]))); pc.__spec__.loader.exec_module(pc)
+def run(cmd, cwd=None, **kw):
+    print(cwd, cmd[2]); return types.SimpleNamespace(returncode=1, stdout="", stderr="")
+pc.subprocess = types.SimpleNamespace(run=run)
+try: pc.quarto_body(sys.argv[2])
+except SystemExit: pass' "$PC" "$QV/drafts/2026/oct/d.qmd")" "$QV drafts/2026/oct/d.qmd"
+# vault-doctor reads citekeys with the same grammar: Better BibTeX keys included.
+mkdir -p "$V/notes"; printf 'See [[@smith_2003]] and @doe.2020, not `@code`.\n' > "$V/notes/k.md"
+printf '@article{doe.2020,\n}\n' > "$V/refs.bib"
+out=$(sbx vault-doctor "$V" 2>&1)
+grep -q 'citekey @smith_2003 not in any .bib' <<<"$out" || bad "vault-doctor missed BBT key smith_2003"
+grep -q 'citekey @doe.2020 not' <<<"$out" && bad "vault-doctor missed doe.2020 in the .bib"
+grep -q '@code' <<<"$out" && bad "vault-doctor read a citekey inside code"
+rm -f "$V/notes/k.md" "$V/refs.bib"
+
 # --- paperctl ----------------------------------------------------------------
 (cd common/stow/paperctl/.local/lib && python3 -I -c 'import sys; sys.path.insert(0, ".")
 from paperctl import identity, sources, library, ingest, mail, alphaxiv, resolve

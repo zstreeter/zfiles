@@ -98,7 +98,7 @@ packages on every target:
 | `herdr`    | Terminal workspace manager + `herdr-navd` (WSL only; see [Seamless navigation](#seamless-navigation)) |
 | `opencode` | opencode agent config              |
 | `pi`       | pi agent config                    |
-| `scripts`  | `new-research-project`, `publish-post`, `publish-lint`, `obsidian-{vault,open,render}` + vault template — see [Research pipeline](#research-pipeline) |
+| `scripts`  | `new-research-project`, `publish-post`, `publish-lint`, `obsidian-{vault,open,render}`, `zdraft` (the one reading of a draft: front matter, maths, citekeys, vault root) + vault template — see [Research pipeline](#research-pipeline) |
 | `sioyek`   | PDF viewer config — theme-rendered on Omarchy, static Catppuccin fallback elsewhere, Windows build on WSL |
 | `xdg`      | mimeapps defaults; entries naming absent `.desktop` files just no-op |
 | `measure`  | `measure` — an empirical ledger, so an agent quotes measurements instead of recalling them — see [Measured, not remembered](#measured-not-remembered) |
