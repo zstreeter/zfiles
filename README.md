@@ -39,16 +39,18 @@ zfiles/
 │   ├── stow/             # wsl (the Linux→Windows routing layer: winapp)
 │   └── windows/          # Windows host configs + install.ps1 — see below
 ├── remote/               # root-less work servers reached over ssh
-│   ├── setup.sh          # STOW_ONLY: the one list of remote packages
-│   └── install.sh        # curl-able entry point; sparse-checks out STOW_ONLY
+│   ├── setup.sh          # OWNS_HOME=false; STOW_ONLY from stow.txt
+│   ├── stow.txt          # the one list of remote packages
+│   └── install.sh        # curl-able entry point; sparse-checks out stow.txt
 └── linux/                # any other Linux box
     └── setup.sh          # no package step; herdr; core CLI tools via mise
 ```
 
 Each target's `setup.sh` fills the target contract documented at the top of
-`bootstrap.sh` (`PINENTRY`, `STOW_ONLY`, `STATIC_THEME`, `target_packages`,
-`target_setup`); `common/setup.sh` reads those and never asks which target it
-is on.
+`bootstrap.sh` (`PINENTRY`, `STOW_ONLY`, `STATIC_THEME`, `OWNS_HOME`,
+`target_packages`, `target_setup`); `common/setup.sh` reads those and never asks
+which target it is on. `./bootstrap.sh --plan` prints what a target resolves to
+and changes nothing; `tests/unit.sh` checks every target's plan that way.
 
 ## Installation
 
@@ -119,7 +121,7 @@ skill lives with the program it describes rather than in one central pile, so
 removing a package removes its guidance with it.
 
 Remote stows `shell`, `bash`, `yazi`, `measure`, and the skill packages
-(`STOW_ONLY` in `remote/setup.sh`) — no zsh, no herdr, no pi, no desktop
+(`remote/stow.txt`) — no zsh, no herdr, no pi, no desktop
 anything. The skills go along because they are inert markdown, and an agent on
 the work server is as capable of hand-writing a broken regex over a note as one
 running locally; `measure` goes because that box is where the benchmarks run.
@@ -599,7 +601,7 @@ Storage is one append-only JSONL file at `<repo-root>/.measurements/ledger.jsonl
 (`jq`-able; a half-written entry costs one line, not the ledger). Append-only
 because the history is often the finding — a number that moved across three
 commits says more than its current value. Stdlib Python, no daemon, no server,
-and it's in remote's `STOW_ONLY` because the work server is where the benchmarks
+and it's in `remote/stow.txt` because the work server is where the benchmarks
 actually run.
 
 The accompanying `SKILL.md` is what makes it bind: check `measure recall` before
@@ -716,7 +718,7 @@ common/stow/newpkg/
 
 No arrays to edit — bootstrap auto-discovers it on the next run and removes
 retired target links using its state manifest. (Remote is
-the one exception: its whitelist is `STOW_ONLY` in `remote/setup.sh`.)
+the one exception: its whitelist is `remote/stow.txt`.)
 
 ## Testing
 

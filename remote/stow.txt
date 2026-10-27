@@ -1,0 +1,15 @@
+# The one list of packages a remote server gets, one per line. Read by
+# remote/install.sh (sparse checkout, before bootstrap exists) and by
+# remote/setup.sh (STOW_ONLY). shell must stay: bootstrap sources its target.sh.
+shell
+bash
+yazi
+measure
+paperctl
+obsidian
+quarto
+pandoc
+zotero
+latex
+reverify
+lean

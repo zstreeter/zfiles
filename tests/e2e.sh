@@ -17,7 +17,7 @@ run() {
     case $target in
         remote) cmd='sh /zfiles/remote/install.sh' ;;
         # The tracked files as they are in this working tree, uncommitted edits included.
-        linux)  cmd='[ -d ~/zfiles ] || { mkdir ~/zfiles && tar -xzf /tree.tgz -C ~/zfiles && git -C ~/zfiles init -q; }; SHELL=/usr/bin/zsh ~/zfiles/bootstrap.sh'
+        linux)  cmd='[ -d ~/zfiles ] || { mkdir ~/zfiles && tar -xzf /tree.tgz -C ~/zfiles && git -C ~/zfiles init -q; }; SHELL=/usr/bin/zsh ZFILES_TARGET=linux ~/zfiles/bootstrap.sh'
                 TOOLS+=" zsh herdr" ;;
         *) echo "unknown target: $target" >&2; return 2 ;;
     esac

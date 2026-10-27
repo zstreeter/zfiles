@@ -116,4 +116,6 @@ target_setup() {
 
     info "Reconciling services..."
     systemctl --user try-restart wireplumber.service
+
+    info "Reboot for keyd to take effect."
 }

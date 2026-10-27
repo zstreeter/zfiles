@@ -8,9 +8,11 @@ info() { echo -e "\033[1;34m>>>\033[0m $1"; }
 warn() { echo -e "\033[1;33m!!!\033[0m $1"; }
 error() { echo -e "\033[1;31mERR\033[0m $1" >&2; exit 1; }
 
+PLAN=false
 for arg in "$@"; do
     case "$arg" in
         --remote) export ZFILES_TARGET=remote ;;
+        --plan) PLAN=true ;;  # print the resolved target contract and exit; no side effects
         *) echo "unknown argument: $arg" >&2; exit 2 ;;
     esac
 done
@@ -22,16 +24,6 @@ case $TARGET in
     omarchy | wsl | linux | remote) ;;
     *) error "unknown target '$TARGET' (ZFILES_TARGET): want omarchy, wsl, linux or remote" ;;
 esac
-REMOTE=false; [[ $TARGET == remote ]] && REMOTE=true
-OMARCHY=false; [[ $TARGET == omarchy ]] && OMARCHY=true
-
-# zfiles_target can't sniff a remote box; remember it for later shells and runs.
-REMOTE_MARKER="${XDG_STATE_HOME:-$HOME/.local/state}/zfiles/remote"
-if $REMOTE; then
-    mkdir -p "${REMOTE_MARKER%/*}" && touch "$REMOTE_MARKER"
-else
-    rm -f "$REMOTE_MARKER"
-fi
 
 install_mise_stack() {
     if ! command -v mise &>/dev/null && [[ ! -x "$HOME/.local/bin/mise" ]]; then
@@ -48,21 +40,58 @@ install_mise_stack() {
     eval "$(mise activate bash --shims)"
 }
 
-# The target contract. $TARGET/setup.sh may override any of these; common/setup.sh
-# reads the variables and never branches on which target it is running for.
+# For targets whose package step has no herdr package (linux, wsl).
+install_herdr() {
+    command -v herdr &>/dev/null || curl -fsSL https://herdr.dev/install.sh | sh \
+        || warn "herdr install failed -- continuing without it."
+}
+
+# The target contract: everything a target may vary. $TARGET/setup.sh overrides
+# these; common/setup.sh and the rest of this file read them and never ask which
+# target they are running for.
 #   PINENTRY      pinentry program gpg-agent should use
 #   STOW_ONLY     packages to stow (empty = all of common/stow + $TARGET/stow)
 #   STATIC_THEME  true = no theme engine here; install fixed Catppuccin colors
+#   OWNS_HOME     true = a machine of mine: may chsh, rewrite ~/.zshenv, move
+#                 dirs around $HOME, configure gpg, install pi and agents.
+#                 false = someone else's server: only add to $HOME, never sudo
 #   target_packages / target_setup  run before stow / after common/setup.sh
 export PINENTRY=/usr/bin/pinentry-gtk
 STOW_ONLY=()
 STATIC_THEME=true
+OWNS_HOME=true
 target_packages() { :; }
 target_setup() { :; }
 # shellcheck source=/dev/null
-[[ -f "$TARGET/setup.sh" ]] && source "$TARGET/setup.sh"
+source "$TARGET/setup.sh"
+
+stow_selected() {
+    ((${#STOW_ONLY[@]} == 0)) && return 0
+    [[ " ${STOW_ONLY[*]} " == *" $1 "* ]]
+}
+
+if $PLAN; then
+    echo "TARGET=$TARGET"
+    echo "OWNS_HOME=$OWNS_HOME"
+    echo "STATIC_THEME=$STATIC_THEME"
+    echo "PINENTRY=$PINENTRY"
+    for pkg_path in common/stow/*/ "$TARGET"/stow/*/; do
+        [[ -d $pkg_path ]] || continue
+        pkg=$(basename "$pkg_path")
+        stow_selected "$pkg" && echo "STOW=$pkg"
+    done
+    exit 0
+fi
 
 info "Target: $TARGET"
+
+# zfiles_target can't sniff a remote box; remember it for later shells and runs.
+REMOTE_MARKER="${XDG_STATE_HOME:-$HOME/.local/state}/zfiles/remote"
+if [[ $TARGET == remote ]]; then
+    mkdir -p "${REMOTE_MARKER%/*}" && touch "$REMOTE_MARKER"
+else
+    rm -f "$REMOTE_MARKER"
+fi
 
 if [[ -n "${ZFILES_SKIP_PKG:-}" ]]; then
     info "Skipping package installation (ZFILES_SKIP_PKG is set)."
@@ -219,11 +248,6 @@ restore_stow_state() {
     warn "Stow failed; restored the previous target state."
 }
 
-stow_selected() {
-    ((${#STOW_ONLY[@]} == 0)) && return 0
-    [[ " ${STOW_ONLY[*]} " == *" $1 "* ]]
-}
-
 STOW_DIRS=(common/stow)
 [[ -d "$TARGET/stow" ]] && STOW_DIRS+=("$TARGET/stow")
 STOW_PKG_PATHS=()
@@ -305,7 +329,7 @@ PATTERNS
     warn "Seeded $LEAK_PATTERNS — fill it in before pushing"
 fi
 
-# 3. Shared setup (every target; remote-hostile steps guard themselves)
+# 3. Shared setup (every target; steps a server must not run check OWNS_HOME)
 # shellcheck source=common/setup.sh
 source common/setup.sh
 
@@ -316,7 +340,7 @@ fi
 
 target_setup
 
-if ! $REMOTE; then
+if $OWNS_HOME; then
     SECRETS_FILE_DISPLAY="${XDG_CONFIG_HOME:-$HOME/.config}/shell/secrets.env"
     cat <<EOF
 
@@ -342,9 +366,5 @@ if ! $REMOTE; then
 
 EOF
 
-    if $OMARCHY; then
-        info "Done! Log out and back in for shell change, reboot for keyd."
-    else
-        info "Done! Log out and back in for shell change."
-    fi
+    info "Done! Log out and back in for shell change."
 fi
