@@ -30,7 +30,10 @@ need_elan() {
 }
 
 # Fetch prebuilt Mathlib .olean files instead of compiling Mathlib (hours).
+# Mathlib's cache unpacks ~9k files in parallel; a 1024 soft fd limit (seen on a shared GPU host) fails with
+# "No file descriptors available (os error 24)". Raise the soft limit to the hard one for this process only.
 fetch_and_build() {
+    ulimit -n "$(ulimit -Hn)" 2>/dev/null || true
     (cd "$1" && lake exe cache get && lake build)
 }
 
