@@ -11,7 +11,7 @@ from __future__ import annotations
 import re
 import sys
 
-from . import links
+from . import identity, links
 from .record import Record
 from .sources import arxiv, crossref, openalex, page, search_all
 
@@ -19,7 +19,7 @@ from .sources import arxiv, crossref, openalex, page, search_all
 def kind_of(text: str) -> str:
     """One of: arxiv, doi, url, title."""
     t = (text or "").strip()
-    if arxiv.id_of(t):
+    if identity.arxiv_id(t):
         return "arxiv"
     if re.match(r"^(doi:)?10\.\d{4,9}/", t, re.I):
         return "doi"
@@ -39,20 +39,20 @@ def resolve(fetch, text: str, sources: list[str],
     kind = kind_of(text)
 
     if kind == "arxiv":
-        return _first(fetch, [(arxiv, arxiv.id_of(text))]), []
+        return _first(fetch, [(arxiv, identity.arxiv_id(text))]), []
 
     if kind == "doi":
-        doi = crossref.doi_of(text)
+        doi = identity.doi(text)
         return _first(fetch, [(crossref, doi), (openalex, doi)]), []
 
     if kind == "url":
         url = links.normalize(text)
-        aid = arxiv.id_of(url)
+        aid = identity.arxiv_id(url)
         if aid:
             rec = _first(fetch, [(arxiv, aid)])
             if rec:
                 return rec, []
-        doi = crossref.doi_of(url)
+        doi = identity.doi(url)
         if doi:
             rec = _first(fetch, [(crossref, doi), (openalex, doi)])
             if rec:

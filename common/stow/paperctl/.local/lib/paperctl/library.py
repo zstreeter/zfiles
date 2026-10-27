@@ -13,6 +13,7 @@ two readable files are projections of it, and neither is ever parsed back.
 
 from __future__ import annotations
 
+import dataclasses
 import hashlib
 import json
 import sys
@@ -20,7 +21,7 @@ import urllib.parse
 from datetime import datetime, timezone
 from pathlib import Path
 
-from . import naming
+from . import identity, naming
 from .record import Record
 
 INDEX_NAME = ".paperctl.json"
@@ -73,8 +74,9 @@ def save_index(path: Path, index: dict) -> None:
     tmp.replace(path / INDEX_NAME)
 
 
-def find_entry(index: dict, ident: str) -> dict | None:
-    return next((e for e in index["entries"] if e.get("ident") == ident), None)
+def find_entry(index: dict, paper) -> dict | None:
+    """The entry for the same paper as `paper` (a Record or an entry), by identity.same."""
+    return next((e for e in index["entries"] if identity.same(e, paper)), None)
 
 
 
@@ -145,6 +147,7 @@ def acquire(fetch, rec: Record, papers: Path, email: str,
 
 
 RETRYABLE = {"link-only"}
+PROVENANCE = ("shared_by", "shared_at", "source_url")
 
 
 
@@ -152,16 +155,34 @@ def add(cfg, fetch, rec: Record, dest: Path, dry_run: bool = False,
         kind: str = "", provenance: dict | None = None) -> dict:
     """Put one record into a folder. Returns the index entry."""
     index = load_index(dest)
-    ident = rec.ident
-    existing = find_entry(index, ident)
+    existing = find_entry(index, rec)
+    if existing:
+        # The same paper seen again, e.g. its published version after the preprint:
+        # keep what the first sighting knew (an arXiv id is a PDF route) and who shared it.
+        rec = dataclasses.replace(rec)
+        known = record_of(existing)
+        for f in Record.__dataclass_fields__:
+            if f != "score" and not getattr(rec, f) and getattr(known, f):
+                setattr(rec, f, getattr(known, f))
+        provenance = {**{k: existing[k] for k in PROVENANCE if existing.get(k)},
+                      **(provenance or {})}
     if existing and existing.get("status") in ("downloaded", "have"):
-        existing["note"] = "already in this folder"
-        return existing
+        # Already readable. Still learn what this sighting adds (a DOI, a journal).
+        gained = {f: v for f, v in rec.to_dict().items()
+                  if f != "score" and v and not existing.get(f)}
+        if gained and not dry_run:
+            existing.update(gained)
+            existing["ident"] = identity.key(existing)
+            save_index(dest, index)
+            write_projections(cfg, dest, index)
+        return {**existing, "note": "already in this folder"}
+    ident = rec.ident
 
     entry = {
         "ident": ident,
-        "citekey": naming.citekey(rec.authors, rec.title, rec.year),
-        "added": datetime.now(timezone.utc).strftime("%Y-%m-%d"),
+        # A re-seen paper keeps its key: something may already cite it.
+        "citekey": (existing or {}).get("citekey") or naming.citekey(rec.authors, rec.title, rec.year),
+        "added": (existing or {}).get("added") or datetime.now(timezone.utc).strftime("%Y-%m-%d"),
         "kind": kind or ("arxiv" if rec.arxiv_id else "doi" if rec.doi else "other"),
         **rec.to_dict(),
         **(provenance or {}),
@@ -175,8 +196,7 @@ def add(cfg, fetch, rec: Record, dest: Path, dry_run: bool = False,
     entry.update(acquire(fetch, rec, dest / "papers", email, kind))
 
     if existing:
-        index["entries"] = [entry if e.get("ident") == ident else e
-                            for e in index["entries"]]
+        index["entries"] = [entry if e is existing else e for e in index["entries"]]
     else:
         index["entries"].append(entry)
     save_index(dest, index)
@@ -226,25 +246,62 @@ def _selftest_remove(tmp: Path | None = None) -> None:
     (lib / "papers" / "a.pdf").write_text("a")
     (lib / "papers" / "b.pdf").write_text("b")
     save_index(lib, {"entries": [
-        {"ident": "doi:1", "citekey": "aKey2020", "title": "A", "status": "downloaded", "pdf": "a.pdf"},
-        {"ident": "doi:2", "citekey": "bKey2021", "title": "B", "status": "have", "pdf": "b.pdf"},
-        {"ident": "url:3", "citekey": "cKey2022", "title": "C", "status": "link-only"}]})
+        {"ident": "10.1234/a", "citekey": "aKey2020", "title": "A", "status": "downloaded", "pdf": "a.pdf"},
+        {"ident": "10.1234/b", "citekey": "bKey2021", "title": "B", "status": "have", "pdf": "b.pdf"},
+        {"ident": "https://c.org/p", "citekey": "cKey2022", "title": "C", "status": "link-only"}]})
     try:
         remove(cfg, lib, ["@aKey2020", "nope"])
         raise AssertionError("unknown ref must raise")
     except ValueError:
         pass
     assert len(load_index(lib)["entries"]) == 3                   # nothing written
-    assert [e["ident"] for e in remove(cfg, lib, ["aKey2020"], dry_run=True)] == ["doi:1"]
+    assert [e["ident"] for e in remove(cfg, lib, ["aKey2020"], dry_run=True)] == ["10.1234/a"]
     assert (lib / "papers" / "a.pdf").exists()                    # dry run touches nothing
-    gone = remove(cfg, lib, ["@aKey2020", "doi:2"])
-    assert sorted(e["ident"] for e in gone) == ["doi:1", "doi:2"]
-    assert [e["ident"] for e in load_index(lib)["entries"]] == ["url:3"]
+    gone = remove(cfg, lib, ["@aKey2020", "10.1234/b"])
+    assert sorted(e["ident"] for e in gone) == ["10.1234/a", "10.1234/b"]
+    assert [e["ident"] for e in load_index(lib)["entries"]] == ["https://c.org/p"]
     assert not (lib / "papers" / "a.pdf").exists()                # downloaded: deleted
     assert (lib / "papers" / "b.pdf").exists()                    # "have": kept
     assert "aKey2020" not in (lib / "refs.bib").read_text()
     assert "cKey2022" in (lib / "refs.bib").read_text()
     print("remove selftest: ok")
+
+
+class _NoNet:
+    """A fetch that is always offline: every PDF attempt fails, nothing leaves the machine."""
+
+    def get(self, *a, **k):
+        raise OSError("offline")
+
+    get_text = get
+
+
+def _selftest_identity(tmp: Path) -> None:
+    """add(): a preprint and its published version are one entry, and nothing it knew is lost."""
+    cfg = {"library.write_refs_bib": True, "library.write_readme": True}
+    lib = tmp / "Same"
+    pre = Record(title="Deep Things", authors=["Ada Lovelace"], year="2025",
+                 arxiv_id="2506.19243")
+    first = add(cfg, _NoNet(), pre, lib, provenance={"shared_by": "Bo"})
+    assert (first["status"], first["ident"]) == ("link-only", "arxiv:2506.19243"), first
+
+    pub = Record(title="Deep Things", authors=["Ada Lovelace"], year="2026",
+                 doi="10.1234/DT", arxiv_id="2506.19243v2", venue="J. Things")
+    add(cfg, _NoNet(), pub, lib)
+    [e] = load_index(lib)["entries"]
+    assert e["ident"] == "10.1234/dt" and e["venue"] == "J. Things", e
+    assert e["citekey"] == first["citekey"] and e["shared_by"] == "Bo", e
+
+    e["status"] = "have"                                  # readable now; a re-sighting only adds facts
+    save_index(lib, {"entries": [e]})
+    again = add(cfg, _NoNet(), Record(title="Deep Things", doi="https://doi.org/10.1234/dt",
+                                      publisher="Pub"), lib)
+    [e] = load_index(lib)["entries"]
+    assert again["note"] == "already in this folder" and e["publisher"] == "Pub", e
+    assert "note" not in e or e["note"] != "already in this folder"
+
+    add(cfg, _NoNet(), Record(title="Other", doi="10.1234/other"), lib)
+    assert len(load_index(lib)["entries"]) == 2
 
 
 def dedupe_citekeys(entries: list[dict]) -> None:
@@ -374,6 +431,7 @@ def _selftest() -> None:
         assert index_dirs(root / "Missing") == []
 
         _selftest_remove(root)
+        _selftest_identity(root)
     print("library selftest: ok")
 
 

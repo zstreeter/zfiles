@@ -11,6 +11,8 @@ import difflib
 import re
 from dataclasses import asdict, dataclass, field
 
+from . import identity
+
 
 @dataclass
 class Record:
@@ -36,14 +38,8 @@ class Record:
 
     @property
     def ident(self) -> str:
-        """Stable identity for dedupe across sources.
-
-        DOI outranks arXiv id: a preprint and its published version share a DOI
-        but not an arXiv id, and merging those two is correct.
-        """
-        return (self.doi.lower() if self.doi
-                else f"arxiv:{self.arxiv_id}" if self.arxiv_id
-                else (self.url.lower() or self.title.lower()))
+        """Stable identity for dedupe across sources -- see identity.key."""
+        return identity.key(self)
 
 
 def _norm(s: str) -> str:

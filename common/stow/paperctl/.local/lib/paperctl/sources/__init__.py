@@ -66,3 +66,24 @@ def search_all(fetch, query: str, names: list[str], limit: int = 10) -> list[Rec
                     setattr(have, f, getattr(rec, f))
             have.score = max(have.score, rec.score)
     return sorted(merged.values(), key=lambda r: -r.score)
+
+
+def _selftest() -> None:
+    """Each source's parser hands identity the raw id shape it gets, and gets back one form."""
+    from . import page  # noqa: F401  (imported so a syntax error here fails the selftest)
+    from .. import links
+
+    atom = ("<feed><title>ArXiv Query: x</title><entry><id>http://arxiv.org/abs/solv-int/9901001v1</id>"
+            "<title>Old Style</title><published>1999-01-05</published></entry></feed>")
+    rec = arxiv._parse(arxiv._entries(atom)[0])
+    assert (rec.arxiv_id, rec.url) == ("solv-int/9901001", "https://arxiv.org/abs/solv-int/9901001"), rec
+
+    w = {"title": "T", "ids": {"doi": "https://doi.org/10.1234/ABC"},
+         "best_oa_location": {"landing_page_url": "https://arxiv.org/abs/2506.19243v3"}}
+    rec = openalex._parse(w)
+    assert (rec.doi, rec.arxiv_id) == ("10.1234/abc", "2506.19243"), rec
+
+    assert links.normalize("http://arxiv.org/pdf/2506.19243v2.pdf") == "https://arxiv.org/abs/2506.19243"
+    assert links.normalize("https://www.arxiv.org/abs/hep-th/9901001v2?context=x") == \
+        "https://arxiv.org/abs/hep-th/9901001"
+    print("sources selftest: ok")

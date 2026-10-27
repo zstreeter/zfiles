@@ -233,7 +233,7 @@ def cmd_search_web(args, cfg) -> int:
         if r.venue:
             bits.append(r.venue)
         lines.append(f"   {c('2', ' · '.join(b for b in bits if b))}")
-        ident = r.arxiv_id or r.doi or r.url
+        ident = r.ident
         lines.append(f"   {c('2', f'{r.source}  {r.score:.2f}')}  {ident}")
     lines += ["", c("2", "Add one with:  paperctl add <id-or-doi> --to <Folder>")]
     emit(args, [r.to_dict() for r in found[: args.limit]], lines)

@@ -11,19 +11,10 @@ import json
 import re
 import urllib.parse
 
+from .. import identity
 from ..record import Record, score_title
 
 API = "https://api.crossref.org/works"
-
-DOI_RE = re.compile(r"\b(10\.\d{4,9}/[^\s\"'<>]+)", re.I)
-
-
-def doi_of(text: str) -> str:
-    """Pull a DOI out of a bare DOI, a doi.org URL, or a publisher URL."""
-    m = DOI_RE.search(urllib.parse.unquote(text or ""))
-    if not m:
-        return ""
-    return m.group(1).rstrip(".,;)»\"'").lower()
 
 
 def _parse(msg: dict) -> Record | None:
@@ -38,7 +29,7 @@ def _parse(msg: dict) -> Record | None:
         if link.get("content-type") == "application/pdf":
             pdf = link.get("URL", "")
             break
-    doi = (msg.get("DOI") or "").lower()
+    doi = identity.doi(msg.get("DOI") or "")
     return Record(
         title=title,
         authors=authors,
@@ -73,7 +64,7 @@ def search(fetch, query: str, limit: int = 10) -> list[Record]:
 
 
 def fetch_one(fetch, ident: str) -> Record | None:
-    doi = doi_of(ident)
+    doi = identity.doi(ident)
     if not doi:
         return None
     data = json.loads(fetch.get_text(f"{API}/{urllib.parse.quote(doi)}",

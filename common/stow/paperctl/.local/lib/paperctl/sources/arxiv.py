@@ -11,22 +11,10 @@ import html
 import re
 import urllib.parse
 
+from .. import identity
 from ..record import Record, score_title
 
 API = "http://export.arxiv.org/api/query"
-
-ID_RE = re.compile(r"(?:arxiv[:/]|abs/|pdf/)?"
-                   r"(\d{4}\.\d{4,5}|[a-z-]+(?:\.[A-Z]{2})?/\d{7})(v\d+)?",
-                   re.I)
-
-
-def id_of(text: str) -> str:
-    """Pull an arXiv id out of an id, a URL, or a citation string."""
-    if "arxiv" not in (text or "").lower() and not re.fullmatch(
-            r"\s*\d{4}\.\d{4,5}(v\d+)?\s*", text or ""):
-        return ""
-    m = ID_RE.search(text or "")
-    return m.group(1) if m else ""
 
 
 def _entries(xml: str) -> list[str]:
@@ -50,10 +38,9 @@ def _parse(body: str) -> Record | None:
     title = _tag(body, "title")
     if not title:
         return None
-    aid = ""
-    m = re.search(r"<id>.*?abs/([^<v]+)", body, re.S)
-    if m:
-        aid = m.group(1).strip()
+    # <id> is http://arxiv.org/abs/<id>v<N>; old-style ids may contain a "v"
+    # (solv-int/...), so the version is stripped by identity, not by a regex here.
+    aid = identity.arxiv_id(_tag(body, "id"))
     return Record(
         title=title,
         authors=[html.unescape(" ".join(a.split()))
@@ -95,7 +82,7 @@ def search(fetch, query: str, limit: int = 10) -> list[Record]:
 
 
 def fetch_one(fetch, ident: str) -> Record | None:
-    aid = id_of(ident) or ident.strip()
+    aid = identity.arxiv_id(ident) or ident.strip()
     if not aid:
         return None
     xml = fetch.get_text(f"{API}?id_list={urllib.parse.quote(aid)}",

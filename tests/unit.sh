@@ -71,8 +71,8 @@ sbx publish-post "$V/drafts/leak.md" >/dev/null 2>&1 && bad "publish-post publis
 
 # --- paperctl ----------------------------------------------------------------
 (cd common/stow/paperctl/.local/lib && python3 -I -c 'import sys; sys.path.insert(0, ".")
-from paperctl import library, alphaxiv, resolve
-library._selftest(); alphaxiv.demo(); resolve._selftest()' >/dev/null) || bad "paperctl selftests"
+from paperctl import identity, sources, library, alphaxiv, resolve
+identity._selftest(); sources._selftest(); library._selftest(); alphaxiv.demo(); resolve._selftest()' >/dev/null) || bad "paperctl selftests"
 
 # --- lean-sandbox (check's verdict logic, against a fake lake) ---------------
 LS=$REPO/common/stow/lean/.local/bin/lean-sandbox

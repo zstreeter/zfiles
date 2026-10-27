@@ -29,8 +29,7 @@ import os
 import sys
 import urllib.error
 
-from . import naming
-from .sources import arxiv
+from . import identity, naming
 
 API = "https://api.alphaxiv.org"
 FOLDERS_URL = f"{API}/folders/v3"
@@ -77,7 +76,7 @@ def ident_of(paper: dict) -> tuple[str, str]:
     "already have this one", before any network call is made.
     """
     for k in ID_KEYS:
-        aid = arxiv.id_of(str(paper.get(k) or ""))
+        aid = identity.arxiv_id(str(paper.get(k) or ""))
         if aid:
             return aid, aid
     return naming.clean(paper.get("title") or ""), ""

@@ -208,9 +208,11 @@ def normalize(url: str) -> str:
     query = urllib.parse.urlencode(keep)
     path = p.path.rstrip("/") or "/"
 
-    m = re.match(r"^/(abs|pdf)/(.+?)(v\d+)?$", path)
-    if netloc == "arxiv.org" and m:
-        path, query = f"/abs/{m.group(2)}", ""
+    if netloc == "arxiv.org" and re.match(r"^/(abs|pdf)/", path):
+        from . import identity
+        aid = identity.arxiv_id(f"arxiv{path}")
+        if aid:
+            path, query = f"/abs/{aid}", ""
     if netloc in ("dx.doi.org", "doi.org"):
         netloc, path = "doi.org", path.lower()
 
