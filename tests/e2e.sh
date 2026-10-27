@@ -10,7 +10,7 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
-TOOLS="nvim yazi ya rg fd fzf zoxide bat eza stow paperctl measure"
+TOOLS="nvim yazi ya rg fd fzf zoxide bat eza jq stow paperctl measure elan lean-sandbox"
 
 run() {
     local target=$1 cmd

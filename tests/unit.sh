@@ -26,7 +26,9 @@ touch "$V/drafts/2026/oct/post.md" "$T/loose/x.md"
 eq "vault of nested file" "$(sbx obsidian-vault of "$V/drafts/2026/oct/post.md")" "$V"
 eq "vault of vault dir"   "$(sbx obsidian-vault of "$V")" "$V"
 sbx obsidian-vault of "$T/loose/x.md" 2>/dev/null && bad "vault of a file outside any vault succeeded"
-eq "root default"   "$(sbx obsidian-vault root)" "$T/home/research"
+# On WSL the default root is the Windows side (needs cmd.exe), so it is a non-WSL default.
+grep -qi microsoft /proc/version 2>/dev/null \
+    || eq "root default" "$(sbx obsidian-vault root)" "$T/home/research"
 eq "root override"  "$(sbx env ZFILES_VAULT_ROOT=/elsewhere obsidian-vault root)" "/elsewhere"
 eq "path finds the research vault" "$(sbx obsidian-vault path)" "$V"
 eq "path by name"   "$(sbx obsidian-vault path vault)" "$V"
@@ -54,10 +56,42 @@ sbx publish-post "$V/drafts/own.md" >/dev/null
 eq "keeps a draft's own bibliography" "$(grep -c '^bibliography:' "$BLOG"/posts/*-own/index.qmd)" 1
 sbx publish-post "$V/drafts/own.md" >/dev/null 2>&1 && bad "publish-post overwrote an existing post"
 
+# --- publish-lint: nothing local is ever published ----------------------------
+L=$T/lint; mkdir -p "$L"; touch "$L/fig.png"
+printf '[a](https://x.org) [m](mailto:a@b.c) [s](#s) $[[n,k,d]]$ ![f](fig.png) ![[fig.png]] [[@k]] @k\n' > "$L/ok.md"
+sbx publish-lint "$L/ok.md" --target blog 2>/dev/null || bad "publish-lint rejected web links, maths, adjacent images or citations"
+sbx publish-lint "$L/ok.md" --target confluence-md 2>/dev/null && bad "publish-lint passed citekeys/local images on confluence-md"
+for case in 'see ~/Library/x' 'cd /home/u/p' 'go /mnt/c/Users' '[n](../notes/a.md)' '[[Vault Note]]' '![[gone.png]]' '```\nls $HOME/x\n```'; do
+    printf "%b\n" "$case" > "$L/bad.md"
+    sbx publish-lint "$L/bad.md" --target blog 2>/dev/null && bad "publish-lint passed: $case"
+done
+printf -- '---\ntitle: R\ndate: 2026-01-03\n---\nsee ~/x\n' > "$V/drafts/leak.md"
+sbx publish-post "$V/drafts/leak.md" >/dev/null 2>&1 && bad "publish-post published a local path"
+[[ -e $BLOG/posts/2026-01-03-leak ]] && bad "publish-post created a post dir before the lint gate"
+
 # --- paperctl ----------------------------------------------------------------
 (cd common/stow/paperctl/.local/lib && python3 -I -c 'import sys; sys.path.insert(0, ".")
 from paperctl import library, alphaxiv, resolve
 library._selftest(); alphaxiv.demo(); resolve._selftest()' >/dev/null) || bad "paperctl selftests"
+
+# --- lean-sandbox (check's verdict logic, against a fake lake) ---------------
+LS=$REPO/common/stow/lean/.local/bin/lean-sandbox
+mkdir -p "$T/fakebin" "$T/sbx"
+printf '#!/bin/sh\ncat "$FAKE_OUT"\n' > "$T/fakebin/lake"; chmod +x "$T/fakebin/lake"
+touch "$T/x.lean"
+lchk() { printf '%s\n' "$1" > "$T/out"
+    env -i HOME="$T/home" PATH="$T/fakebin:/usr/bin:/bin" LEAN_SANDBOX="$T/sbx" FAKE_OUT="$T/out" \
+        "$LS" check "$T/x.lean" >/dev/null 2>&1; }
+lchk "'t' depends on axioms: [propext, Classical.choice, Quot.sound]" || bad "lean check rejected standard axioms"
+lchk "'t' does not depend on any axioms" || bad "lean check rejected an axiom-free proof"
+lchk "'t' depends on axioms: [propext, sorryAx]" && bad "lean check passed sorryAx"
+lchk "warning: declaration uses 'sorry'" && bad "lean check passed a sorry warning"
+lchk "'t' depends on axioms: [cheat, propext]" && bad "lean check passed a custom axiom"
+lchk "'t' depends on axioms: [propext,
+  Classical.choice,
+  a_custom_axiom_on_a_wrapped_line]" && bad "lean check passed a custom axiom on a wrapped line"
+lchk "no axioms printed" && bad "lean check passed a file without #print axioms"
+eq "lean path override" "$(env -i HOME="$T/home" LEAN_SANDBOX=/x "$LS" path)" "/x"
 
 ((fails)) && { echo "unit: $fails failed" >&2; exit 1; }
 echo "unit: ok"

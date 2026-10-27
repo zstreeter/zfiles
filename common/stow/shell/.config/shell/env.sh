@@ -48,6 +48,10 @@ export PATH="$BUN_INSTALL/bin:$PATH"
 
 export PATH="$CARGO_HOME/bin:$PATH"
 
+# Lean 4 toolchain manager (installed by common/setup.sh; see the lean skill).
+export ELAN_HOME="$XDG_DATA_HOME/elan"
+export PATH="$ELAN_HOME/bin:$PATH"
+
 if [[ -z "$OMARCHY_PATH" ]]; then
     if [[ -d /usr/share/omarchy ]]; then
         export OMARCHY_PATH=/usr/share/omarchy

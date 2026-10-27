@@ -1,5 +1,5 @@
 
-STOW_ONLY=(shell bash yazi measure paperctl obsidian quarto pandoc zotero latex reverify)
+STOW_ONLY=(shell bash yazi measure paperctl obsidian quarto pandoc zotero latex reverify lean)
 
 target_packages() {
     info "Installing user-local toolchain via mise (no root)..."

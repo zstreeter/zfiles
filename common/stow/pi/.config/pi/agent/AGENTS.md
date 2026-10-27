@@ -15,7 +15,9 @@ Every Obsidian vault has a matching paper directory: vault `<Name>` ->
   `references.bib` is Better BibTeX's auto-export -- never hand-edit it.
 - **Publishing**: `publish-post <vault>/drafts/<file>.qmd` (blog),
   `publish-confluence <file.md>` (wiki, needs `CONFLUENCE_*` in the
-  environment).
+  environment). Both run `publish-lint` first and refuse anything a reader on
+  another machine can't use -- local paths, `[[Note]]` links, local images.
+  Use real `https://` links or plain text; never work around the gate.
 
 Resolve paths, never assume them: `obsidian-vault path <Name>` for a vault,
 `$HOME/Library` for the library. Anything target-specific belongs inside the

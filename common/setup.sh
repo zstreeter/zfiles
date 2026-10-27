@@ -254,7 +254,16 @@ if command -v pi &>/dev/null && [[ -f "$PI_TEMPLATE" ]]; then
         fi
         info "  pi install $pkg"
         pi install "$pkg" || warn "  failed: $pkg (continuing)"
-    done < <(jq -r '.packages[]' "$PI_TEMPLATE")
+    done < <(jq -r '.packages[] | if type == "string" then . else .source end' "$PI_TEMPLATE")
+    # pi install writes a bare entry; restore the template's filters (e.g. feynman loads nothing
+    # globally) on every run, so machines that installed the package earlier get them too.
+    if [[ -f "$PI_SETTINGS" ]]; then
+        tmp=$(mktemp "$PI_SETTINGS.XXXXXX")
+        jq --slurpfile t "$PI_TEMPLATE" \
+            '($t[0].packages | map(select(type == "object")) | INDEX(.source)) as $o
+             | .packages |= map(if type == "string" and $o[.] then $o[.] else . end)' \
+            "$PI_SETTINGS" > "$tmp" && mv "$tmp" "$PI_SETTINGS" || rm -f "$tmp"
+    fi
 
     PI_THEME=""  # a theme engine sets pi's theme from its own hook
     $STATIC_THEME && PI_THEME=$(jq -r '.theme // empty' "$PI_TEMPLATE")
@@ -370,6 +379,30 @@ synctex_highlight_color 0.537 0.706 0.980
 link_highlight_color 0.537 0.706 0.980
 search_highlight_color 0.345 0.357 0.439
 EOF
+    fi
+fi
+
+# Lean 4: elan only (small, user-local, every target). Mathlib and the shared
+# sandbox are fetched lazily by `lean-sandbox init` -- ~5 GB, not a bootstrap step.
+ELAN_HOME="${ELAN_HOME:-${XDG_DATA_HOME:-$HOME/.local/share}/elan}"
+export ELAN_HOME
+if [[ -x "$ELAN_HOME/bin/elan" ]]; then
+    info "elan already installed ($("$ELAN_HOME/bin/elan" --version 2>/dev/null || echo unknown))."
+else
+    info "Installing elan (Lean toolchain manager) into $ELAN_HOME..."
+    curl -fsSL https://raw.githubusercontent.com/leanprover/elan/master/elan-init.sh \
+        | sh -s -- -y --no-modify-path --default-toolchain none \
+        || warn "elan install failed — Lean unavailable (run the step by hand to see why)."
+fi
+if ! $REMOTE && command -v pi &>/dev/null; then
+    # uvx runs lean-lsp-mcp; nothing else in zfiles installs uv.
+    if ! command -v uvx &>/dev/null; then
+        info "Installing uv (runs the lean-lsp MCP server)..."
+        curl -LsSf https://astral.sh/uv/install.sh | env UV_NO_MODIFY_PATH=1 sh \
+            || warn "uv install failed -- lean-lsp MCP not registered."
+    fi
+    if command -v uvx &>/dev/null; then
+        lean-sandbox mcp || warn "lean-lsp MCP registration failed (continuing)."
     fi
 fi
 

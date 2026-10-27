@@ -74,7 +74,8 @@ live *outside* a vault. Inside this one, call `quarto` directly.
 - **Never edit `~/Documents/Repos/zstreeter.github.io/posts/` directly.** Source of
   truth is `drafts/<slug>.qmd` in this vault.
 - To publish: `publish-post drafts/<file>.qmd [slug]` — copies the draft + adjacent
-  images into `posts/YYYY-MM-DD-<slug>/index.qmd` in the blog repo.
+  images into `posts/YYYY-MM-DD-<slug>/index.qmd` in the blog repo. It runs
+  `publish-lint` first: no local paths, no `[[Note]]` links, only `https://` links.
 - Then `cd ~/Documents/Repos/zstreeter.github.io && quarto publish gh-pages` to deploy.
 
 ## Tasks you're often asked to do

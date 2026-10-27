@@ -98,10 +98,18 @@ CA = "/etc/ssl/certs/ca-certificates.crt"
 
 def mcp(tool, args):
     """Call one MCP tool, return its parsed payload. Raises on isError."""
-    p = subprocess.run(
-        [sys.executable, MB, "call", SRV, tool, json.dumps(args)],
-        capture_output=True, text=True, cwd=BRIDGE_CWD,
-    )
+    # Args go through a file (@path), not argv: a storage body with inlined
+    # SVG references exceeds Linux's 128 KB per-argument limit (E2BIG).
+    import tempfile
+    with tempfile.NamedTemporaryFile("w", suffix=".json", delete=False) as f:
+        json.dump(args, f)
+    try:
+        p = subprocess.run(
+            [sys.executable, MB, "call", SRV, tool, "@" + f.name],
+            capture_output=True, text=True, cwd=BRIDGE_CWD,
+        )
+    finally:
+        os.unlink(f.name)
     if p.returncode != 0:
         raise SystemExit(f"{tool}: bridge exited {p.returncode}\n{p.stderr[-800:]}")
     line = next((l for l in p.stdout.splitlines() if l.startswith("{")), "")
@@ -286,6 +294,12 @@ def main():
     if not a.space:
         raise SystemExit("no space: pass --space or set CONFLUENCE_SPACE")
 
+    # Nothing local is ever published (paths, vault-note links, unresolvable citekeys):
+    # publish-lint is the one shared check, also run by publish-post. Before any API call.
+    if subprocess.run(["publish-lint", a.file, "--target",
+                       "confluence-quarto" if a.via_quarto else "confluence-md"]).returncode:
+        raise SystemExit(1)
+
     if a.via_quarto:
         body, n = quarto_body(a.file)
         title = a.title or quarto_title(a.file) or \
@@ -308,9 +322,9 @@ def main():
             md = md[fm.end():]
     title = title or os.path.splitext(os.path.basename(a.file))[0]
 
-    md = re.sub(r"\[\[@?([^\]|]+?)(?:\|([^\]]+))?\]\]", lambda m: m.group(2) or m.group(1), md)
-
     md, blocks = extract_math(md)
+    # After extract_math, so maths such as $[[n,k,d]]$ is never mistaken for a wikilink.
+    md = re.sub(r"\[\[@?([^\]|]+?)(?:\|([^\]]+))?\]\]", lambda m: m.group(2) or m.group(1), md)
     print(f"{len(blocks)} formula(e) found")
 
     if a.page_id:
