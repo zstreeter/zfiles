@@ -281,8 +281,10 @@ if command -v pi &>/dev/null && [[ -f "$PI_TEMPLATE" ]]; then
     # Background subagents do not inherit package tools; without this the Feynman researcher and
     # evidence-auditor fail with "requested unavailable child tools" (literature DB, web search).
     PI_NM="$PI_NEW_DIR/npm/node_modules"
+    # pi-web-access's entry point moves between releases (dist/index.js, index.ts); ask its manifest
+    web_ext=$(jq -r '.pi.extensions[0] // empty' "$PI_NM/pi-web-access/package.json" 2>/dev/null)
     child_exts=()
-    for e in "$PI_NM/@companion-ai/feynman/extensions/research-tools.ts" "$PI_NM/pi-web-access/dist/index.js"; do
+    for e in "$PI_NM/@companion-ai/feynman/extensions/research-tools.ts" "$PI_NM/pi-web-access/${web_ext#./}"; do
         if [[ -f "$e" ]]; then child_exts+=("$e"); else warn "pi subagents: $e missing (package layout changed?)"; fi
     done
     # union, not overwrite: keep any extensions added by hand
