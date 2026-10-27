@@ -10,8 +10,8 @@ README.md and refs.bib are both *generated* from .paperctl.json on every write.
 That is what makes re-running safe and incremental: the index is the truth, the
 two readable files are projections of it, and neither is ever parsed back.
 
-Callers say what to do -- add, remove, adopt, retry, tidy, entries, bib_entries
--- and never load, edit and save an index themselves. Every write goes through
+Callers say what to do -- add, remove, adopt, retry, tidy, find, entries,
+bib_entries -- and never load, edit and save an index themselves. Every write goes through
 _commit, which is the one place citekeys are made unique and then persisted, so
 a key shown in README.md or refs.bib is always one `remove` can find.
 """
@@ -80,6 +80,11 @@ def save_index(path: Path, index: dict) -> None:
     tmp = path / (INDEX_NAME + ".tmp")
     tmp.write_text(json.dumps(index, indent=2, sort_keys=True) + "\n")
     tmp.replace(path / INDEX_NAME)
+
+
+def find(dest: Path, ids: set[str]) -> dict | None:
+    """The entry in `dest` matching any of `ids` (identity.ids forms), without writing anything."""
+    return next((e for e in load_index(dest)["entries"] if ids & identity.ids(e)), None) if ids else None
 
 
 def find_entry(index: dict, paper) -> dict | None:

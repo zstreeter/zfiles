@@ -71,10 +71,6 @@ def resolve(fetch, text: str, names: list[str],
     return best, found[1:]
 
 
-def enrich(fetch, rec: Record, names: list[str]) -> Record:
-    return sources.enrich(fetch, rec, names)
-
-
 def _selftest() -> None:
     """kind_of routes every `paperctl add` input; pin each shape it must tell apart."""
     cases = {

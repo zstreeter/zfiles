@@ -107,7 +107,7 @@ def probe(cfg, fetch=None) -> tuple[bool, str, str]:
 
 
 def cmd_pull(args, cfg) -> int:
-    from . import library, resolve
+    from . import ingest, library
     from .cli import c, emit, fetcher, sources_for
 
     api_key = key()
@@ -147,32 +147,22 @@ def cmd_pull(args, cfg) -> int:
         papers = papers_of(f)
         dest = library.folder(cfg, args.to or naming.title_case_filename(name))
 
-        known = {e.get("arxiv_id") for e in library.load_index(dest).get("entries", [])
-                 if e.get("arxiv_id") and library.has_pdf(e)}
-
         added, skipped, missed = [], 0, []
         for p in papers:
-            query, aid = ident_of(p)
-            if aid and aid in known:
-                skipped += 1
-                continue
+            query, _aid = ident_of(p)
             if not query:
                 continue
-            if args.dry_run:
-                added.append({"title": p.get("title"), "query": query,
-                              "status": "would-add"})
-                continue
-            rec, _alts = resolve.resolve(fetch, query, srcs)
-            if rec is None:
-                missed.append(p.get("title") or query)
-                continue
-            rec = resolve.enrich(fetch, rec, srcs)
-            added.append(library.add(
-                cfg, fetch, rec, dest,
-                kind=resolve.kind_of(query),
+            entry, _alts = ingest.file(
+                cfg, fetch, query, dest, srcs, dry_run=args.dry_run,
                 provenance={"shared_by": "alphaXiv bookmarks",
                             "shared_at": p.get("addedAt") or p.get("added_at"),
-                            "source_url": _abs_url(p)}))
+                            "source_url": _abs_url(p)})
+            if entry["status"] == "unresolved":
+                missed.append(p.get("title") or query)
+            elif entry.get("note") == "already in this folder":
+                skipped += 1
+            else:
+                added.append(entry)
 
         got = sum(1 for a in added if library.has_pdf(a))
         report.append({"alphaxiv_folder": name, "folder": str(dest),

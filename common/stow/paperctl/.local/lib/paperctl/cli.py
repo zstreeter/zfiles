@@ -19,7 +19,7 @@ import shutil
 import sys
 from pathlib import Path
 
-from . import alphaxiv, config, library, naming, net, resolve
+from . import alphaxiv, config, ingest, library, naming, net
 from .record import Record
 from .sources import REGISTRY, enabled
 
@@ -116,17 +116,13 @@ def cmd_add(args, cfg) -> int:
     srcs = sources_for(args, cfg)
     dest = library.folder(cfg, args.to)
 
-    rec, alts = resolve.resolve(fetch, args.query, srcs)
-    if rec is None:
+    entry, alts = ingest.file(cfg, fetch, args.query, dest, srcs, dry_run=args.dry_run)
+    if entry["status"] == "unresolved":
         print(f"paperctl: nothing found for {args.query!r}", file=sys.stderr)
         if not srcs:
-            print("          no sources enabled -- check sources.enabled",
+            print("          no sources enabled -- check sources.enabled / --source",
                   file=sys.stderr)
         return 1
-    rec = resolve.enrich(fetch, rec, srcs)
-
-    entry = library.add(cfg, fetch, rec, dest, dry_run=args.dry_run,
-                        kind=resolve.kind_of(args.query))
 
     payload = {"folder": str(dest), "entry": entry,
                "alternatives": [a.to_dict() for a in alts[:4]]}

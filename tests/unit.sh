@@ -71,8 +71,8 @@ sbx publish-post "$V/drafts/leak.md" >/dev/null 2>&1 && bad "publish-post publis
 
 # --- paperctl ----------------------------------------------------------------
 (cd common/stow/paperctl/.local/lib && python3 -I -c 'import sys; sys.path.insert(0, ".")
-from paperctl import identity, sources, library, alphaxiv, resolve
-identity._selftest(); sources._selftest(); library._selftest(); alphaxiv.demo(); resolve._selftest()' >/dev/null) || bad "paperctl selftests"
+from paperctl import identity, sources, library, ingest, mail, alphaxiv, resolve
+identity._selftest(); sources._selftest(); library._selftest(); ingest._selftest(); mail._selftest(); alphaxiv.demo(); resolve._selftest()' >/dev/null) || bad "paperctl selftests"
 
 # A library written before citekeys were persisted: refs.bib showed the second key
 # suffixed, the index did not, and `remove` of the key you could see failed.
