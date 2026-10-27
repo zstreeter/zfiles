@@ -74,6 +74,17 @@ sbx publish-post "$V/drafts/leak.md" >/dev/null 2>&1 && bad "publish-post publis
 from paperctl import identity, sources, library, alphaxiv, resolve
 identity._selftest(); sources._selftest(); library._selftest(); alphaxiv.demo(); resolve._selftest()' >/dev/null) || bad "paperctl selftests"
 
+# A library written before citekeys were persisted: refs.bib showed the second key
+# suffixed, the index did not, and `remove` of the key you could see failed.
+P=$T/plib/F; mkdir -p "$P"
+printf '%s' '{"entries": [
+  {"ident": "10.1234/a", "doi": "10.1234/a", "citekey": "kTwi2020", "title": "Twin A", "added": "2020-01-01", "status": "link-only"},
+  {"ident": "10.1234/b", "doi": "10.1234/b", "citekey": "kTwi2020", "title": "Twin B", "added": "2020-01-02", "status": "link-only"}]}' > "$P/.paperctl.json"
+PC() { env -i HOME="$T/home" PATH=/usr/bin:/bin "$REPO/common/stow/paperctl/.local/bin/paperctl" --library "$T/plib" "$@"; }
+PC remove kTwi2020a --from F >/dev/null || bad "paperctl remove of a suffixed legacy citekey failed"
+eq "remove took the suffixed twin" "$(PC search Twin --json | python3 -c 'import json,sys; print(" ".join(e["title"] for e in json.load(sys.stdin)))')" "Twin A"
+grep -q '{kTwi2020,' "$P/refs.bib" || bad "refs.bib lost the remaining key"
+
 # --- lean-sandbox (check's verdict logic, against a fake lake) ---------------
 LS=$REPO/common/stow/lean/.local/bin/lean-sandbox
 mkdir -p "$T/fakebin" "$T/sbx"

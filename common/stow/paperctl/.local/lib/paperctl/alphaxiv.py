@@ -148,7 +148,7 @@ def cmd_pull(args, cfg) -> int:
         dest = library.folder(cfg, args.to or naming.title_case_filename(name))
 
         known = {e.get("arxiv_id") for e in library.load_index(dest).get("entries", [])
-                 if e.get("arxiv_id") and e.get("status") in ("downloaded", "have")}
+                 if e.get("arxiv_id") and library.has_pdf(e)}
 
         added, skipped, missed = [], 0, []
         for p in papers:
@@ -174,7 +174,7 @@ def cmd_pull(args, cfg) -> int:
                             "shared_at": p.get("addedAt") or p.get("added_at"),
                             "source_url": _abs_url(p)}))
 
-        got = sum(1 for a in added if a.get("status") in ("downloaded", "have"))
+        got = sum(1 for a in added if library.has_pdf(a))
         report.append({"alphaxiv_folder": name, "folder": str(dest),
                        "bookmarked": len(papers), "added": len(added),
                        "with_pdf": got, "already_had": skipped,

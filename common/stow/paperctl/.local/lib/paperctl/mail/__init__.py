@@ -171,7 +171,7 @@ def cmd_thread(args, cfg) -> int:
                                              "shared_at": r["at"],
                                              "source_url": r["url"]}))
 
-    got = sum(1 for a in added if a.get("status") in ("downloaded", "have"))
+    got = sum(1 for a in added if library.has_pdf(a))
     emit(args, {"thread": thread.title, "backend": name, "folder": str(dest),
                 "stages": stages, "added": added},
          [c("1", thread.title), f"  backend {name}"] + stage_lines

@@ -9,6 +9,11 @@
 README.md and refs.bib are both *generated* from .paperctl.json on every write.
 That is what makes re-running safe and incremental: the index is the truth, the
 two readable files are projections of it, and neither is ever parsed back.
+
+Callers say what to do -- add, remove, adopt, retry, tidy, entries, bib_entries
+-- and never load, edit and save an index themselves. Every write goes through
+_commit, which is the one place citekeys are made unique and then persisted, so
+a key shown in README.md or refs.bib is always one `remove` can find.
 """
 
 from __future__ import annotations
@@ -62,6 +67,9 @@ def load_index(path: Path) -> dict:
     except (json.JSONDecodeError, OSError) as e:
         sys.exit(f"paperctl: {f} is unreadable ({e}). Move it aside to start over.")
     data.setdefault("entries", [])
+    # Indexes written before keys were persisted can hold duplicates; refs.bib
+    # showed them suffixed, so every reader sees those same keys from the start.
+    dedupe_citekeys(data["entries"])
     return data
 
 
@@ -146,8 +154,49 @@ def acquire(fetch, rec: Record, papers: Path, email: str,
             "note": "; ".join(reasons) or "no open-access copy found"}
 
 
-RETRYABLE = {"link-only"}
+# Entry statuses. has_pdf / RETRYABLE are the only questions callers ask of one.
+HAVE = frozenset({"downloaded", "have"})     # a local PDF exists ("have": not ours to delete)
+RETRYABLE = frozenset({"link-only"})         # no open-access copy yet; `retry` re-asks
 PROVENANCE = ("shared_by", "shared_at", "source_url")
+
+
+def has_pdf(entry: dict) -> bool:
+    return entry.get("status") in HAVE
+
+
+def _commit(cfg, dest: Path, index: dict) -> None:
+    """Make citekeys unique, persist, regenerate README.md and refs.bib. Every write ends here."""
+    dedupe_citekeys(index["entries"])
+    save_index(dest, index)
+    write_projections(cfg, dest, index)
+
+
+def _citekey_for(cfg, rec: Record, dest: Path, index: dict) -> str:
+    """A key no *other* paper uses anywhere in the library, so library.bib never has to rename it.
+
+    The same paper filed in two folders gets the same key in both: one paper,
+    one citation, whichever bibliography a vault reads.
+    """
+    owners = [e for d, e in entries(cfg, root(cfg)) if d != dest] + index["entries"]
+    known = next((e["citekey"] for e in owners if e.get("citekey") and identity.same(e, rec)), "")
+    if known:
+        return known
+    base = naming.citekey(rec.authors, rec.title, rec.year)
+    taken = {}
+    for e in owners:
+        taken.setdefault(e.get("citekey"), []).append(e)
+    for key in _suffixed(base):
+        users = taken.get(key, [])
+        if all(identity.same(u, rec) for u in users):
+            return key
+    raise AssertionError("unreachable")
+
+
+def _suffixed(base: str):
+    yield base
+    for n in range(26 * 27):
+        q, r = divmod(n, 26)
+        yield base + (chr(ord("a") + q - 1) if q else "") + chr(ord("a") + r)
 
 
 
@@ -166,22 +215,21 @@ def add(cfg, fetch, rec: Record, dest: Path, dry_run: bool = False,
                 setattr(rec, f, getattr(known, f))
         provenance = {**{k: existing[k] for k in PROVENANCE if existing.get(k)},
                       **(provenance or {})}
-    if existing and existing.get("status") in ("downloaded", "have"):
+    if existing and has_pdf(existing):
         # Already readable. Still learn what this sighting adds (a DOI, a journal).
         gained = {f: v for f, v in rec.to_dict().items()
                   if f != "score" and v and not existing.get(f)}
         if gained and not dry_run:
             existing.update(gained)
             existing["ident"] = identity.key(existing)
-            save_index(dest, index)
-            write_projections(cfg, dest, index)
+            _commit(cfg, dest, index)
         return {**existing, "note": "already in this folder"}
     ident = rec.ident
 
     entry = {
         "ident": ident,
         # A re-seen paper keeps its key: something may already cite it.
-        "citekey": (existing or {}).get("citekey") or naming.citekey(rec.authors, rec.title, rec.year),
+        "citekey": (existing or {}).get("citekey") or _citekey_for(cfg, rec, dest, index),
         "added": (existing or {}).get("added") or datetime.now(timezone.utc).strftime("%Y-%m-%d"),
         "kind": kind or ("arxiv" if rec.arxiv_id else "doi" if rec.doi else "other"),
         **rec.to_dict(),
@@ -199,8 +247,7 @@ def add(cfg, fetch, rec: Record, dest: Path, dry_run: bool = False,
         index["entries"] = [entry if e is existing else e for e in index["entries"]]
     else:
         index["entries"].append(entry)
-    save_index(dest, index)
-    write_projections(cfg, dest, index)
+    _commit(cfg, dest, index)
     return entry
 
 
@@ -225,9 +272,124 @@ def remove(cfg, dest: Path, refs: list[str], dry_run: bool = False) -> list[dict
         if pdf and e.get("status") == "downloaded" and pdf.is_file():
             pdf.unlink()
     index["entries"] = [e for e in index["entries"] if e not in hit]
-    save_index(dest, index)
-    write_projections(cfg, dest, index)
+    _commit(cfg, dest, index)
     return hit
+
+
+def entries(cfg, base: Path) -> list[tuple[Path, dict]]:
+    """(folder, entry) for every entry at or below `base`."""
+    return [(d, e) for d in index_dirs(base) for e in load_index(d)["entries"]]
+
+
+def bib_entries(cfg, base: Path) -> list[dict]:
+    """One entry per paper across every folder under `base`, keyed as the folders key them.
+
+    The same paper filed twice is one entry. Two different papers that share a
+    key across folders (possible only in libraries filed before keys were made
+    library-wide) still get suffixed, since a .bib with a duplicate key cites
+    the wrong paper -- that key then differs from the folder's refs.bib.
+    """
+    out: list[dict] = []
+    for _, e in entries(cfg, base):
+        if not any(identity.same(e, o) for o in out):
+            out.append(dict(e))
+    dedupe_citekeys(out)
+    return out
+
+
+ADOPT_FLOOR = 0.55   # the same floor resolve uses for a title match
+
+
+def adopt(cfg, dest: Path, files: list[Path], dry_run: bool = False):
+    """File PDFs already on disk against existing entries, by title similarity.
+
+    Returns (adopted, skipped): [(filename, citekey, score)], [(filename, best score)].
+    Below ADOPT_FLOOR the file is skipped rather than filed against the wrong
+    paper: misfiling a PDF is worse than leaving it loose, because the index
+    then asserts something false. Raises FileNotFoundError if `dest` has no entries.
+    """
+    import difflib
+    import re
+    import shutil
+
+    index = load_index(dest)
+    if not index["entries"]:
+        raise FileNotFoundError(f"no index at {dest} -- `paperctl add` first")
+    papers = dest / "papers"
+    style = cfg.get("library.filename_style") or "title_case"
+    norm = lambda t: re.sub(r"[^a-z0-9]+", " ", (t or "").lower()).strip()
+    done, skipped = [], []
+    for f in files:
+        stem = norm(f.stem)
+        best, score = None, 0.0
+        for e in index["entries"]:
+            r = difflib.SequenceMatcher(None, stem, norm(e.get("title"))).ratio()
+            if r > score:
+                best, score = e, r
+        if not best or score < ADOPT_FLOOR:
+            skipped.append((f.name, score))
+            continue
+        target = papers / pdf_name(record_of(best), style)
+        if not dry_run:
+            papers.mkdir(parents=True, exist_ok=True)
+            shutil.move(str(f), target)
+            best.update(pdf=target.name, status="have", note="adopted from local file")
+        done.append((f.name, best.get("citekey"), score))
+    if done and not dry_run:
+        _commit(cfg, dest, index)
+    return done, skipped
+
+
+def retry(cfg, fetch, base: Path, dry_run: bool = False):
+    """Re-attempt RETRYABLE entries under `base`. Returns (attempted, [changes])."""
+    email = str(cfg.get("sources.unpaywall_email") or "")
+    attempted, changed = 0, []
+    for f in index_dirs(base):
+        index = load_index(f)
+        dirty = False
+        for e in index["entries"]:
+            if e.get("status") not in RETRYABLE:
+                continue
+            attempted += 1
+            if dry_run:
+                changed.append({"folder": f.name, "title": e.get("title"), "status": "would-retry"})
+                continue
+            got = acquire(fetch, record_of(e), f / "papers", email, e.get("kind", ""))
+            if got["status"] in HAVE:
+                e.update(got)
+                dirty = True
+                changed.append({"folder": f.name, "title": e.get("title"), **got})
+        if dirty:
+            _commit(cfg, f, index)
+    return attempted, changed
+
+
+def tidy(cfg, base: Path, apply: bool = False) -> list[dict]:
+    """Duplicate PDFs by content hash under `base`, nested folders included.
+
+    Returns one {"hash", "keep": [paths], "remove": [paths]} per duplicated
+    content. A file an index entry points at is always kept -- deleting it would
+    leave the entry claiming a PDF that is gone -- so only unreferenced copies
+    are removed; with none referenced, the first is kept. `apply` deletes "remove".
+    """
+    from collections import defaultdict
+
+    referenced = {d / "papers" / e["pdf"] for d, e in entries(cfg, base) if e.get("pdf")}
+    by_hash: dict[str, list[Path]] = defaultdict(list)
+    for pdf in sorted(p for p in base.rglob("*.pdf") if p.parent.name == "papers"):
+        by_hash[hashlib.sha256(pdf.read_bytes()).hexdigest()].append(pdf)
+
+    report = []
+    for h, ps in by_hash.items():
+        if len(ps) < 2:
+            continue
+        keep = [p for p in ps if p in referenced] or ps[:1]
+        drop = [p for p in ps if p not in keep]
+        report.append({"hash": h, "keep": keep, "remove": drop})
+        if apply:
+            for p in drop:
+                p.unlink()
+    return report
 
 
 def _selftest_remove(tmp: Path | None = None) -> None:
@@ -239,9 +401,8 @@ def _selftest_remove(tmp: Path | None = None) -> None:
         import tempfile
         with tempfile.TemporaryDirectory() as t:
             return _selftest_remove(Path(t))
-    root = tmp
-    cfg = {"library.write_refs_bib": True, "library.write_readme": True}   # dict.get is all it reads
-    lib = root / "Lib"
+    cfg = _Cfg(tmp)
+    lib = tmp / "Lib"
     (lib / "papers").mkdir(parents=True)
     (lib / "papers" / "a.pdf").write_text("a")
     (lib / "papers" / "b.pdf").write_text("b")
@@ -267,6 +428,24 @@ def _selftest_remove(tmp: Path | None = None) -> None:
     print("remove selftest: ok")
 
 
+class _Cfg(dict):
+    """The two things library reads from a Config: get() and path("library.root")."""
+
+    def __init__(self, root: Path):
+        super().__init__({"library.root": str(root), "library.write_refs_bib": True,
+                          "library.write_readme": True})
+
+    def path(self, k: str) -> Path:
+        return Path(self[k])
+
+
+class _PdfNet:
+    """A fetch where every URL serves a PDF."""
+
+    def get(self, *a, **k):
+        return b"%PDF-1.4 test"
+
+
 class _NoNet:
     """A fetch that is always offline: every PDF attempt fails, nothing leaves the machine."""
 
@@ -278,7 +457,7 @@ class _NoNet:
 
 def _selftest_identity(tmp: Path) -> None:
     """add(): a preprint and its published version are one entry, and nothing it knew is lost."""
-    cfg = {"library.write_refs_bib": True, "library.write_readme": True}
+    cfg = _Cfg(tmp)
     lib = tmp / "Same"
     pre = Record(title="Deep Things", authors=["Ada Lovelace"], year="2025",
                  arxiv_id="2506.19243")
@@ -304,6 +483,64 @@ def _selftest_identity(tmp: Path) -> None:
     assert len(load_index(lib)["entries"]) == 2
 
 
+def _selftest_folder(tmp: Path) -> None:
+    """Citekeys persisted and library-wide; bib, tidy, adopt and retry through the folder module."""
+    cfg = _Cfg(tmp)
+    a, b = tmp / "Keys" / "A", tmp / "Keys" / "B"
+    smith = lambda t, **k: Record(title=t, authors=["Jo Smith"], year="2020", **k)
+
+    # A library filed before keys were persisted: two papers share a key in the index.
+    save_index(a, {"entries": [
+        {"ident": "10.1234/one", "doi": "10.1234/one", "citekey": "smithDeeNetLea2020",
+         "title": "Deep Nets Learn One", "added": "2020-01-01", "status": "link-only"},
+        {"ident": "10.1234/two", "doi": "10.1234/two", "citekey": "smithDeeNetLea2020",
+         "title": "Deep Nets Learn Two", "added": "2020-01-02", "status": "link-only"}]})
+    add(cfg, _NoNet(), smith("Unrelated Thing", doi="10.1234/three"), a)
+    keys = {e["ident"]: e["citekey"] for e in load_index(a)["entries"]}
+    assert keys["10.1234/one"] == "smithDeeNetLea2020" and keys["10.1234/two"] == "smithDeeNetLea2020a", keys
+    assert "{smithDeeNetLea2020a," in (a / "refs.bib").read_text()      # the key README/bib show...
+    remove(cfg, a, ["smithDeeNetLea2020a"])                              # ...is one remove can find
+
+    # New keys are unique across the library; the same paper keeps one key everywhere.
+    other = add(cfg, _NoNet(), smith("Deep Nets Learn Four", doi="10.1234/four", arxiv_id="2501.00004"), b)
+    assert other["citekey"] == "smithDeeNetLea2020a", other              # A owns the base key
+    same = add(cfg, _NoNet(), smith("Deep nets that learn, part one", doi="10.1234/ONE"), b)
+    assert same["citekey"] == "smithDeeNetLea2020", same      # found by identity, not by title
+    bib = bib_entries(cfg, tmp / "Keys")
+    assert sorted(e["citekey"] for e in bib) == ["smithDeeNetLea2020", "smithDeeNetLea2020a", "smithUnrThi2020"], bib
+
+    # retry: a link-only entry with a route to a PDF becomes downloaded; one without stays.
+    attempted, changed = retry(cfg, _PdfNet(), tmp / "Keys" / "B")
+    assert (attempted, [c["title"] for c in changed]) == (2, ["Deep Nets Learn Four"]), changed
+    assert [has_pdf(e) for e in load_index(b)["entries"]] == [True, False]
+
+    # tidy: nested folders are seen; a PDF the index points at is never removed.
+    nested = tmp / "Proj" / "Topic" / "papers"
+    nested.mkdir(parents=True)
+    pdf = next((b / "papers").glob("*.pdf"))
+    for name in ("copy1.pdf", "copy2.pdf"):
+        (nested / name).write_bytes(pdf.read_bytes())
+    report = tidy(cfg, tmp, apply=True)
+    [dup] = [r for r in report if pdf in r["keep"]]
+    assert pdf.exists() and not (nested / "copy1.pdf").exists() and not (nested / "copy2.pdf").exists(), dup
+
+    # adopt: a loose PDF whose name matches a title is filed; a stranger is not.
+    c = tmp / "Adopt"
+    save_index(c, {"entries": [{"ident": "10.1234/x", "citekey": "k", "title": "Quantum Error Correction Codes",
+                                "status": "link-only"}]})
+    (c / "quantum_error_correction_codes.pdf").write_bytes(b"%PDF")
+    (c / "holiday_photos.pdf").write_bytes(b"%PDF")
+    done, skipped = adopt(cfg, c, sorted(c.glob("*.pdf")))
+    assert [d[0] for d in done] == ["quantum_error_correction_codes.pdf"] and len(skipped) == 1
+    [e] = load_index(c)["entries"]
+    assert e["status"] == "have" and (c / "papers" / e["pdf"]).exists()
+    try:
+        adopt(cfg, tmp / "Empty", [])
+        raise AssertionError("adopt into an empty folder must raise")
+    except FileNotFoundError:
+        pass
+
+
 def dedupe_citekeys(entries: list[dict]) -> None:
     """Suffix a, b, c on collision, in place.
 
@@ -311,23 +548,20 @@ def dedupe_citekeys(entries: list[dict]) -> None:
     collide, and a .bib with a duplicate key is silently wrong: BibTeX keeps
     one entry and every citation of the other points at the wrong paper.
     """
-    seen: dict[str, int] = {}
+    used: set[str] = set()
     for e in sorted(entries, key=lambda x: (x.get("added", ""), x.get("title", ""))):
         base = e.get("citekey") or "ref"
-        n = seen.get(base, 0)
-        seen[base] = n + 1
-        if n:
-            e["citekey"] = f"{base}{chr(ord('a') + n - 1)}"
+        e["citekey"] = next(k for k in _suffixed(base) if k not in used)
+        used.add(e["citekey"])
 
 
 
 def write_projections(cfg, dest: Path, index: dict) -> None:
-    entries = index.get("entries") or []
-    dedupe_citekeys(entries)
+    """README.md and refs.bib from the index. Only _commit calls this, after keys are unique."""
     if cfg.get("library.write_refs_bib"):
-        write_bib(dest / "refs.bib", entries, dest.name)
+        write_bib(dest / "refs.bib", index["entries"], dest.name)
     if cfg.get("library.write_readme"):
-        write_readme(dest / "README.md", entries, dest.name)
+        write_readme(dest / "README.md", index["entries"], dest.name)
 
 
 def record_of(entry: dict) -> Record:
@@ -355,7 +589,7 @@ STATUS_MARK = {"downloaded": "[x]", "have": "[x]",
 
 
 def write_readme(path: Path, entries: list[dict], title: str) -> None:
-    have = sum(1 for e in entries if e.get("status") in ("downloaded", "have"))
+    have = sum(1 for e in entries if has_pdf(e))
     now = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
 
     out = [f"# {title.replace('_', ' ')}", "",
@@ -430,8 +664,9 @@ def _selftest() -> None:
         assert [p.name for p in index_dirs(root / "Proj")] == ["Topic1", "Topic2"]
         assert index_dirs(root / "Missing") == []
 
-        _selftest_remove(root)
-        _selftest_identity(root)
+        _selftest_remove(root / "r")
+        _selftest_identity(root / "i")
+        _selftest_folder(root / "f")
     print("library selftest: ok")
 
 

@@ -124,7 +124,13 @@ paperctl remove @key1 @key2 --from FOLDER --dry-run   # un-file entries
 ```
 
 `tidy` without `--apply` deletes nothing. It reports duplicate *content*, found
-by hash, not by filename.
+by hash, not by filename, in every folder at any depth. `--apply` removes only
+copies no index entry points at: a PDF an entry references is always kept, so
+the same paper downloaded into two folders stays readable from both.
+
+Citekeys are unique across the whole library and stored in the index, so the
+key `README.md` and `refs.bib` show is the key `remove` and `search` accept, and
+one paper filed in two folders has one key in both.
 
 `remove` is the only way to take an entry out of a folder; editing
 `.paperctl.json` by hand leaves `README.md` and `refs.bib` stale. It matches by
