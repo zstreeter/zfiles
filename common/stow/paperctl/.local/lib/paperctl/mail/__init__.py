@@ -5,6 +5,7 @@ IMAP through himalaya. Neither should know the other exists, so both implement:
 
     find_thread(cfg, subject_fragment, account=None) -> Thread | None
     fetch_thread(cfg, thread, account=None)          -> [Message]
+    search(cfg, query, account=None, limit=25)       -> [{subject, from, date}]
     probe(cfg)                                       -> (ok, detail, fix)
 
 The contract is written to the WEAKER backend on purpose. himalaya has no
@@ -116,9 +117,35 @@ def _harvest(cfg, messages, fetch=None):
     return ordered, stages, flattened
 
 
+def _selftest() -> None:
+    """_harvest, backend-free: SafeLinks unwrapped, quoted history ignored, noise and
+    hard-wrapped fragments dropped, first sharer credited, papers told from the rest."""
+    safe = ("https://nam01.safelinks.protection.outlook.com/?url="
+            "https%3A%2F%2Farxiv.org%2Fabs%2F2506.19243v2%3Futm_source%3Dx&data=1")
+    first = Message(id="1", sender="Ada", date="2026-01-01T09:00:00Z",
+                    html=f'<p>Read <a href="{safe}">Deep Things</a></p>'
+                         '<a href="https://list-manage.com/unsubscribe?u=1">unsubscribe</a>')
+    reply = Message(id="2", sender="Bo", date="2026-01-02T09:00:00Z",
+                    html=f'<p>see https://www.sciencedirect.com/science/ar</p>'
+                         '<p>https://www.sciencedirect.com/science/article/pii/S0893608025008640</p>'
+                         f'<blockquote><a href="{safe}">Deep Things</a></blockquote>',
+                    html_unique='<p>see https://www.sciencedirect.com/science/ar</p>'
+                                '<p>https://www.sciencedirect.com/science/article/pii/S0893608025008640</p>'
+                                '<p>code: <a href="https://github.com/o/r">repo</a></p>')
+    found, stages, flattened = _harvest({}, [reply, first])
+    got = [(r["url"], r["who"], r["kind"], r["is_paper"]) for r in found]
+    assert got == [
+        ("https://arxiv.org/abs/2506.19243", "Ada", "arxiv", True),
+        ("https://github.com/o/r", "Bo", "code", False),            # anchors before bare URLs
+        ("https://sciencedirect.com/science/article/pii/S0893608025008640", "Bo", "elsevier", True)], got
+    assert found[0]["anchor"] == "Deep Things" and flattened == 0
+    assert (stages["raw anchor hrefs"], stages["after noise suppression"], stages["papers"]) == (5, 4, 2), stages
+    print("mail selftest: ok")
+
+
 def cmd_thread(args, cfg) -> int:
     from ..cli import c, emit, fetcher, sources_for
-    from .. import library, resolve
+    from .. import ingest, library
 
     mod, name, why = resolve_backend(cfg)
     if mod is None:
@@ -162,16 +189,13 @@ def cmd_thread(args, cfg) -> int:
     for r in found:
         if not r["is_paper"]:
             continue
-        rec, _ = resolve.resolve(fetch, r["url"], srcs)
-        if rec is None:
-            continue
-        rec = resolve.enrich(fetch, rec, srcs)
-        added.append(library.add(cfg, fetch, rec, dest, kind=r["kind"],
-                                 provenance={"shared_by": r["who"],
-                                             "shared_at": r["at"],
-                                             "source_url": r["url"]}))
+        entry, _ = ingest.file(cfg, fetch, r["url"], dest, srcs,
+                               provenance={"shared_by": r["who"], "shared_at": r["at"],
+                                           "source_url": r["url"]})
+        if entry["status"] != "unresolved":
+            added.append(entry)
 
-    got = sum(1 for a in added if a.get("status") in ("downloaded", "have"))
+    got = sum(1 for a in added if library.has_pdf(a))
     emit(args, {"thread": thread.title, "backend": name, "folder": str(dest),
                 "stages": stages, "added": added},
          [c("1", thread.title), f"  backend {name}"] + stage_lines

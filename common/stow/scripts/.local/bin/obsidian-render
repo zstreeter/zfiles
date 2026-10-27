@@ -66,12 +66,7 @@ if [[ $TO == pdf || $TO == latex ]]; then
 fi
 
 dir=$(dirname "$NOTE")
-VAULT=""
-probe=$dir
-while [[ $probe != / ]]; do
-    [[ -d "$probe/.obsidian" ]] && { VAULT=$probe; break; }
-    probe=$(dirname "$probe")
-done
+VAULT=$(obsidian-vault of "$NOTE" 2>/dev/null) || VAULT=""
 
 declare -a CMD=(quarto "$ACTION")
 

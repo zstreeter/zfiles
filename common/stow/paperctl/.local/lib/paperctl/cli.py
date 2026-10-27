@@ -19,7 +19,7 @@ import shutil
 import sys
 from pathlib import Path
 
-from . import alphaxiv, config, library, naming, net, resolve
+from . import alphaxiv, config, ingest, library, naming, net
 from .record import Record
 from .sources import REGISTRY, enabled
 
@@ -83,7 +83,7 @@ def cmd_doctor(args, cfg) -> int:
     if not args.offline:
         for name in REGISTRY:
             mod = REGISTRY[name]
-            url = getattr(mod, "API", "")
+            url = mod.API
             check(f"source: {name}", fetch.reachable(url), url)
 
     check("alphaxiv", *alphaxiv.probe(cfg, None if args.offline else fetch))
@@ -116,17 +116,13 @@ def cmd_add(args, cfg) -> int:
     srcs = sources_for(args, cfg)
     dest = library.folder(cfg, args.to)
 
-    rec, alts = resolve.resolve(fetch, args.query, srcs)
-    if rec is None:
+    entry, alts = ingest.file(cfg, fetch, args.query, dest, srcs, dry_run=args.dry_run)
+    if entry["status"] == "unresolved":
         print(f"paperctl: nothing found for {args.query!r}", file=sys.stderr)
         if not srcs:
-            print("          no sources enabled -- check sources.enabled",
+            print("          no sources enabled -- check sources.enabled / --source",
                   file=sys.stderr)
         return 1
-    rec = resolve.enrich(fetch, rec, srcs)
-
-    entry = library.add(cfg, fetch, rec, dest, dry_run=args.dry_run,
-                        kind=resolve.kind_of(args.query))
 
     payload = {"folder": str(dest), "entry": entry,
                "alternatives": [a.to_dict() for a in alts[:4]]}
@@ -155,61 +151,25 @@ def cmd_adopt(args, cfg) -> int:
     `add` fetches; it has no way to say "the PDF is already on disk". So a
     library assembled by hand before paperctl -- or one whose papers are books
     and technical reports with no open-access copy -- reports "0 available as
-    local PDFs" while the files sit in the folder. The metadata is right and
-    citations work; only paperctl's own view of the files is wrong.
-
-    Matching is on title similarity against the filename, and the score is
-    always reported. Below the same 0.55 floor `add` uses, the file is skipped
-    rather than filed against the wrong paper: misfiling a PDF is worse than
-    leaving it loose, because the index then asserts something false.
+    local PDFs" while the files sit in the folder. Matching is on title
+    similarity against the filename, and the score is always reported.
     """
-    import difflib
-    import re
-
     dest = library.folder(cfg, getattr(args, "to", None))
-    index = library.load_index(dest)
-    entries = index.get("entries") or []
-    if not entries:
-        emit(args, {"adopted": 0}, [f"no index at {dest} -- `paperctl add` first"])
-        return 1
-
-    papers = dest / "papers"
     files = [Path(f) for f in (args.files or [])] or \
         sorted(p for p in dest.glob("*.pdf") if p.is_file())
+    try:
+        done, skipped = library.adopt(cfg, dest, files, dry_run=args.dry_run)
+    except FileNotFoundError as e:
+        emit(args, {"adopted": 0}, [str(e)])
+        return 1
     if not files:
         emit(args, {"adopted": 0}, [f"no loose PDFs in {dest}"])
         return 0
 
-    style = cfg.get("library.filename_style") or "title_case"
-    norm = lambda t: re.sub(r"[^a-z0-9]+", " ", (t or "").lower()).strip()
-    done, skipped = [], []
-
-    for f in files:
-        stem = norm(f.stem)
-        best, score = None, 0.0
-        for e in entries:
-            r = difflib.SequenceMatcher(None, stem, norm(e.get("title"))).ratio()
-            if r > score:
-                best, score = e, r
-        if not best or score < 0.55:
-            skipped.append((f.name, score))
-            continue
-        target = papers / library.pdf_name(library.record_of(best), style)
-        if not args.dry_run:
-            papers.mkdir(parents=True, exist_ok=True)
-            shutil.move(str(f), target)
-            best["pdf"] = target.name
-            best["status"] = "have"
-            best["note"] = "adopted from local file"
-        done.append((f.name, best.get("citekey"), score))
-
-    if done and not args.dry_run:
-        library.save_index(dest, index)
-        library.write_projections(cfg, dest, index)
-
+    floor = library.ADOPT_FLOOR
     lines = [f"{'would adopt' if args.dry_run else 'adopted'} {len(done)} into {dest}"]
     lines += [f"  {n}  ->  @{k}  ({s:.2f})" for n, k, s in done]
-    lines += [f"  SKIPPED {n}  (best match {s:.2f} < 0.55)" for n, s in skipped]
+    lines += [f"  SKIPPED {n}  (best match {s:.2f} < {floor})" for n, s in skipped]
     emit(args, {"adopted": len(done), "skipped": len(skipped)}, lines)
     return 0
 
@@ -233,7 +193,7 @@ def cmd_search_web(args, cfg) -> int:
         if r.venue:
             bits.append(r.venue)
         lines.append(f"   {c('2', ' · '.join(b for b in bits if b))}")
-        ident = r.arxiv_id or r.doi or r.url
+        ident = r.ident
         lines.append(f"   {c('2', f'{r.source}  {r.score:.2f}')}  {ident}")
     lines += ["", c("2", "Add one with:  paperctl add <id-or-doi> --to <Folder>")]
     emit(args, [r.to_dict() for r in found[: args.limit]], lines)
@@ -246,18 +206,16 @@ def cmd_search(args, cfg) -> int:
 
     root = library.root(cfg)
     hits = []
-    for d in library.index_dirs(root):
-        folder_name = str(d.relative_to(root))
-        for e in library.load_index(d).get("entries", []):
-            hay = " ".join([e.get("title", ""), " ".join(e.get("authors") or []),
-                            e.get("venue", ""), e.get("citekey", "")])
-            if args.query.lower() in hay.lower():
-                score = 1.0
-            else:
-                score = score_title(args.query, e.get("title", ""))
-                if score < 0.45:
-                    continue
-            hits.append({**e, "folder": folder_name, "match": score})
+    for d, e in library.entries(cfg, root):
+        hay = " ".join([e.get("title", ""), " ".join(e.get("authors") or []),
+                        e.get("venue", ""), e.get("citekey", "")])
+        if args.query.lower() in hay.lower():
+            score = 1.0
+        else:
+            score = score_title(args.query, e.get("title", ""))
+            if score < 0.45:
+                continue
+        hits.append({**e, "folder": str(d.relative_to(root)), "match": score})
 
     hits.sort(key=lambda h: -h["match"])
     hits = hits[: args.limit]
@@ -271,7 +229,7 @@ def cmd_search(args, cfg) -> int:
 
     lines = []
     for h in hits:
-        mark = "PDF" if h.get("status") in ("downloaded", "have") else "   "
+        mark = "PDF" if library.has_pdf(h) else "   "
         lines.append(f"{c('32', mark)} {c('1', h.get('title') or h.get('url'))}")
         lines.append(f"    {c('2', h['folder'])}  @{h.get('citekey')}"
                      + (f"  papers/{h['pdf']}" if h.get("pdf") else ""))
@@ -289,12 +247,7 @@ def cmd_bib(args, cfg) -> int:
     """
     root = library.root(cfg)
     base = library.folder(cfg, args.folder) if args.folder else root
-    folders = library.index_dirs(base)
-
-    entries: list[dict] = []
-    for f in folders:
-        entries.extend(library.load_index(f).get("entries", []))
-    library.dedupe_citekeys(entries)
+    entries = library.bib_entries(cfg, base)
 
     if args.out:
         out = Path(args.out).expanduser()
@@ -327,33 +280,8 @@ def cmd_retry(args, cfg) -> int:
     Worth doing: Unpaywall indexes an OA copy days or weeks after publication,
     so a link-only from last month is often downloadable now.
     """
-    fetch = fetcher(cfg)
-    root = library.root(cfg)
-    folders = library.index_dirs(library.folder(cfg, args.folder) if args.folder else root)
-    email = str(cfg.get("sources.unpaywall_email") or "")
-
-    changed, attempted = [], 0
-    for f in folders:
-        index = library.load_index(f)
-        dirty = False
-        for e in index.get("entries", []):
-            if e.get("status") not in library.RETRYABLE:
-                continue
-            attempted += 1
-            if args.dry_run:
-                changed.append({"folder": f.name, "title": e.get("title"),
-                                "status": "would-retry"})
-                continue
-            got = library.acquire(fetch, library.record_of(e), f / "papers",
-                                  email, e.get("kind", ""))
-            if got["status"] in ("downloaded", "have"):
-                e.update(got)
-                dirty = True
-                changed.append({"folder": f.name, "title": e.get("title"),
-                                **got})
-        if dirty:
-            library.save_index(f, index)
-            library.write_projections(cfg, f, index)
+    base = library.folder(cfg, args.folder) if args.folder else library.root(cfg)
+    attempted, changed = library.retry(cfg, fetcher(cfg), base, dry_run=args.dry_run)
 
     lines = ([c("33", "--dry-run: nothing fetched.")] if args.dry_run else [])
     lines.append(f"{attempted} retryable, {len(changed)} "
@@ -384,33 +312,20 @@ def cmd_remove(args, cfg) -> int:
 
 def cmd_tidy(args, cfg) -> int:
     """Report duplicate PDFs by content hash. Report-only unless --apply."""
-    import hashlib
-    from collections import defaultdict
-
     root = library.root(cfg)
-    by_hash: dict[str, list[Path]] = defaultdict(list)
-    for pdf in sorted(root.glob("*/papers/*.pdf")):
-        h = hashlib.sha256(pdf.read_bytes()).hexdigest()
-        by_hash[h].append(pdf)
-
-    dupes = {h: ps for h, ps in by_hash.items() if len(ps) > 1}
-    payload = {h: [str(p) for p in ps] for h, ps in dupes.items()}
-    lines = [f"{sum(len(p) for p in by_hash.values())} PDFs, "
-             f"{len(dupes)} duplicated by content."]
-    for h, ps in dupes.items():
-        lines.append(f"  {h[:12]}")
-        for i, p in enumerate(ps):
-            lines.append(f"    {'keep' if i == 0 else 'dupe'}  "
-                         f"{p.relative_to(root)}")
-    if dupes and not args.apply:
-        lines.append("")
-        lines.append(c("2", "Nothing was changed. Re-run with --apply to remove "
-                            "the copies marked dupe."))
-    elif dupes and args.apply:
-        for ps in dupes.values():
-            for p in ps[1:]:
-                p.unlink()
-        lines.append(f"removed {sum(len(p) - 1 for p in dupes.values())} duplicates")
+    report = library.tidy(cfg, root, apply=args.apply)
+    payload = {r["hash"]: {"keep": [str(p) for p in r["keep"]],
+                           "remove": [str(p) for p in r["remove"]]} for r in report}
+    removable = sum(len(r["remove"]) for r in report)
+    lines = [f"{len(report)} PDF content(s) duplicated; {removable} unreferenced cop"
+             f"{'y' if removable == 1 else 'ies'}."]
+    for r in report:
+        lines.append(f"  {r['hash'][:12]}")
+        lines += [f"    keep  {p.relative_to(root)}" for p in r["keep"]]
+        lines += [f"    {'removed' if args.apply else 'dupe'}  {p.relative_to(root)}" for p in r["remove"]]
+    if removable and not args.apply:
+        lines += ["", c("2", "Nothing was changed. Re-run with --apply to remove the copies "
+                             "marked dupe. A PDF an index entry points at is always kept.")]
     emit(args, payload, lines)
     return 0
 
@@ -492,7 +407,7 @@ def build_parser() -> argparse.ArgumentParser:
 
     t = add_cmd("tidy", cmd_tidy, "find duplicate PDFs by content hash")
     t.add_argument("--apply", action="store_true",
-                   help="actually remove duplicates (default is report-only)")
+                   help="remove unreferenced duplicates (default is report-only)")
 
     alphaxiv.register_cli(sub, add_cmd)
 

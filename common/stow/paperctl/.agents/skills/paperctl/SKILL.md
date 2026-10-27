@@ -61,7 +61,7 @@ the paper's title. A flattening path once returned zero URLs for 4 of 22 message
 ```bash
 # once, in ~/.config/shell/secrets.env (gitignored, sourced by every shell):
 #     export ALPHAXIV_API_KEY="axv1_..."   # alphaxiv.org -> Settings -> API Keys
-paperctl pull --dry-run                 # what would be filed, and where
+paperctl pull --dry-run                 # resolves each bookmark (network), files nothing
 paperctl pull                           # one library folder per alphaXiv folder
 paperctl pull --folder blowup --to PINN_Blowup
 ```
@@ -124,7 +124,13 @@ paperctl remove @key1 @key2 --from FOLDER --dry-run   # un-file entries
 ```
 
 `tidy` without `--apply` deletes nothing. It reports duplicate *content*, found
-by hash, not by filename.
+by hash, not by filename, in every folder at any depth. `--apply` removes only
+copies no index entry points at: a PDF an entry references is always kept, so
+the same paper downloaded into two folders stays readable from both.
+
+Citekeys are unique across the whole library and stored in the index, so the
+key `README.md` and `refs.bib` show is the key `remove` and `search` accept, and
+one paper filed in two folders has one key in both.
 
 `remove` is the only way to take an entry out of a folder; editing
 `.paperctl.json` by hand leaves `README.md` and `refs.bib` stale. It matches by
@@ -139,10 +145,10 @@ again. Regenerate a vault's `library.bib` afterwards with `paperctl bib`.
 | flag | effect |
 |---|---|
 | `--json` | machine-readable output, on every read command |
-| `--dry-run` | show what would happen, write nothing |
+| `--dry-run` | show what would happen, write nothing (lookups still run; `mail thread` stops after counting links) |
 | `--library DIR` | redirect the library root for one run |
 | `--config FILE` | ignore the usual config and use this one |
-| `--source a,b` | restrict which metadata sources run |
+| `--source a,b` | restrict which metadata sources run -- for exact ids too: an arXiv id needs `arxiv`, a DOI `crossref` or `openalex` |
 
 ## Configuration
 

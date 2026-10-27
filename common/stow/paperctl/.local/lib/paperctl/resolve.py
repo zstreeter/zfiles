@@ -11,15 +11,15 @@ from __future__ import annotations
 import re
 import sys
 
-from . import links
+from . import identity, links, sources
 from .record import Record
-from .sources import arxiv, crossref, openalex, page, search_all
+from .sources import page
 
 
 def kind_of(text: str) -> str:
     """One of: arxiv, doi, url, title."""
     t = (text or "").strip()
-    if arxiv.id_of(t):
+    if identity.arxiv_id(t):
         return "arxiv"
     if re.match(r"^(doi:)?10\.\d{4,9}/", t, re.I):
         return "doi"
@@ -28,7 +28,7 @@ def kind_of(text: str) -> str:
     return "title"
 
 
-def resolve(fetch, text: str, sources: list[str],
+def resolve(fetch, text: str, names: list[str],
             limit: int = 8) -> tuple[Record | None, list[Record]]:
     """Return (best, alternatives).
 
@@ -39,34 +39,27 @@ def resolve(fetch, text: str, sources: list[str],
     kind = kind_of(text)
 
     if kind == "arxiv":
-        return _first(fetch, [(arxiv, arxiv.id_of(text))]), []
+        return sources.exact(fetch, "arxiv", identity.arxiv_id(text), names), []
 
     if kind == "doi":
-        doi = crossref.doi_of(text)
-        return _first(fetch, [(crossref, doi), (openalex, doi)]), []
+        return sources.exact(fetch, "doi", identity.doi(text), names), []
 
     if kind == "url":
         url = links.normalize(text)
-        aid = arxiv.id_of(url)
-        if aid:
-            rec = _first(fetch, [(arxiv, aid)])
-            if rec:
-                return rec, []
-        doi = crossref.doi_of(url)
-        if doi:
-            rec = _first(fetch, [(crossref, doi), (openalex, doi)])
-            if rec:
-                return rec, []
+        rec = (sources.exact(fetch, "arxiv", identity.arxiv_id(url), names)
+               or sources.exact(fetch, "doi", identity.doi(url), names))
+        if rec:
+            return rec, []
         if links.is_shortener(url):
             expanded = fetch.final_url(url)
             if links.normalize(expanded) != url:
-                return resolve(fetch, expanded, sources, limit)
+                return resolve(fetch, expanded, names, limit)
         rec = page.fetch_one(fetch, url)
         if rec:
             return rec, []
         return Record(title="", url=url, source="unresolved"), []
 
-    found = search_all(fetch, text, sources, limit)
+    found = sources.search_all(fetch, text, names, limit)
     if not found:
         return None, []
     best = found[0]
@@ -76,42 +69,6 @@ def resolve(fetch, text: str, sources: list[str],
               f"          Use `paperctl search-web` to pick deliberately.",
               file=sys.stderr)
     return best, found[1:]
-
-
-def _first(fetch, attempts) -> Record | None:
-    """First source that answers wins; a source that errors is skipped."""
-    for module, ident in attempts:
-        if not ident:
-            continue
-        try:
-            rec = module.fetch_one(fetch, ident)
-        except Exception as e:
-            print(f"paperctl: {module.__name__.rsplit('.', 1)[-1]} lookup "
-                  f"failed: {type(e).__name__}", file=sys.stderr)
-            continue
-        if rec:
-            return rec
-    return None
-
-
-def enrich(fetch, rec: Record, sources: list[str]) -> Record:
-    """Fill gaps in a record from the other sources.
-
-    arXiv knows the PDF but often not the journal it later appeared in;
-    Crossref knows the journal but has no PDF. A record that has been through
-    both cites correctly *and* reads locally.
-    """
-    if rec.doi and not rec.venue and "crossref" in sources:
-        other = _first(fetch, [(crossref, rec.doi)])
-        if other:
-            for f in Record.__dataclass_fields__:
-                if f != "score" and not getattr(rec, f) and getattr(other, f):
-                    setattr(rec, f, getattr(other, f))
-    if not rec.pdf_url and rec.doi and "openalex" in sources:
-        other = _first(fetch, [(openalex, rec.doi)])
-        if other and other.pdf_url:
-            rec.pdf_url = other.pdf_url
-    return rec
 
 
 def _selftest() -> None:

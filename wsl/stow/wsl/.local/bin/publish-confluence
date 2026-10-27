@@ -41,6 +41,18 @@ import os
 import re
 import subprocess
 import sys
+from pathlib import Path
+
+# zdraft (draft parsing shared with publish-lint) ships in the `scripts` package:
+# ~/.local/lib once stowed; from a checkout, beside that package's bin/.
+for _lib in (Path(__file__).parent.parent / "lib",
+             Path(__file__).resolve().parents[5] / "common/stow/scripts/.local/lib"):
+    if (_lib / "zdraft" / "__init__.py").exists():
+        sys.path.insert(0, str(_lib))
+        break
+else:
+    sys.exit("publish-confluence: zdraft not found -- stow the zfiles `scripts` package.")
+import zdraft  # noqa: E402
 
 # Every site-specific value comes from the environment. Nothing about a
 # particular employer, tenant or account belongs in this file -- it lives in a
@@ -148,36 +160,17 @@ def render_svg(tex, display):
 def extract_math(md):
     """Pull $$..$$ and $..$ out of the body, leaving placeholders behind.
 
-    Fenced code is masked first: a `$` inside a shell snippet is a prompt or a
-    variable, not maths, and rendering it produces garbage or a hard failure.
+    zdraft decides what is maths -- the same spans publish-lint masked -- so a `$`
+    inside code (a prompt, a variable) is never rendered.
     """
-    blocks = []
-    code = []
-
-    def hide(m):
-        code.append(m.group(0))
-        return f"\x00CODE{len(code)-1}\x00"
-
-    md = re.sub(r"```.*?```", hide, md, flags=re.S)
-    md = re.sub(r"`[^`\n]+`", hide, md)
-
-    def take(m, display):
-        blocks.append((m.group(1).strip(), display))
-        return f"MATHSPLACEHOLDER{len(blocks)-1}ENDMATHS"
-
-    md = re.sub(r"\$\$(.+?)\$\$", lambda m: take(m, True), md, flags=re.S)
-    md = re.sub(r"(?<!\$)\$([^$\n]+?)\$(?!\$)", lambda m: take(m, False), md)
-
-    md = re.sub(r"\x00CODE(\d+)\x00", lambda m: code[int(m.group(1))], md)
-    return md, blocks
-
-
-def quarto_title(path):
-    m = re.search(r'^---\n(.*?)\n---\n', open(path, encoding="utf-8").read(), re.S)
-    if not m:
-        return None
-    t = re.search(r'^title:\s*"?(.+?)"?\s*$', m.group(1), re.M)
-    return t.group(1) if t else None
+    blocks, out, last = [], [], 0
+    for s in zdraft.spans(md):
+        if s.kind == "code":
+            continue
+        blocks.append((s.tex, s.kind == "display"))
+        out += [md[last:s.start], f"MATHSPLACEHOLDER{len(blocks)-1}ENDMATHS"]
+        last = s.end
+    return "".join(out) + md[last:], blocks
 
 
 def quarto_body(path):
@@ -195,7 +188,7 @@ def quarto_body(path):
     """
     import html as _html
     src = os.path.abspath(path)
-    proj = os.path.dirname(os.path.dirname(src))
+    proj = zdraft.project_of(src)       # the vault, however deep the draft sits
     rel = os.path.relpath(src, proj)
     r = subprocess.run(["quarto", "render", rel, "--to", "html"],
                        cwd=proj, capture_output=True, text=True)
@@ -300,27 +293,19 @@ def main():
                        "confluence-quarto" if a.via_quarto else "confluence-md"]).returncode:
         raise SystemExit(1)
 
+    md = open(a.file, encoding="utf-8").read()
+    fm, body_start = zdraft.frontmatter(md)
+    title = a.title or fm.get("title") or os.path.splitext(os.path.basename(a.file))[0]
+
     if a.via_quarto:
         body, n = quarto_body(a.file)
-        title = a.title or quarto_title(a.file) or \
-            os.path.splitext(os.path.basename(a.file))[0]
         print(f"{n} formula(e) rendered, citations resolved by Quarto")
         page_id, url = push(a, title, body, "storage")
         print(f"\n{url}")
         return
 
-    md = open(a.file, encoding="utf-8").read()
-
-    title = a.title
-    fm = re.match(r"^---\n(.*?)\n---\n", md, re.S)
-    if fm:
-        if not title:
-            t = re.search(r'^title:\s*"?(.+?)"?\s*$', fm.group(1), re.M)
-            if t:
-                title = t.group(1)
-        if not a.keep_frontmatter:
-            md = md[fm.end():]
-    title = title or os.path.splitext(os.path.basename(a.file))[0]
+    if not a.keep_frontmatter:
+        md = md[body_start:]
 
     md, blocks = extract_math(md)
     # After extract_math, so maths such as $[[n,k,d]]$ is never mistaken for a wikilink.

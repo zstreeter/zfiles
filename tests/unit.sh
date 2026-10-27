@@ -14,9 +14,11 @@ fails=0
 ok()  { :; }
 bad() { echo "unit: FAIL $*" >&2; fails=$((fails + 1)); }
 eq()  { [[ $2 == "$3" ]] && ok || bad "$1: expected [$3], got [$2]"; }
-# Run a repo script as if installed, in the sandbox home, off the WSL path.
-sbx() { env -i HOME="$T/home" PATH="$REPO/common/stow/scripts/.local/bin:/usr/bin:/bin" "$@"; }
-mkdir -p "$T/home"
+# Run a repo script as if installed, in the sandbox home, on a plain linux
+# target whatever this host is; `sbx env ZFILES_TARGET=wsl ...` steers it.
+sbx() { env -i HOME="$T/home" ZFILES_TARGET=linux PATH="$REPO/common/stow/scripts/.local/bin:/usr/bin:/bin" "$@"; }
+mkdir -p "$T/home/.config/shell"
+ln -s "$REPO/common/stow/shell/.config/shell/target.sh" "$T/home/.config/shell/target.sh"
 
 # --- obsidian-vault ----------------------------------------------------------
 V=$T/home/research/vault
@@ -26,9 +28,12 @@ touch "$V/drafts/2026/oct/post.md" "$T/loose/x.md"
 eq "vault of nested file" "$(sbx obsidian-vault of "$V/drafts/2026/oct/post.md")" "$V"
 eq "vault of vault dir"   "$(sbx obsidian-vault of "$V")" "$V"
 sbx obsidian-vault of "$T/loose/x.md" 2>/dev/null && bad "vault of a file outside any vault succeeded"
-# On WSL the default root is the Windows side (needs cmd.exe), so it is a non-WSL default.
-grep -qi microsoft /proc/version 2>/dev/null \
-    || eq "root default" "$(sbx obsidian-vault root)" "$T/home/research"
+eq "root default" "$(sbx obsidian-vault root)" "$T/home/research"
+# On WSL new vaults go to the Windows side; a cached %APPDATA% stands in for cmd.exe.
+W=$T/home/c/Users/u/AppData/Roaming; mkdir -p "$W" "$T/home/.cache/zfiles"
+echo "$W" > "$T/home/.cache/zfiles/appdata"
+eq "root on wsl" "$(sbx env ZFILES_TARGET=wsl obsidian-vault root)" "$T/home/c/Users/u/vaults"
+rm "$T/home/.cache/zfiles/appdata"
 eq "root override"  "$(sbx env ZFILES_VAULT_ROOT=/elsewhere obsidian-vault root)" "/elsewhere"
 eq "path finds the research vault" "$(sbx obsidian-vault path)" "$V"
 eq "path by name"   "$(sbx obsidian-vault path vault)" "$V"
@@ -69,10 +74,49 @@ printf -- '---\ntitle: R\ndate: 2026-01-03\n---\nsee ~/x\n' > "$V/drafts/leak.md
 sbx publish-post "$V/drafts/leak.md" >/dev/null 2>&1 && bad "publish-post published a local path"
 [[ -e $BLOG/posts/2026-01-03-leak ]] && bad "publish-post created a post dir before the lint gate"
 
+# --- zdraft: one reading of a draft for every publish script ----------------
+(cd common/stow/scripts/.local/lib && python3 -I -c 'import sys; sys.path.insert(0, ".")
+import zdraft; zdraft._selftest()') || bad "zdraft selftest"
+# Lint and publisher see the same maths: here neither does, so the gate must see [[Note]].
+printf '$x$$[[Note]]$\n' > "$L/adj.md"
+sbx publish-lint "$L/adj.md" --target confluence-md 2>/dev/null && bad "publish-lint masked maths publish-confluence publishes as text"
+PC=$REPO/wsl/stow/wsl/.local/bin/publish-confluence
+eq "confluence finds no maths in \$x\$\$[[Note]]\$" "$(python3 -I -c 'import sys, importlib.util as u, importlib.machinery as m
+pc = u.module_from_spec(u.spec_from_loader("pc", m.SourceFileLoader("pc", sys.argv[1]))); pc.__spec__.loader.exec_module(pc)
+print(pc.extract_math(open(sys.argv[2]).read())[1])' "$PC" "$L/adj.md")" "[]"
+# --via-quarto renders from the vault (the Quarto project), however deep the draft.
+QV=$T/qvault; mkdir -p "$QV/.obsidian" "$QV/drafts/2026/oct"; touch "$QV/_quarto.yml" "$QV/drafts/2026/oct/d.qmd"
+eq "confluence renders a nested draft from its vault" "$(python3 -I -c 'import sys, types, importlib.util as u, importlib.machinery as m
+pc = u.module_from_spec(u.spec_from_loader("pc", m.SourceFileLoader("pc", sys.argv[1]))); pc.__spec__.loader.exec_module(pc)
+def run(cmd, cwd=None, **kw):
+    print(cwd, cmd[2]); return types.SimpleNamespace(returncode=1, stdout="", stderr="")
+pc.subprocess = types.SimpleNamespace(run=run)
+try: pc.quarto_body(sys.argv[2])
+except SystemExit: pass' "$PC" "$QV/drafts/2026/oct/d.qmd")" "$QV drafts/2026/oct/d.qmd"
+# vault-doctor reads citekeys with the same grammar: Better BibTeX keys included.
+mkdir -p "$V/notes"; printf 'See [[@smith_2003]] and @doe.2020, not `@code`.\n' > "$V/notes/k.md"
+printf '@article{doe.2020,\n}\n' > "$V/refs.bib"
+out=$(sbx vault-doctor "$V" 2>&1)
+grep -q 'citekey @smith_2003 not in any .bib' <<<"$out" || bad "vault-doctor missed BBT key smith_2003"
+grep -q 'citekey @doe.2020 not' <<<"$out" && bad "vault-doctor missed doe.2020 in the .bib"
+grep -q '@code' <<<"$out" && bad "vault-doctor read a citekey inside code"
+rm -f "$V/notes/k.md" "$V/refs.bib"
+
 # --- paperctl ----------------------------------------------------------------
 (cd common/stow/paperctl/.local/lib && python3 -I -c 'import sys; sys.path.insert(0, ".")
-from paperctl import library, alphaxiv, resolve
-library._selftest(); alphaxiv.demo(); resolve._selftest()' >/dev/null) || bad "paperctl selftests"
+from paperctl import identity, sources, library, ingest, mail, alphaxiv, resolve
+identity._selftest(); sources._selftest(); library._selftest(); ingest._selftest(); mail._selftest(); alphaxiv.demo(); resolve._selftest()' >/dev/null) || bad "paperctl selftests"
+
+# A library written before citekeys were persisted: refs.bib showed the second key
+# suffixed, the index did not, and `remove` of the key you could see failed.
+P=$T/plib/F; mkdir -p "$P"
+printf '%s' '{"entries": [
+  {"ident": "10.1234/a", "doi": "10.1234/a", "citekey": "kTwi2020", "title": "Twin A", "added": "2020-01-01", "status": "link-only"},
+  {"ident": "10.1234/b", "doi": "10.1234/b", "citekey": "kTwi2020", "title": "Twin B", "added": "2020-01-02", "status": "link-only"}]}' > "$P/.paperctl.json"
+PC() { env -i HOME="$T/home" PATH=/usr/bin:/bin "$REPO/common/stow/paperctl/.local/bin/paperctl" --library "$T/plib" "$@"; }
+PC remove kTwi2020a --from F >/dev/null || bad "paperctl remove of a suffixed legacy citekey failed"
+eq "remove took the suffixed twin" "$(PC search Twin --json | python3 -c 'import json,sys; print(" ".join(e["title"] for e in json.load(sys.stdin)))')" "Twin A"
+grep -q '{kTwi2020,' "$P/refs.bib" || bad "refs.bib lost the remaining key"
 
 # --- lean-sandbox (check's verdict logic, against a fake lake) ---------------
 LS=$REPO/common/stow/lean/.local/bin/lean-sandbox
@@ -92,6 +136,31 @@ lchk "'t' depends on axioms: [propext,
   a_custom_axiom_on_a_wrapped_line]" && bad "lean check passed a custom axiom on a wrapped line"
 lchk "no axioms printed" && bad "lean check passed a file without #print axioms"
 eq "lean path override" "$(env -i HOME="$T/home" LEAN_SANDBOX=/x "$LS" path)" "/x"
+
+# --- target contract (bootstrap --plan: resolve, print, touch nothing) --------
+plan() { env -i HOME="$T/planhome" PATH=/usr/bin:/bin "$@" "$REPO/bootstrap.sh" --plan 2>&1; }
+for t in omarchy wsl linux remote; do
+    p=$(plan env ZFILES_TARGET=$t)
+    grep -qx "TARGET=$t" <<<"$p" || bad "plan $t: $p"
+    grep -qx "STOW=shell" <<<"$p" || bad "plan $t does not stow shell (bootstrap sources its target.sh)"
+    if [[ $t == omarchy ]]; then want=false; else want=true; fi
+    grep -qx "STATIC_THEME=$want" <<<"$p" || bad "plan $t: STATIC_THEME should be $want"
+    if [[ $t == remote ]]; then want=false; else want=true; fi
+    grep -qx "OWNS_HOME=$want" <<<"$p" || bad "plan $t: OWNS_HOME should be $want"
+done
+eq "remote stows exactly remote/stow.txt" \
+    "$(plan env ZFILES_TARGET=remote | sed -n 's/^STOW=//p' | sort | tr '\n' ' ')" \
+    "$(grep -v '^#' remote/stow.txt | grep -v '^$' | sort | tr '\n' ' ')"
+while read -r pkg; do
+    [[ -d common/stow/$pkg ]] || bad "remote/stow.txt names a package not in common/stow: $pkg"
+done < <(grep -v '^#' remote/stow.txt | grep -v '^$')
+grep -qx STOW=wsl <<<"$(plan env ZFILES_TARGET=wsl)" || bad "plan wsl does not stow wsl/stow"
+plan env ZFILES_TARGET=bogus >/dev/null && bad "plan accepted an unknown target"
+mkdir -p "$T/planhome/.local/state/zfiles" && touch "$T/planhome/.local/state/zfiles/remote"
+grep -qx TARGET=remote <<<"$(plan)" || bad "remote marker not honoured"
+rm -rf "$T/planhome"; plan >/dev/null; [[ -e $T/planhome ]] && bad "bootstrap --plan wrote to \$HOME"
+# Shared steps branch on the contract, never on which target they run for.
+grep -nE '\$(REMOTE|OMARCHY|WSL)\b|TARGET ?==' common/setup.sh && bad "common/setup.sh branches on the target"
 
 ((fails)) && { echo "unit: $fails failed" >&2; exit 1; }
 echo "unit: ok"

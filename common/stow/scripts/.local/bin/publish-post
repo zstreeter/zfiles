@@ -40,8 +40,13 @@ if [[ ! -d "$BLOG_DIR" ]]; then
     exit 1
 fi
 
+# Front matter is read by zdraft, the module every publish script shares.
+ZLIB="$(dirname "$(readlink -f "$0")")/../lib"
+field() { PYTHONPATH="$ZLIB" python3 -m zdraft field "$DRAFT" "$1"; }
+
 # The post's date is the draft's front-matter date when it has one, else today.
-DATE=$(awk 'NR==1 && !/^---$/{exit} NR>1 && /^---$/{exit} /^date:/{gsub(/[^0-9-]/,"",$2); print $2; exit}' "$DRAFT")
+DATE=$(field date) || true
+DATE=${DATE:0:10}
 [[ $DATE =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}$ ]] || DATE=$(date +%Y-%m-%d)
 POST="posts/${DATE}-${SLUG}"
 DEST_DIR="$BLOG_DIR/$POST"
@@ -66,8 +71,9 @@ shopt -u nullglob
 # Otherwise the post renders against whatever the blog configures (nothing),
 # and every citekey silently resolves to nothing -- Quarto does not fail on an
 # unresolved @key.
-# The vault is wherever .obsidian/ is above the draft, however deep it sits.
-VAULT_ROOT=$(obsidian-vault of "$DRAFT" 2>/dev/null) || VAULT_ROOT=$(cd "$DRAFT_DIR/.." && pwd)
+# The vault is wherever .obsidian/ is above the draft, however deep it sits; a
+# draft outside any vault takes the bibliographies beside it.
+VAULT_ROOT=$(obsidian-vault of "$DRAFT" 2>/dev/null) || VAULT_ROOT=$(cd "$DRAFT_DIR" && pwd)
 BIBS=()
 for b in references.bib library.bib; do
     if [[ -s "$VAULT_ROOT/$b" ]]; then
@@ -76,10 +82,10 @@ for b in references.bib library.bib; do
     fi
 done
 
-# Only inject when the draft has a front-matter block (line 1 is ---) that does
-# not already declare one; a `---` or `bibliography:` further down is prose.
-if [[ ${#BIBS[@]} -gt 0 && $(head -1 "$DEST_DIR/index.qmd") == '---' ]] \
-   && ! awk '/^---$/{n++; next} n==1 && /^bibliography:/{found=1} n>=2{exit} END{exit !found}' "$DEST_DIR/index.qmd"; then
+# Only inject when the draft has front matter that does not already declare one
+# (field exits 1 for "absent", 2 for "no front matter at all").
+rc=0; field bibliography >/dev/null || rc=$?
+if [[ ${#BIBS[@]} -gt 0 && $rc == 1 ]]; then
     LIST=$(IFS=,; echo "${BIBS[*]}")
     awk -v list="[$LIST]" 'NR>1 && /^---$/ && !done {print "bibliography: " list; done=1} {print}' \
         "$DEST_DIR/index.qmd" > "$DEST_DIR/index.qmd.tmp"

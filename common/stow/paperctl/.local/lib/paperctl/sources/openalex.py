@@ -11,9 +11,11 @@ import json
 import os
 import urllib.parse
 
+from .. import identity
 from ..record import Record, score_title
 
 API = "https://api.openalex.org/works"
+ANSWERS = ("doi",)
 
 
 def _abstract(inverted: dict | None) -> str:
@@ -36,13 +38,11 @@ def _parse(w: dict) -> Record | None:
     if not title:
         return None
     ids = w.get("ids") or {}
-    doi = (ids.get("doi") or "").replace("https://doi.org/", "").lower()
+    doi = identity.doi(ids.get("doi") or "")
     loc = w.get("best_oa_location") or w.get("primary_location") or {}
     source = loc.get("source") or {}
-    arxiv_id = ""
     landing = loc.get("landing_page_url") or ""
-    if "arxiv.org/abs/" in landing:
-        arxiv_id = landing.rsplit("/", 1)[-1]
+    arxiv_id = identity.arxiv_id(landing) if "arxiv.org/" in landing else ""
     return Record(
         title=title,
         authors=[(a.get("author") or {}).get("display_name", "")
@@ -95,10 +95,9 @@ def search(fetch, query: str, limit: int = 10) -> list[Record]:
 
 
 def fetch_one(fetch, ident: str) -> Record | None:
-    """Accepts a DOI, an OpenAlex id, or an arXiv id."""
-    from . import crossref
+    """Accepts a DOI or an OpenAlex work id (W...)."""
     key = ""
-    doi = crossref.doi_of(ident)
+    doi = identity.doi(ident)
     if doi:
         key = f"doi:{doi}"
     elif ident.strip().upper().startswith("W"):

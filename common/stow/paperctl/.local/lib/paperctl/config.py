@@ -57,11 +57,14 @@ DEFAULTS: dict[str, object] = {
 
 
 def detect_target() -> str:
-    """Which machine shape this is. Mirrors bootstrap.sh's target detection."""
+    """Which machine shape this is. Mirrors zfiles_target in shell/.config/shell/target.sh."""
     forced = os.environ.get("PAPERCTL_TARGET") or os.environ.get("ZFILES_TARGET")
     if forced:
         return forced.strip().lower()
     home = Path.home()
+    state = Path(os.environ.get("XDG_STATE_HOME") or home / ".local/state")
+    if (state / "zfiles/remote").exists():
+        return "remote"
     if Path("/usr/share/omarchy").is_dir() or (home / ".local/share/omarchy").is_dir():
         return "omarchy"
     try:

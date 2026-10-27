@@ -9,7 +9,9 @@
 set -uo pipefail
 
 die() { echo "obsidian-open: $*" >&2; exit 1; }
-is_wsl() { grep -qi microsoft /proc/version 2>/dev/null; }
+# shellcheck source=/dev/null
+. "${XDG_CONFIG_HOME:-$HOME/.config}/shell/target.sh" 2>/dev/null
+is_wsl() { [[ $(zfiles_target 2>/dev/null) == wsl ]]; }
 
 VAULT_ARG=""
 while [[ $# -gt 0 ]]; do
@@ -24,17 +26,11 @@ done
 
 TARGET=${1:-}
 
-if [[ -n $TARGET && -e $TARGET && -z $VAULT_ARG ]]; then
+if [[ -n $TARGET && -e $TARGET && -z $VAULT_ARG ]] \
+    && dir=$(obsidian-vault of "$TARGET" 2>/dev/null); then
     abs=$(cd "$(dirname "$TARGET")" && pwd)/$(basename "$TARGET")
-    dir=$(dirname "$abs")
-    while [[ $dir != / ]]; do
-        if [[ -d "$dir/.obsidian" ]]; then
-            VAULT_ARG=$dir
-            TARGET=${abs#"$dir"/}
-            break
-        fi
-        dir=$(dirname "$dir")
-    done
+    VAULT_ARG=$dir
+    TARGET=${abs#"$dir"/}
 fi
 
 VAULT_PATH=$(obsidian-vault path "$VAULT_ARG") || exit 1

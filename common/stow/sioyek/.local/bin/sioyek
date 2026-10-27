@@ -1,6 +1,8 @@
 #!/bin/bash
 
-if grep -qi microsoft /proc/version 2>/dev/null; then
+# shellcheck source=/dev/null
+. "${XDG_CONFIG_HOME:-$HOME/.config}/shell/target.sh" 2>/dev/null
+if [[ $(zfiles_target 2>/dev/null) == wsl ]]; then
     WINAPP="$HOME/.local/bin/winapp"
     [[ -x $WINAPP ]] || WINAPP=winapp
     exec "$WINAPP" sioyek.exe "$@"
