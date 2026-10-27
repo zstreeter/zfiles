@@ -243,6 +243,18 @@ fi
 
 PI_TEMPLATE="$PI_NEW_DIR/settings.example.json"
 PI_SETTINGS="$PI_NEW_DIR/settings.json"
+# Apply a jq edit to pi's settings.json atomically; rewrite only if the result differs.
+pi_settings_set() {
+    [[ -f "$PI_SETTINGS" ]] || return 0
+    local tmp
+    tmp=$(mktemp "$PI_SETTINGS.XXXXXX") || return 1
+    if jq "$@" <"$PI_SETTINGS" >"$tmp" && [[ -s "$tmp" ]]; then
+        cmp -s <(jq -S . "$PI_SETTINGS") <(jq -S . "$tmp") || { mv "$tmp" "$PI_SETTINGS"; info "Updated $PI_SETTINGS"; return 0; }
+    else
+        warn "pi settings edit failed: $*"
+    fi
+    rm -f "$tmp"
+}
 if command -v pi &>/dev/null && [[ -f "$PI_TEMPLATE" ]]; then
     info "Syncing pi packages from settings.example.json..."
     while IFS= read -r pkg; do
@@ -257,22 +269,28 @@ if command -v pi &>/dev/null && [[ -f "$PI_TEMPLATE" ]]; then
     done < <(jq -r '.packages[] | if type == "string" then . else .source end' "$PI_TEMPLATE")
     # pi install writes a bare entry; restore the template's filters (e.g. feynman loads nothing
     # globally) on every run, so machines that installed the package earlier get them too.
-    if [[ -f "$PI_SETTINGS" ]]; then
-        tmp=$(mktemp "$PI_SETTINGS.XXXXXX")
-        jq --slurpfile t "$PI_TEMPLATE" \
-            '($t[0].packages | map(select(type == "object")) | INDEX(.source)) as $o
-             | .packages |= map(if type == "string" and $o[.] then $o[.] else . end)' \
-            "$PI_SETTINGS" > "$tmp" && mv "$tmp" "$PI_SETTINGS" || rm -f "$tmp"
+    pi_settings_set --slurpfile t "$PI_TEMPLATE" \
+        '($t[0].packages | map(select(type == "object")) | INDEX(.source)) as $o
+         | .packages |= map(if type == "string" and $o[.] then $o[.] else . end)'
+
+    # a theme engine sets pi's theme from its own hook
+    if $STATIC_THEME; then
+        pi_settings_set --slurpfile t "$PI_TEMPLATE" 'if $t[0].theme then .theme = $t[0].theme else . end'
     fi
 
-    PI_THEME=""  # a theme engine sets pi's theme from its own hook
-    $STATIC_THEME && PI_THEME=$(jq -r '.theme // empty' "$PI_TEMPLATE")
-    if [[ -n "$PI_THEME" && -f "$PI_SETTINGS" ]] \
-        && [[ "$(jq -r '.theme // empty' "$PI_SETTINGS")" != "$PI_THEME" ]]; then
-        info "Setting pi theme: $PI_THEME"
-        tmp=$(mktemp "$PI_SETTINGS.XXXXXX")
-        jq --arg t "$PI_THEME" '.theme = $t' "$PI_SETTINGS" > "$tmp" && mv "$tmp" "$PI_SETTINGS"
-    fi
+    # Background subagents do not inherit package tools; without this the Feynman researcher and
+    # evidence-auditor fail with "requested unavailable child tools" (literature DB, web search).
+    PI_NM="$PI_NEW_DIR/npm/node_modules"
+    # pi-web-access's entry point moves between releases (dist/index.js, index.ts); ask its manifest
+    web_ext=$(jq -r '.pi.extensions[0] // empty' "$PI_NM/pi-web-access/package.json" 2>/dev/null)
+    child_exts=()
+    for e in "$PI_NM/@companion-ai/feynman/extensions/research-tools.ts" "$PI_NM/pi-web-access/${web_ext#./}"; do
+        if [[ -f "$e" ]]; then child_exts+=("$e"); else warn "pi subagents: $e missing (package layout changed?)"; fi
+    done
+    # union, not overwrite: keep any extensions added by hand
+    ((${#child_exts[@]})) && pi_settings_set \
+        '.subagents.defaultSubagentOnlyExtensions = ((.subagents.defaultSubagentOnlyExtensions // []) + $ARGS.positional | unique)' \
+        --args "${child_exts[@]}"
 fi
 
 AGENTPAL_REPO="${AGENTPAL_REPO:-$HOME/Documents/DevicePals/AgentPal}"
