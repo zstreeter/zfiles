@@ -8,28 +8,30 @@ info() { echo -e "\033[1;34m>>>\033[0m $1"; }
 warn() { echo -e "\033[1;33m!!!\033[0m $1"; }
 error() { echo -e "\033[1;31mERR\033[0m $1" >&2; exit 1; }
 
-REMOTE=false
-[[ "${ZFILES_TARGET:-}" == remote ]] && REMOTE=true
 for arg in "$@"; do
     case "$arg" in
-        --remote) REMOTE=true ;;
+        --remote) export ZFILES_TARGET=remote ;;
         *) echo "unknown argument: $arg" >&2; exit 2 ;;
     esac
 done
 
-OMARCHY=false
-if ! $REMOTE && [[ -d /usr/share/omarchy || -d "$HOME/.local/share/omarchy" ]]; then
-    OMARCHY=true
+# shellcheck source=common/stow/shell/.config/shell/target.sh
+source common/stow/shell/.config/shell/target.sh
+TARGET=$(zfiles_target)
+case $TARGET in
+    omarchy | wsl | linux | remote) ;;
+    *) error "unknown target '$TARGET' (ZFILES_TARGET): want omarchy, wsl, linux or remote" ;;
+esac
+REMOTE=false; [[ $TARGET == remote ]] && REMOTE=true
+OMARCHY=false; [[ $TARGET == omarchy ]] && OMARCHY=true
+
+# zfiles_target can't sniff a remote box; remember it for later shells and runs.
+REMOTE_MARKER="${XDG_STATE_HOME:-$HOME/.local/state}/zfiles/remote"
+if $REMOTE; then
+    mkdir -p "${REMOTE_MARKER%/*}" && touch "$REMOTE_MARKER"
+else
+    rm -f "$REMOTE_MARKER"
 fi
-
-WSL=false
-! $REMOTE && grep -qi microsoft /proc/version 2>/dev/null && WSL=true
-
-
-TARGET=linux
-$WSL && TARGET=wsl
-$OMARCHY && TARGET=omarchy
-$REMOTE && TARGET=remote
 
 install_mise_stack() {
     if ! command -v mise &>/dev/null && [[ ! -x "$HOME/.local/bin/mise" ]]; then

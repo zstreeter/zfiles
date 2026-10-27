@@ -11,7 +11,9 @@ set -uo pipefail
 
 die() { echo "obsidian-vault: $*" >&2; exit 1; }
 
-is_wsl() { grep -qi microsoft /proc/version 2>/dev/null; }
+# shellcheck source=/dev/null
+. "${XDG_CONFIG_HOME:-$HOME/.config}/shell/target.sh" 2>/dev/null
+is_wsl() { [[ $(zfiles_target 2>/dev/null) == wsl ]]; }
 
 win_appdata() {
     local cache="${XDG_CACHE_HOME:-$HOME/.cache}/zfiles/appdata"

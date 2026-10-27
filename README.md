@@ -65,16 +65,18 @@ upgrade does not dispatch the normal `post-update` hooks.
 
 ### Targets
 
-`bootstrap.sh` detects three environment facts, picks ONE target directory from
-them, and sources that directory's `setup.sh` (which defines
-`target_packages()` and `target_setup()` around the shared steps):
+`bootstrap.sh` asks `zfiles_target` (`common/stow/shell/.config/shell/target.sh`,
+the one detection every script shares) which target this is, and sources that
+directory's `setup.sh` (which defines `target_packages()` and `target_setup()`
+around the shared steps). `ZFILES_TARGET=<target>` overrides the detection:
 
 - **Remote** (`--remote` flag or `ZFILES_TARGET=remote`) — the only one that
-  can't be sniffed, so it's explicit. A work server you `ssh` into from a herdr
+  can't be sniffed, so it's explicit once; bootstrap then leaves
+  `~/.local/state/zfiles/remote` so later runs and scripts know. A work server you `ssh` into from a herdr
   pane. Installs **only** the bash prompt, yazi, and neovim, entirely under
   `$HOME`: **never sudo, never a package manager, never `chsh`**. See
   [Remote servers](#remote-servers) below.
-- **Omarchy** (`~/.config/omarchy/` or `~/.local/share/omarchy/` exists) —
+- **Omarchy** (`/usr/share/omarchy/` or `~/.local/share/omarchy/` exists) —
   full overlay: common + Hyprland bindings, keyd, theme hooks, himalaya/carillon,
   cura/wireplumber, and Docker socket activation.
 - **WSL** (`/proc/version` mentions Microsoft) — common packages via apt + mise
