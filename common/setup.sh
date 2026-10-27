@@ -273,6 +273,23 @@ if command -v pi &>/dev/null && [[ -f "$PI_TEMPLATE" ]]; then
         tmp=$(mktemp "$PI_SETTINGS.XXXXXX")
         jq --arg t "$PI_THEME" '.theme = $t' "$PI_SETTINGS" > "$tmp" && mv "$tmp" "$PI_SETTINGS"
     fi
+
+    # Background subagents do not inherit package tools; without this the Feynman researcher and
+    # evidence-auditor fail with "requested unavailable child tools" (literature DB, web search).
+    PI_NM="$PI_NEW_DIR/npm/node_modules"
+    child_exts=()
+    for e in "$PI_NM/@companion-ai/feynman/extensions/research-tools.ts" "$PI_NM/pi-web-access/dist/index.js"; do
+        [[ -f "$e" ]] && child_exts+=("$e")
+    done
+    if ((${#child_exts[@]})) && [[ -f "$PI_SETTINGS" ]]; then
+        want=$(printf '%s\n' "${child_exts[@]}" | jq -R . | jq -s -c .)
+        if [[ "$(jq -c '.subagents.defaultSubagentOnlyExtensions // []' "$PI_SETTINGS")" != "$want" ]]; then
+            info "Giving pi subagents the research + web tools"
+            tmp=$(mktemp "$PI_SETTINGS.XXXXXX")
+            jq --argjson e "$want" '.subagents.defaultSubagentOnlyExtensions = $e' "$PI_SETTINGS" > "$tmp" \
+                && mv "$tmp" "$PI_SETTINGS"
+        fi
+    fi
 fi
 
 AGENTPAL_REPO="${AGENTPAL_REPO:-$HOME/Documents/DevicePals/AgentPal}"
