@@ -15,6 +15,7 @@ from .. import identity
 from ..record import Record, score_title
 
 API = "https://api.crossref.org/works"
+ANSWERS = ("doi",)
 
 
 def _parse(msg: dict) -> Record | None:

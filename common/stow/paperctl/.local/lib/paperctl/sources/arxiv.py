@@ -15,6 +15,8 @@ from .. import identity
 from ..record import Record, score_title
 
 API = "http://export.arxiv.org/api/query"
+ANSWERS = ("arxiv",)
+PREPRINT = "arXiv preprint"   # the venue of a paper arXiv knows no journal for
 
 
 def _entries(xml: str) -> list[str]:
@@ -46,7 +48,7 @@ def _parse(body: str) -> Record | None:
         authors=[html.unescape(" ".join(a.split()))
                  for a in re.findall(r"<name>(.*?)</name>", body, re.S)],
         year=_tag(body, "published")[:4],
-        venue=_tag(body, "arxiv:journal_ref") or "arXiv preprint",
+        venue=_tag(body, "arxiv:journal_ref") or PREPRINT,
         doi=_tag(body, "arxiv:doi"),
         arxiv_id=aid,
         url=f"https://arxiv.org/abs/{aid}" if aid else "",

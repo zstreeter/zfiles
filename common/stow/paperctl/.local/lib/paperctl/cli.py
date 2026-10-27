@@ -83,7 +83,7 @@ def cmd_doctor(args, cfg) -> int:
     if not args.offline:
         for name in REGISTRY:
             mod = REGISTRY[name]
-            url = getattr(mod, "API", "")
+            url = mod.API
             check(f"source: {name}", fetch.reachable(url), url)
 
     check("alphaxiv", *alphaxiv.probe(cfg, None if args.offline else fetch))

@@ -148,7 +148,7 @@ again. Regenerate a vault's `library.bib` afterwards with `paperctl bib`.
 | `--dry-run` | show what would happen, write nothing |
 | `--library DIR` | redirect the library root for one run |
 | `--config FILE` | ignore the usual config and use this one |
-| `--source a,b` | restrict which metadata sources run |
+| `--source a,b` | restrict which metadata sources run -- for exact ids too: an arXiv id needs `arxiv`, a DOI `crossref` or `openalex` |
 
 ## Configuration
 

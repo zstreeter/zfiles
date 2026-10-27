@@ -15,6 +15,7 @@ from .. import identity
 from ..record import Record, score_title
 
 API = "https://api.openalex.org/works"
+ANSWERS = ("doi",)
 
 
 def _abstract(inverted: dict | None) -> str:
