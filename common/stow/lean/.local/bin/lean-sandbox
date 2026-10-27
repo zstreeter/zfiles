@@ -43,13 +43,23 @@ new_project() {
     fetch_and_build "$dir/$name"
 }
 
+# The math template turns on Mathlib's contribution style linters (module
+# doc-strings, line length): right for a project headed into Mathlib, noise on
+# every scratch file. The sandbox only; `new` projects keep them.
+quiet_sandbox_linters() {
+    [[ -f "$SANDBOX/lakefile.toml" ]] && sed -i '/^weak\.linter\.mathlibStandardSet/d' "$SANDBOX/lakefile.toml"
+    return 0
+}
+
 cmd_init() {
     if [[ -f "$SANDBOX/lakefile.toml" || -f "$SANDBOX/lakefile.lean" ]]; then
         echo "sandbox exists: $SANDBOX"
+        quiet_sandbox_linters
         fetch_and_build "$SANDBOX"
         return
     fi
     new_project "$(basename "$SANDBOX")" "$(dirname "$SANDBOX")"
+    quiet_sandbox_linters
     mkdir -p "$SANDBOX/Scratch"
     cat > "$SANDBOX/Scratch/Hello.lean" <<'EOF'
 import Mathlib
