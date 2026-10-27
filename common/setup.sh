@@ -282,11 +282,12 @@ if command -v pi &>/dev/null && [[ -f "$PI_TEMPLATE" ]]; then
         [[ -f "$e" ]] && child_exts+=("$e")
     done
     if ((${#child_exts[@]})) && [[ -f "$PI_SETTINGS" ]]; then
-        want=$(printf '%s\n' "${child_exts[@]}" | jq -R . | jq -s -c .)
-        if [[ "$(jq -c '.subagents.defaultSubagentOnlyExtensions // []' "$PI_SETTINGS")" != "$want" ]]; then
+        if ! jq -e '.subagents.defaultSubagentOnlyExtensions == $ARGS.positional' "$PI_SETTINGS" \
+            --args "${child_exts[@]}" >/dev/null; then
             info "Giving pi subagents the research + web tools"
             tmp=$(mktemp "$PI_SETTINGS.XXXXXX")
-            jq --argjson e "$want" '.subagents.defaultSubagentOnlyExtensions = $e' "$PI_SETTINGS" > "$tmp" \
+            jq '.subagents.defaultSubagentOnlyExtensions = $ARGS.positional' "$PI_SETTINGS" \
+                --args "${child_exts[@]}" > "$tmp" \
                 && mv "$tmp" "$PI_SETTINGS"
         fi
     fi
