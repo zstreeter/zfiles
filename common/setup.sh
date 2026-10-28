@@ -440,6 +440,34 @@ if $OWNS_HOME; then
     fi
 fi
 
+# Third-party skill repos: clone or fast-forward each, then link every skill dir into ~/.agents/skills,
+# where pi and opencode read it directly and agent-skills (below) links it into Claude Code and Codex.
+SKILL_REPO_DIR="${XDG_DATA_HOME:-$HOME/.local/share}/agent-skill-repos"
+SKILL_REPOS=(  # "<url> <subdir holding skill dirs>"
+    "https://github.com/mattpocock/skills skills"
+    "https://github.com/vshvedov/elephant-goldfish codex/skills"  # eg-* are portable SKILL.md skills
+)
+for entry in "${SKILL_REPOS[@]}"; do
+    read -r url sub <<<"$entry"
+    repo="$SKILL_REPO_DIR/$(basename "$(dirname "$url")")-$(basename "$url")"
+    if [[ -d "$repo/.git" ]]; then
+        git -C "$repo" pull -q --ff-only || warn "skill repo $repo: pull failed, keeping current checkout"
+    else
+        git clone -q --depth 1 "$url" "$repo" || { warn "skill repo $url: clone failed"; continue; }
+    fi
+    mkdir -p "$HOME/.agents/skills"
+    while IFS= read -r md; do
+        src=$(dirname "$md"); link="$HOME/.agents/skills/$(basename "$src")"
+        if [[ -L "$link" && "$(readlink "$link")" != "$SKILL_REPO_DIR"/* ]]; then
+            warn "skills: $link already links elsewhere ($(readlink "$link")), leaving it"; continue
+        elif [[ -e "$link" && ! -L "$link" ]]; then  # older hand-copied install: keep it, but out of the way
+            bak="$HOME/.agents/skills.bak-$(date +%F)"; mkdir -p "$bak"
+            mv "$link" "$bak/" && info "skills: moved old copy of $(basename "$src") to $bak"
+        fi
+        ln -sfn "$src" "$link"
+    done < <(find "$repo/$sub" -name SKILL.md -not -path '*/.git/*')
+done
+
 if command -v agent-skills &>/dev/null; then
     info "Linking agent skills..."
     agent-skills || warn "agent-skills failed; run it by hand to see why"
