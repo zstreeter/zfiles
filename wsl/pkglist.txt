@@ -37,3 +37,5 @@ latexmk
 pandoc
 poppler-utils
 ffmpeg
+# userspace OOM killer -- see target_packages in wsl/setup.sh
+earlyoom
