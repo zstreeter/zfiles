@@ -89,8 +89,16 @@ function Register-ZfilesLogonTask {
                                              -StartWhenAvailable `
                                              -ExecutionTimeLimit ([TimeSpan]::Zero)
 
-    Register-ScheduledTask -TaskName $Name -Action $action -Trigger $trigger `
-                           -Principal $principal -Settings $settings -Force | Out-Null
+    try {
+        Register-ScheduledTask -TaskName $Name -Action $action -Trigger $trigger `
+                               -Principal $principal -Settings $settings -Force | Out-Null
+    } catch [Microsoft.Management.Infrastructure.CimException] {
+        # A RunLevel Highest task can only be (re)written from an admin shell.
+        # If one is already registered, keep it and let the rest of setup run.
+        if (-not (Get-ScheduledTask -TaskName $Name -ErrorAction SilentlyContinue)) { throw }
+        Write-Warning "[zfiles] $Name not updated (needs an admin shell); keeping the existing task."
+        return
+    }
     Info "task       $Name registered (at logon)"
 }
 
@@ -131,37 +139,37 @@ function Copy-IfChanged {
 # Omarchy look. Auto-hide rather than removal -- the tray still matters, and
 # pushing the cursor to the bottom edge brings it back.
 #
-# THIS SECTION MUST STAY AHEAD OF EVERY SECTION THAT STARTS A PROCESS. It
-# restarts explorer, and explorer going down takes collateral with it:
-# AutoHotkey's low-level keyboard hook stops being called (the script keeps
-# running and logs nothing, so it looks fine while Caps does nothing), and
-# Zebar's window is destroyed while the process survives -- the bar flashes up
-# and vanishes. Both were observed on a real run with this block at the end,
-# and both cost an afternoon to attribute because neither process dies or logs.
-# Ordered first, the restart lands before anything is running to break.
+# Never restart explorer to apply this: explorer going down takes collateral --
+# AutoHotkey's low-level keyboard hook silently stops being called, and Zebar's
+# window is destroyed while the process survives. Both were observed when an
+# earlier version of this block restarted explorer.
 #
-# Bit 0 of byte 8 of StuckRects3\Settings is the auto-hide flag. Explorer reads
-# this blob once at startup and rewrites it at shutdown, so the change needs an
-# explorer restart to show up -- and has to be written while explorer is down,
-# or its own copy overwrites ours on the way out.
-$stuckRects = 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Explorer\StuckRects3'
-$settings = (Get-ItemProperty -LiteralPath $stuckRects -ErrorAction SilentlyContinue).Settings
+# Asked of the running explorer via SHAppBarMessage, not the StuckRects3
+# registry blob: explorer reads that blob only at startup and rewrites it on
+# shutdown, so the registry can say "auto-hide" while the live taskbar does not
+# (observed). ABM_SETSTATE applies immediately, persists, and needs no explorer
+# restart.
+if (-not ('ZfilesAppBar' -as [type])) {
+    Add-Type -Namespace '' -Name 'ZfilesAppBar' -MemberDefinition @'
+[StructLayout(LayoutKind.Sequential)] public struct APPBARDATA {
+    public int cbSize; public IntPtr hWnd; public uint uCallbackMessage; public uint uEdge;
+    public int left, top, right, bottom; public IntPtr lParam; }
+[DllImport("shell32.dll")] public static extern UIntPtr SHAppBarMessage(uint msg, ref APPBARDATA d);
+[DllImport("user32.dll")] public static extern IntPtr FindWindow(string c, string w);
+'@
+}
+$abd = New-Object ZfilesAppBar+APPBARDATA
+$abd.cbSize = [Runtime.InteropServices.Marshal]::SizeOf($abd)
+$abd.hWnd   = [ZfilesAppBar]::FindWindow('Shell_TrayWnd', $null)
+$ABM_GETSTATE = 4; $ABM_SETSTATE = 10; $ABS_AUTOHIDE = 1
 
-if (-not $settings) {
-    Write-Warning '[zfiles] StuckRects3\Settings not found - taskbar left as is.'
-} elseif ($settings[8] -band 0x01) {
+if ($abd.hWnd -eq [IntPtr]::Zero) {
+    Write-Warning '[zfiles] taskbar window not found - taskbar left as is.'
+} elseif ([uint64][ZfilesAppBar]::SHAppBarMessage($ABM_GETSTATE, [ref]$abd) -band $ABS_AUTOHIDE) {
     Info 'taskbar    already auto-hiding'
 } else {
-    $settings[8] = $settings[8] -bor 0x01
-    Stop-Process -Name explorer -Force -ErrorAction SilentlyContinue
-    Start-Sleep -Milliseconds 500
-    Set-ItemProperty -LiteralPath $stuckRects -Name Settings -Value $settings
-    # Explorer normally respawns on its own; start it if this shell's session
-    # is one where it doesn't.
-    Start-Sleep -Seconds 2
-    if (-not (Get-Process -Name 'explorer' -ErrorAction SilentlyContinue)) {
-        Start-Process 'explorer.exe'
-    }
+    $abd.lParam = [IntPtr]$ABS_AUTOHIDE
+    [void][ZfilesAppBar]::SHAppBarMessage($ABM_SETSTATE, [ref]$abd)
     Info 'taskbar    set to auto-hide'
 }
 
@@ -709,7 +717,45 @@ if (-not (Test-Path -LiteralPath $wslConfig)) {
     }
 }
 
+# --- WSL memory --------------------------------------------------------------
+# WSL's default is half the host RAM plus 4 GB swap. Lean servers plus several
+# agents exceeded that twice, and the OOM killer took systemd --user with it.
+# Raise both, but only where unset -- an explicit value is the user's choice.
+# Applied on the next `wsl --shutdown`.
+$hostGB = [math]::Floor((Get-CimInstance Win32_ComputerSystem).TotalPhysicalMemory / 1GB)
+$memDefaults = [ordered]@{
+    memory = "$([math]::Floor($hostGB * 2 / 3))GB"   # leave Windows a third
+    swap   = '16GB'
+}
+$lines = @(Get-Content -LiteralPath $wslConfig)
+$missing = @($memDefaults.Keys | Where-Object { -not ($lines -match "^\s*$_\s*=") })
+if ($missing) {
+    $add = $missing | ForEach-Object { "$_=$($memDefaults[$_])" }
+    # networkingMode handling above guarantees a [wsl2] header exists.
+    $out = foreach ($line in $lines) { $line; if ($line -match '^\s*\[wsl2\]\s*$') { $add } }
+    $out | Set-Content -LiteralPath $wslConfig -Encoding ASCII
+    Info "updated    $wslConfig ($($add -join ', '))"
+    Write-Warning '[zfiles] Run `wsl --shutdown` for the new memory limits to take effect.'
+} else {
+    Info 'unchanged  .wslconfig (memory, swap)'
+}
+
 # --- WezTerm -----------------------------------------------------------------
+# wezterm.lua's first font. Per-user font installs land in LocalAppData, so
+# check both that and the machine-wide folder.
+$fontDirs = @((Join-Path $env:LOCALAPPDATA 'Microsoft\Windows\Fonts'), (Join-Path $env:WINDIR 'Fonts'))
+if (Get-ChildItem -Path $fontDirs -Filter 'JetBrainsMonoNerdFont-*' -ErrorAction SilentlyContinue) {
+    Info 'font       JetBrainsMono Nerd Font already installed'
+} else {
+    Info 'font       fetching DEVCOM.JetBrainsMonoNerdFont via winget'
+    try {
+        winget install --id DEVCOM.JetBrainsMonoNerdFont --exact --silent `
+                       --accept-package-agreements --accept-source-agreements
+    } catch {
+        Write-Warning "[zfiles] winget install failed: $_"
+    }
+}
+
 # No restart needed: WezTerm watches its config file and reloads in place.
 Copy-IfChanged (Join-Path $WindowsDir 'wezterm\wezterm.lua') `
                (Join-Path $env:USERPROFILE '.wezterm.lua') | Out-Null
