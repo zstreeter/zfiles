@@ -86,6 +86,11 @@ if [[ ! -f "$SECRETS_FILE" ]]; then
 # alphaxiv.org -> Settings -> API Keys. arXiv, Crossref and OpenAlex need no
 # key at all, so paperctl's other sources have nothing to put here.
 # export ALPHAXIV_API_KEY=""
+
+# --- Streaming ---
+# Twitch stream key: dashboard.twitch.tv -> Settings -> Stream. bootstrap
+# writes it into OBS's Twitch profile, so a new machine streams without setup.
+# export TWITCH_STREAM_KEY=""
 SECRETS
     chmod 600 "$SECRETS_FILE"
     info "Created $SECRETS_FILE — add your API keys there."
@@ -500,5 +505,17 @@ if command -v obs &>/dev/null && [[ ! -d "$OBS_BASIC/profiles/Twitch" ]]; then
             > "$OBS_BASIC/profiles/Twitch/recordEncoder.json"
     fi
     info "OBS: choose Profile → Twitch and Scene Collection → zfiles once, pick the screen and camera
-      in the Screen/Camera sources, and paste your stream key in Settings → Stream."
+      in the Screen/Camera sources. Stream key: TWITCH_STREAM_KEY in $SECRETS_FILE."
 fi
+# Re-applied every run, so rotating the key in secrets.env is enough. Read in a
+# subshell: setup doesn't otherwise source secrets.env.
+TWITCH_KEY=$( [[ -f "$SECRETS_FILE" ]] && . "$SECRETS_FILE" >/dev/null 2>&1; printf %s "${TWITCH_STREAM_KEY:-}")
+OBS_SERVICE="$OBS_BASIC/profiles/Twitch/service.json"
+if [[ -n "$TWITCH_KEY" && -d "$OBS_BASIC/profiles/Twitch" ]]; then
+    want=$(jq -cn --arg k "$TWITCH_KEY" '{type: "rtmp_common", settings: {service: "Twitch", server: "auto", key: $k}}')
+    if [[ "$(jq -c . "$OBS_SERVICE" 2>/dev/null)" != "$want" ]]; then
+        (umask 077; printf '%s\n' "$want" > "$OBS_SERVICE")
+        info "OBS: Twitch stream key set from secrets.env"
+    fi
+fi
+unset TWITCH_KEY want
