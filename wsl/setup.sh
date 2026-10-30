@@ -15,6 +15,19 @@ target_packages() {
 
     install_herdr
 
+    # Without a userspace OOM killer, WSL thrashes swap until the kernel kills
+    # whatever it picks -- observed twice, taking out systemd --user (and with
+    # it herdr-navd's restart). earlyoom acts earlier and chooses: Lean servers
+    # and node (MCP/agents) first, never systemd/init/dbus/sshd. It fires only
+    # when RAM *and* swap are both low; -s 50 acts at ~8 of .wslconfig's 16 GB
+    # swap rather than letting it thrash through nearly all of it.
+    local eo='EARLYOOM_ARGS="-m 5 -s 50 -r 0 --prefer ^(lean|lake|node)$ --avoid ^(systemd|init|dbus-daemon|sshd)$"'
+    if ! grep -qxF "$eo" /etc/default/earlyoom 2>/dev/null; then
+        echo "$eo" | sudo tee /etc/default/earlyoom >/dev/null
+        sudo systemctl restart earlyoom
+    fi
+    sudo systemctl enable --now earlyoom
+
     command -v jupyter-lab &>/dev/null || pipx install jupyterlab
     command -v rga &>/dev/null || cargo install ripgrep_all
 

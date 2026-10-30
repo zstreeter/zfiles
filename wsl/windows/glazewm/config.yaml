@@ -56,17 +56,31 @@ window_behavior:
       maximized: false
       shown_on_top: false
 
+# Pinned, so where a workspace (and every app opened on it) appears is fixed
+# rather than wherever it was first created. Index = GlazeWM's monitor order
+# (`glazewm query monitors`); 0 is the primary on this machine. A missing
+# monitor index makes GlazeWM put the workspace on the remaining one.
 workspaces:
   - name: '1'
+    bind_to_monitor: 0
   - name: '2'
+    bind_to_monitor: 0
   - name: '3'
+    bind_to_monitor: 0
   - name: '4'
+    bind_to_monitor: 0
   - name: '5'
+    bind_to_monitor: 0
   - name: '6'
+    bind_to_monitor: 1
   - name: '7'
+    bind_to_monitor: 1
   - name: '8'
+    bind_to_monitor: 1
   - name: '9'
+    bind_to_monitor: 1
   - name: '0'
+    bind_to_monitor: 1
 
 window_rules:
   - commands: ['ignore']

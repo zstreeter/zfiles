@@ -231,18 +231,33 @@ AskNavd(path) {
         navdHttp.SetTimeouts(200, 200, 200, 400)
         navdHttp.Open("GET", NAVD_URL path, false)
         navdHttp.Send()
-        if (navdHttp.Status != 200)
+        if (navdHttp.Status != 200) {
+            NavdDown("HTTP " navdHttp.Status)
             return ""
+        }
         body := Trim(navdHttp.ResponseText, " `t`r`n")
         ; "none" also covers the case where only the daemon's GlazeWM hop is
         ; broken -- .wslconfig still on NAT, say -- while GlazeWM itself is
         ; perfectly reachable from this side. Falling through to the f14
         ; channel makes the outermost hop work either way.
         return body = "none" ? "" : body
-    } catch {
+    } catch as e {
         navdHttp := ""
+        NavdDown(e.Message)
         return ""
     }
+}
+
+; Never degrade silently: a dead navd once looked like random lag and apps on
+; the wrong monitor. Say so, at most once a minute so held keys don't spam.
+NavdDown(why) {
+    static last := 0
+    if (A_TickCount - last < 60000)
+        return
+    last := A_TickCount
+    TrayTip "Pane navigation and launch placement are off until it is back.`n"
+          . "In WSL: systemctl --user status herdr-navd`n(" Trim(why) ")"
+          , "herdr-navd unreachable", "Iconx"
 }
 
 ; Directional focus. Only the terminal has an inner layer worth asking, so
