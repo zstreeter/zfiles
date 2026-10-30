@@ -1,0 +1,10 @@
+#!/usr/bin/env bash
+# obs-ctl <obs-cmd args...> -- obs-cmd against the local OBS. The websocket
+# password is read from OBS's own config, so it lives nowhere else and never
+# appears on a command line (ps) -- only in obs-cmd's environment.
+#   obs-ctl scene switch Work | obs-ctl recording create-chapter Marker | obs-ctl info
+set -euo pipefail
+cfg=${XDG_CONFIG_HOME:-$HOME/.config}/obs-studio/plugin_config/obs-websocket/config.json
+[[ -r $cfg ]] || { echo "obs-ctl: no OBS websocket config; start OBS once, then re-run bootstrap" >&2; exit 1; }
+[[ $(jq -r .server_enabled "$cfg") == true ]] || { echo "obs-ctl: OBS websocket is off; re-run bootstrap, then restart OBS" >&2; exit 1; }
+OBS_WEBSOCKET_URL="obsws://127.0.0.1:$(jq -r .server_port "$cfg")/$(jq -r .server_password "$cfg")" exec obs-cmd "$@"

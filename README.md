@@ -17,6 +17,7 @@ This overlay extends Omarchy with:
 - **Theme integration** - Sioyek, Yazi, Neovim and opencode follow Omarchy's theme automatically
 - **Neovim** - Personal config synced with Omarchy themes
 - **Additional tools** - herdr, yazi, sioyek, cura
+- **Streaming** - OBS profile + scenes for Twitch, SUPER+CTRL+ALT keybinds (scenes, chapter marker, mic, hide a window from stream), and `stream-post`: recording → transcript → blog draft + YouTube upload, each published only after review. See the `stream-post` skill.
 
 ## Layout
 

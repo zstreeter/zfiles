@@ -43,3 +43,19 @@ unbind("SUPER + SHIFT + ALT + X") -- X Post
 
 o.bind("SUPER + R", "Toggle screen recording", "omarchy-capture-screenrecording")
 o.bind("SUPER + SHIFT + R", "Toggle screen recording (with mic)", "omarchy-capture-screenrecording --with-microphone-audio")
+
+-- Streaming (OBS via obs-ctl; see the stream-post skill). SUPER+CTRL+ALT is
+-- otherwise unused for these keys. Going live stays a click in OBS on purpose.
+local scenes = { "Starting Soon", "Work", "Talk", "Be Right Back", "Ending" }
+for i, scene in ipairs(scenes) do
+  o.bind("SUPER + CTRL + ALT + " .. i, "OBS scene: " .. scene, "obs-ctl scene switch '" .. scene .. "'")
+end
+o.bind("SUPER + CTRL + ALT + M", "OBS chapter marker",
+  "obs-ctl recording create-chapter Marker && notify-send -t 1500 'Chapter marked'")
+o.bind("SUPER + CTRL + ALT + U", "OBS mic mute toggle", "obs-ctl toggle-mute Mic/Aux")
+
+-- Hide the focused window from screen sharing (black box on stream and in
+-- recordings) -- for anything showing keys or tokens. Toggle again to show.
+o.window({ tag = "stream-private" }, { no_screen_share = true })
+o.bind("SUPER + CTRL + ALT + P", "Hide window from stream (toggle)",
+  hl.dsp.window.tag({ tag = "stream-private" }))

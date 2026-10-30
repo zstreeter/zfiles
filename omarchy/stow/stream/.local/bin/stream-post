@@ -1,0 +1,212 @@
+#!/usr/bin/env bash
+# stream-post -- a stream recording becomes a YouTube video and a blog post,
+# with the user checking each before it goes public.
+#
+#   stream-post prep    [recording]   transcribe, then an agent drafts the post + YouTube metadata
+#   stream-post publish [recording] [--video <url|id>]
+#                                     upload to YouTube as PRIVATE (or take a video
+#                                     uploaded by hand), embed it, stage the post in the blog
+#   stream-post live    [recording]   commit + push the staged post (the blog goes live)
+#   stream-post status                every recording and how far it got
+#
+# [recording] defaults to the newest in ~/Videos/stream. Each step skips what
+# is already done, so re-running after a failure or an edit is safe. Workflow
+# and drafting rules: the stream-post skill (~/.agents/skills/stream-post).
+set -euo pipefail
+
+REC_DIR=${STREAM_REC_DIR:-$HOME/Videos/stream}
+BLOG_DIR=$HOME/Documents/Repos/zstreeter.github.io
+MODEL=${STREAM_WHISPER_MODEL:-large-v3-turbo}
+MODEL_FILE=${XDG_DATA_HOME:-$HOME/.local/share}/whisper/ggml-$MODEL.bin
+AGENT=${STREAM_POST_AGENT:-claude}
+HERE=$(dirname "$(readlink -f "$0")")
+YOUTUBE=$HERE/../lib/stream-post/youtube.py
+SKILL=$HOME/.agents/skills/stream-post/SKILL.md
+
+die() { echo "stream-post: $*" >&2; exit 1; }
+say() { echo "==> $*"; }
+
+recording() {
+    local r
+    if [[ -n ${1:-} ]]; then
+        [[ -f $1 ]] || die "no such recording: $1"
+        readlink -f "$1"
+    else
+        r=$(ls -t "$REC_DIR"/*.mp4 2>/dev/null | head -1) || true
+        [[ -n $r ]] || die "no recordings in $REC_DIR"
+        printf '%s\n' "$r"
+    fi
+}
+
+drafts_dir() {
+    local vault
+    vault=$(obsidian-vault path 2>/dev/null) || die "no Obsidian vault found (open one, or set ZFILES_OBSIDIAN_VAULT)"
+    printf '%s/drafts\n' "$vault"
+}
+
+# The draft and session files the agent must have written.
+drafted() {
+    local d=$1
+    [[ -s $d/slug && -s $d/youtube.json && -f "$(drafts_dir)/$(<"$d/slug").qmd" ]]
+}
+
+hms() { printf '%02d:%02d:%02d' $(($1 / 3600)) $(($1 % 3600 / 60)) $(($1 % 60)); }
+
+transcribe() {
+    local rec=$1 d=$2
+    if [[ ! -f $MODEL_FILE ]]; then
+        say "fetching whisper model $MODEL (one time)"
+        mkdir -p "${MODEL_FILE%/*}"
+        curl -fL --progress-bar -o "$MODEL_FILE.part" \
+            "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-$MODEL.bin"
+        mv "$MODEL_FILE.part" "$MODEL_FILE"
+    fi
+    say "transcribing $(basename "$rec")"
+    ffmpeg -nostdin -loglevel error -y -i "$rec" -vn -ar 16000 -ac 1 -c:a pcm_s16le "$d/audio.wav"
+    whisper-cli -m "$MODEL_FILE" -f "$d/audio.wav" -l auto -otxt -osrt -of "$d/transcript" >"$d/whisper.log" 2>&1 \
+        || { rm -f "$d/audio.wav"; die "whisper-cli failed, see $d/whisper.log"; }
+    rm -f "$d/audio.wav"
+}
+
+# OBS chapter markers (SUPER+CTRL+ALT+M) live in the hybrid mp4's chapter list.
+markers() {
+    local rec=$1 d=$2
+    ffprobe -v error -show_chapters -of json "$rec" \
+        | jq -r '.chapters[] | "\(.start_time | tonumber | floor)\t\(.tags.title // "marker")"' \
+        | while IFS=$'\t' read -r s name; do printf '%s\t%s\n' "$(hms "$s")" "$name"; done >"$d/markers.txt"
+}
+
+draft() {
+    local d=$1 drafts prompt
+    drafts=$(drafts_dir)
+    mkdir -p "$drafts"
+    prompt="Follow the drafting section of the stream-post skill ($SKILL).
+Session directory: $d
+Vault drafts directory: $drafts
+Recording: $(basename "${d%.d}").mp4
+Write the draft, youtube.json and slug as the skill describes, then stop."
+    say "drafting with $AGENT"
+    case $AGENT in
+        claude)   claude -p --permission-mode acceptEdits --add-dir "$d" "$drafts" "$SKILL" -- "$prompt" ;;
+        pi)       pi -p "$prompt" ;;
+        codex)    codex exec -s workspace-write --add-dir "$d" --add-dir "$drafts" "$prompt" ;;
+        opencode) opencode run "$prompt" ;;
+        none)     printf '%s\n' "$prompt" >"$d/draft-prompt.txt"
+                  die "STREAM_POST_AGENT=none: draft by hand, prompt saved to $d/draft-prompt.txt" ;;
+        *)        die "unknown STREAM_POST_AGENT '$AGENT' (claude, pi, codex, opencode, none)" ;;
+    esac
+}
+
+cmd_prep() {
+    local rec d
+    rec=$(recording "${1:-}")
+    d=${rec%.*}.d
+    mkdir -p "$d"
+    [[ -s $d/transcript.txt ]] || transcribe "$rec" "$d"
+    markers "$rec" "$d"
+    if drafted "$d"; then
+        say "already drafted"
+    else
+        draft "$d"
+        drafted "$d" || die "the agent didn't write all of slug, youtube.json and the draft -- re-run, or finish by hand"
+    fi
+    uv run -q --script "$YOUTUBE" --check "$d/youtube.json"
+    cat <<EOF
+
+Review before anything is published:
+  post      $(drafts_dir)/$(<"$d/slug").qmd   (open in Obsidian, edit freely)
+  youtube   $d/youtube.json   (title, description, chapters, tags)
+Then: stream-post publish${1:+ "$1"}
+EOF
+}
+
+# Put the video at the top of the draft body, once.
+embed() {
+    local draft=$1 id=$2
+    grep -q "$id" "$draft" && return 0
+    awk -v line="{{< video https://www.youtube.com/watch?v=$id >}}" '
+        { print }
+        /^---[[:space:]]*$/ && ++fences == 2 { print ""; print line }
+    ' "$draft" >"$draft.tmp" && mv "$draft.tmp" "$draft"
+}
+
+cmd_publish() {
+    local rec="" video="" d draft slug id post
+    while (($#)); do
+        case $1 in
+            --video) video=${2:?--video needs a URL or id}; shift 2 ;;
+            *) rec=$1; shift ;;
+        esac
+    done
+    rec=$(recording "$rec")
+    d=${rec%.*}.d
+    drafted "$d" || die "not drafted yet: run stream-post prep first"
+    slug=$(<"$d/slug")
+    draft=$(drafts_dir)/$slug.qmd
+
+    if [[ -n $video ]]; then
+        [[ $video =~ ([A-Za-z0-9_-]{11})([^A-Za-z0-9_-]|$) ]] || die "no video id in '$video'"
+        printf '%s\n' "${BASH_REMATCH[1]}" >"$d/youtube-id"
+    elif [[ ! -s $d/youtube-id ]]; then
+        say "uploading to YouTube as private"
+        id=$(uv run -q --script "$YOUTUBE" "$rec" "$d/youtube.json" "$d/transcript.srt")
+        printf '%s\n' "$id" >"$d/youtube-id"
+    fi
+    id=$(<"$d/youtube-id")
+    embed "$draft" "$id"
+
+    post=$(ls -d "$BLOG_DIR"/posts/*-"$slug" 2>/dev/null | head -1) || true
+    if [[ -z $post ]]; then
+        publish-post "$draft" "$slug"
+        post=$(ls -d "$BLOG_DIR"/posts/*-"$slug" | head -1)
+    fi
+    printf '%s\n' "${post#"$BLOG_DIR"/}" >"$d/post"
+    cat <<EOF
+
+Staged, still private:
+  video     https://studio.youtube.com/video/$id/edit   (watch it, then set Visibility: Public)
+  post      $post   (preview: cd $BLOG_DIR && quarto preview)
+Go live:    stream-post live${rec:+ "$rec"}
+EOF
+}
+
+cmd_live() {
+    local rec d post
+    rec=$(recording "${1:-}")
+    d=${rec%.*}.d
+    [[ -s $d/post ]] || die "nothing staged: run stream-post publish first"
+    post=$(<"$d/post")
+    # The post, plus the Obsidian filter publish-post refreshes beside it.
+    # Path-limited, so anything else staged in the blog repo stays out of it.
+    local paths=("$post")
+    [[ -d $BLOG_DIR/_extensions ]] && paths+=(_extensions)
+    git -C "$BLOG_DIR" add -- "${paths[@]}"
+    git -C "$BLOG_DIR" diff --cached --quiet -- "${paths[@]}" && die "$post has no changes to commit (already live?)"
+    git -C "$BLOG_DIR" commit -q -m "post: $(basename "$post")" -- "${paths[@]}"
+    git -C "$BLOG_DIR" push -q
+    say "pushed $post -- the blog's GitHub Action publishes it in a minute or two"
+    say "the video is public only once you set it so in YouTube Studio"
+}
+
+cmd_status() {
+    local rec d state
+    shopt -s nullglob
+    for rec in "$REC_DIR"/*.mp4; do
+        d=${rec%.*}.d
+        if [[ -s $d/post ]] && git -C "$BLOG_DIR" ls-files --error-unmatch "$(<"$d/post")" &>/dev/null; then state=live
+        elif [[ -s $d/post ]]; then state="staged (review, then: stream-post live)"
+        elif [[ -d $d ]] && drafted "$d" 2>/dev/null; then state="drafted (review, then: stream-post publish)"
+        elif [[ -s $d/transcript.txt ]]; then state="transcribed"
+        else state="new (stream-post prep)"
+        fi
+        printf '%-26s %s\n' "$(basename "$rec" .mp4)" "$state"
+    done
+}
+
+case ${1:-} in
+    prep)    shift; cmd_prep "$@" ;;
+    publish) shift; cmd_publish "$@" ;;
+    live)    shift; cmd_live "$@" ;;
+    status)  shift; cmd_status ;;
+    *)       sed -n '2,/^set -e/{/^#/s/^# \{0,1\}//p}' "$0"; exit 1 ;;
+esac

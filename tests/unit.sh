@@ -159,6 +159,24 @@ eq "mcp re-run adds nothing" "$(grep -c ' mcp add' "$H/log")" 0
 rm "$H/pi" "$H/claude" "$H/codex"; lmcp && bad "lean-sandbox mcp succeeded with no harness installed"
 eq "lean path override" "$(env -i HOME="$T/home" LEAN_SANDBOX=/x "$LS" path)" "/x"
 
+# --- stream-post (status, publish --video, embed once; offline) --------------
+SP="$REPO/omarchy/stow/stream/.local/bin/stream-post"
+spx() { sbx env ZFILES_OBSIDIAN_VAULT="$V" STREAM_REC_DIR="$T/rec" "$SP" "$@"; }
+mkdir -p "$T/rec/s1.d" "$T/home/Documents/Repos/zstreeter.github.io/posts"
+touch "$T/rec/s1.mp4"
+eq "stream-post status, new" "$(spx status | tr -s ' ')" "s1 new (stream-post prep)"
+echo hi > "$T/rec/s1.d/transcript.txt"
+eq "stream-post status, transcribed" "$(spx status | tr -s ' ')" "s1 transcribed"
+echo pauli > "$T/rec/s1.d/slug"
+echo '{"title":"t","description":"d","tags":[]}' > "$T/rec/s1.d/youtube.json"
+printf -- '---\ntitle: "P"\ndate: 2026-10-29\n---\n\nBody.\n' > "$V/drafts/pauli.qmd"
+spx publish --video "https://www.youtube.com/watch?v=abcdefghijk&t=3" >/dev/null 2>&1 || bad "stream-post publish --video failed"
+eq "stream-post video id from URL" "$(cat "$T/rec/s1.d/youtube-id")" abcdefghijk
+spx publish --video abcdefghijk >/dev/null 2>&1 || bad "stream-post publish re-run failed"
+eq "stream-post embeds once" "$(grep -c 'video https://www.youtube.com/watch?v=abcdefghijk' "$V/drafts/pauli.qmd")" 1
+eq "stream-post staged post" "$(cat "$T/rec/s1.d/post")" "posts/2026-10-29-pauli"
+spx publish --video "not a video" >/dev/null 2>&1 && bad "stream-post accepted a URL with no video id"
+
 # --- target contract (bootstrap --plan: resolve, print, touch nothing) --------
 plan() { env -i HOME="$T/planhome" PATH=/usr/bin:/bin "$@" "$REPO/bootstrap.sh" --plan 2>&1; }
 for t in omarchy wsl linux remote; do

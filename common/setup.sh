@@ -519,3 +519,15 @@ if [[ -n "$TWITCH_KEY" && -d "$OBS_BASIC/profiles/Twitch" ]]; then
     fi
 fi
 unset TWITCH_KEY want
+
+# obs-ctl and its Hyprland keybinds drive OBS over obs-websocket: switch it on,
+# keeping OBS's own password if it made one. The firewall keeps 4455 local.
+OBS_WS="$HOME/.config/obs-studio/plugin_config/obs-websocket/config.json"
+if [[ -d "$OBS_BASIC/profiles/Twitch" && "$(jq -r .server_enabled "$OBS_WS" 2>/dev/null)" != true ]]; then
+    mkdir -p "${OBS_WS%/*}"
+    { cat "$OBS_WS" 2>/dev/null || echo '{}'; } | (umask 077; jq --arg p "$(openssl rand -hex 16)" \
+        '.server_enabled = true | .auth_required = true | .first_load = false | .server_port //= 4455
+         | .server_password |= (if (. // "") == "" then $p else . end)' > "$OBS_WS.tmp") \
+        && mv "$OBS_WS.tmp" "$OBS_WS"
+    info "OBS: websocket enabled for obs-ctl (takes effect next time OBS starts)"
+fi

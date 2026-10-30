@@ -28,3 +28,10 @@ texlive-bibtexextra
 ripgrep-all
 
 pass
+
+# streaming: transcription (whisper.cpp on the GPU via Vulkan; cuda would be 5 GB),
+# OBS keybinds, Twitch chat in a terminal -- see the stream-post skill
+whisper-cpp
+ggml-vulkan
+obs-cmd-bin
+twitch-tui
