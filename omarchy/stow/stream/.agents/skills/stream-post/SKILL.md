@@ -81,5 +81,17 @@ Write exactly these, and nothing else:
 - OAuth client: `~/.config/stream-post/client_secret.json` (Google Cloud,
   "Desktop app" client, YouTube Data API v3 enabled). The first upload opens a
   browser for consent; the token is cached in `~/.local/state/stream-post/`.
+  Set the OAuth consent screen to **In production** (no verification needed
+  for personal use; click through the "unverified app" warning once): in
+  "Testing" Google expires the token every 7 days. A dead token just re-opens
+  the browser.
+
+## While streaming
+
+- SUPER+CTRL+ALT: 1-5 scenes, M chapter marker, U mic mute, P hide the focused
+  window from the stream (`no_screen_share`; use it for anything showing keys).
+- The webcam is on whenever OBS is open -- the Linux camera source has no
+  "off when not shown" option. Close OBS to free it.
+- Twitch chat in a terminal: `twt` (twitch-tui; needs its own Twitch login).
 - The blog post comes out of the vault draft via `publish-post` (see the
   `quarto` skill), which runs publish-lint first.

@@ -46,6 +46,7 @@ def load_meta(path):
 
 
 def credentials():
+    from google.auth.exceptions import RefreshError
     from google.auth.transport.requests import Request
     from google.oauth2.credentials import Credentials
     from google_auth_oauthlib.flow import InstalledAppFlow
@@ -54,8 +55,11 @@ def credentials():
     if creds and creds.valid:
         return creds
     if creds and creds.expired and creds.refresh_token:
-        creds.refresh(Request())
-    else:
+        try:
+            creds.refresh(Request())
+        except RefreshError:  # revoked, or a "Testing" consent screen's 7-day expiry
+            creds = None
+    if not (creds and creds.valid):
         if not CLIENT_SECRET.exists():
             sys.exit(f"youtube.py: no OAuth client at {CLIENT_SECRET} -- see the stream-post skill")
         creds = InstalledAppFlow.from_client_secrets_file(CLIENT_SECRET, SCOPES).run_local_server(port=0)
@@ -79,11 +83,13 @@ def upload(video, meta_path, srt=None):
                              media_body=MediaFileUpload(video, chunksize=32 << 20, resumable=True))
     resp = None
     while resp is None:
-        status, resp = req.next_chunk()
+        # Retries 5xx/429/resets with backoff, resuming from the last confirmed byte.
+        status, resp = req.next_chunk(num_retries=8)
         if status:
             print(f"\ruploading {status.progress():.0%}", end="", file=sys.stderr, flush=True)
     print(file=sys.stderr)
     vid = resp["id"]
+    print(vid, flush=True)  # first, so the caller records it even if captions fail below
     print(f"uploaded {vid}, privacy: {resp['status']['privacyStatus']}", file=sys.stderr)
 
     if srt and Path(srt).exists():
@@ -95,7 +101,6 @@ def upload(video, meta_path, srt=None):
             ).execute()
         except Exception as e:  # noqa: BLE001
             print(f"youtube.py: captions not added ({e}); YouTube's auto-captions still apply", file=sys.stderr)
-    print(vid)
 
 
 if __name__ == "__main__":

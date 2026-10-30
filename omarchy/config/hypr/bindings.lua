@@ -52,7 +52,7 @@ for i, scene in ipairs(scenes) do
 end
 o.bind("SUPER + CTRL + ALT + M", "OBS chapter marker",
   "obs-ctl recording create-chapter Marker && notify-send -t 1500 'Chapter marked'")
-o.bind("SUPER + CTRL + ALT + U", "OBS mic mute toggle", "obs-ctl toggle-mute Mic/Aux")
+o.bind("SUPER + CTRL + ALT + U", "OBS mic mute toggle", "obs-ctl audio toggle Mic/Aux")
 
 -- Hide the focused window from screen sharing (black box on stream and in
 -- recordings) -- for anything showing keys or tokens. Toggle again to show.

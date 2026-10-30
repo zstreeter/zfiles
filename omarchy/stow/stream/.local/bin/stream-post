@@ -17,7 +17,9 @@ set -euo pipefail
 REC_DIR=${STREAM_REC_DIR:-$HOME/Videos/stream}
 BLOG_DIR=$HOME/Documents/Repos/zstreeter.github.io
 MODEL=${STREAM_WHISPER_MODEL:-large-v3-turbo}
-MODEL_FILE=${XDG_DATA_HOME:-$HOME/.local/share}/whisper/ggml-$MODEL.bin
+WHISPER_DIR=${XDG_DATA_HOME:-$HOME/.local/share}/whisper
+MODEL_FILE=$WHISPER_DIR/ggml-$MODEL.bin
+VAD_FILE=$WHISPER_DIR/ggml-silero-v6.2.0.bin
 AGENT=${STREAM_POST_AGENT:-claude}
 HERE=$(dirname "$(readlink -f "$0")")
 YOUTUBE=$HERE/../lib/stream-post/youtube.py
@@ -34,6 +36,8 @@ recording() {
     else
         r=$(ls -t "$REC_DIR"/*.mp4 2>/dev/null | head -1) || true
         [[ -n $r ]] || die "no recordings in $REC_DIR"
+        # OBS rewrites the newest file until the recording stops.
+        [[ -n $(find "$r" -mmin -1) ]] && die "$(basename "$r") changed in the last minute -- still recording? pass it explicitly to override"
         printf '%s\n' "$r"
     fi
 }
@@ -52,20 +56,50 @@ drafted() {
 
 hms() { printf '%02d:%02d:%02d' $(($1 / 3600)) $(($1 % 3600 / 60)) $(($1 % 60)); }
 
+fetch() {  # fetch <url> <file>, once
+    [[ -f $2 ]] && return 0
+    say "fetching $(basename "$2") (one time)"
+    mkdir -p "${2%/*}"
+    curl -fL $([[ -t 2 ]] && echo --progress-bar || echo -sS) -o "$2.part" "$1"
+    mv "$2.part" "$2"
+}
+
+# Keep only cues that are mostly speech by Silero's segments: overlap of at
+# least half the cue, capped at 1 s, so a short real "Yes." stays but a 30 s
+# cue whisper invented over silence or BRB music ("Thank you.") goes. Done here rather than whisper-cli
+# --vad because 1.9.5 maps --vad timestamps wrong and aborts on NVIDIA Vulkan.
+speech_only() {  # speech_only <segments.txt> <in.srt> -> filtered srt on stdout
+    gawk '
+        BEGINFILE { RS = ARGIND == 1 ? "\n" : "" }
+        ARGIND == 1 { if (match($0, /start = ([0-9.]+), end = ([0-9.]+)/, m)) { s[n] = m[1] / 100; e[n++] = m[2] / 100 } next }
+        function t(x, p) { split(x, p, /[:,]/); return p[1] * 3600 + p[2] * 60 + p[3] + p[4] / 1000 }
+        {
+            split($0, l, "\n"); split(l[2], ts, / --> /); a = t(ts[1]); b = t(ts[2]); o = 0
+            for (i = 0; i < n; i++) if (a < e[i] && b > s[i]) o += (b < e[i] ? b : e[i]) - (a > s[i] ? a : s[i])
+            need = (b - a) / 2; if (need > 1) need = 1
+            if (o > 0 && o >= need) { sub(/^[0-9]+\n/, ""); printf "%d\n%s\n\n", ++k, $0 }
+        }' "$1" "$2"
+}
+
 transcribe() {
     local rec=$1 d=$2
-    if [[ ! -f $MODEL_FILE ]]; then
-        say "fetching whisper model $MODEL (one time)"
-        mkdir -p "${MODEL_FILE%/*}"
-        curl -fL --progress-bar -o "$MODEL_FILE.part" \
-            "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-$MODEL.bin"
-        mv "$MODEL_FILE.part" "$MODEL_FILE"
-    fi
+    fetch "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-$MODEL.bin" "$MODEL_FILE"
+    fetch "https://huggingface.co/ggml-org/whisper-vad/resolve/main/ggml-silero-v6.2.0.bin" "$VAD_FILE"
     say "transcribing $(basename "$rec")"
     ffmpeg -nostdin -loglevel error -y -i "$rec" -vn -ar 16000 -ac 1 -c:a pcm_s16le "$d/audio.wav"
-    whisper-cli -m "$MODEL_FILE" -f "$d/audio.wav" -l auto -otxt -osrt -of "$d/transcript" >"$d/whisper.log" 2>&1 \
-        || { rm -f "$d/audio.wav"; die "whisper-cli failed, see $d/whisper.log"; }
-    rm -f "$d/audio.wav"
+    # ggml takes Vulkan device 0, the iGPU on a hybrid laptop (15x slower); NVIDIA's
+    # PRIME layer puts its GPU first, and is a no-op on machines without it.
+    # -l en: auto-detect reads the first 30 s, i.e. the "starting soon" silence.
+    if __NV_PRIME_RENDER_OFFLOAD=1 __VK_LAYER_NV_optimus=NVIDIA_only \
+        whisper-cli -m "$MODEL_FILE" -f "$d/audio.wav" -l en -osrt -of "$d/whisper" >"$d/whisper.log" 2>&1 \
+        && whisper-vad-speech-segments -vm "$VAD_FILE" -f "$d/audio.wav" >"$d/speech.txt" 2>>"$d/whisper.log"; then
+        speech_only "$d/speech.txt" "$d/whisper.srt" >"$d/transcript.srt"
+        gawk -v RS= '{ sub(/^[0-9]+\n[^\n]+\n/, ""); gsub(/\n/, " "); sub(/^ +/, ""); print }' "$d/transcript.srt" >"$d/transcript.txt"
+        rm -f "$d/audio.wav"
+    else
+        rm -f "$d/audio.wav"
+        die "transcription failed, see $d/whisper.log"
+    fi
 }
 
 # OBS chapter markers (SUPER+CTRL+ALT+M) live in the hybrid mp4's chapter list.
@@ -123,7 +157,7 @@ EOF
 # Put the video at the top of the draft body, once.
 embed() {
     local draft=$1 id=$2
-    grep -q "$id" "$draft" && return 0
+    grep -qF -- "$id" "$draft" && return 0
     awk -v line="{{< video https://www.youtube.com/watch?v=$id >}}" '
         { print }
         /^---[[:space:]]*$/ && ++fences == 2 { print ""; print line }
@@ -149,17 +183,21 @@ cmd_publish() {
         printf '%s\n' "${BASH_REMATCH[1]}" >"$d/youtube-id"
     elif [[ ! -s $d/youtube-id ]]; then
         say "uploading to YouTube as private"
-        id=$(uv run -q --script "$YOUTUBE" "$rec" "$d/youtube.json" "$d/transcript.srt")
-        printf '%s\n' "$id" >"$d/youtube-id"
+        # youtube.py prints the id the moment the upload lands, before captions,
+        # so a crash after that can't lead to a duplicate upload on re-run.
+        uv run -q --script "$YOUTUBE" "$rec" "$d/youtube.json" "$d/transcript.srt" >"$d/youtube-id" \
+            || { [[ -s $d/youtube-id ]] || rm -f "$d/youtube-id"; die "upload failed"; }
     fi
     id=$(<"$d/youtube-id")
     embed "$draft" "$id"
 
-    post=$(ls -d "$BLOG_DIR"/posts/*-"$slug" 2>/dev/null | head -1) || true
-    if [[ -z $post ]]; then
-        publish-post "$draft" "$slug"
-        post=$(ls -d "$BLOG_DIR"/posts/*-"$slug" | head -1)
-    fi
+    # publish-post names posts YYYY-MM-DD-<slug>; match exactly that, so slug
+    # "groups" can't pick up an existing "...-lie-groups".
+    local glob=("$BLOG_DIR"/posts/[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]-"$slug")
+    [[ -d ${glob[0]} ]] || publish-post "$draft" "$slug"
+    glob=("$BLOG_DIR"/posts/[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]-"$slug")
+    [[ -d ${glob[0]} ]] || die "publish-post didn't create posts/*-$slug"
+    post=${glob[0]}
     printf '%s\n' "${post#"$BLOG_DIR"/}" >"$d/post"
     cat <<EOF
 
@@ -181,8 +219,11 @@ cmd_live() {
     local paths=("$post")
     [[ -d $BLOG_DIR/_extensions ]] && paths+=(_extensions)
     git -C "$BLOG_DIR" add -- "${paths[@]}"
-    git -C "$BLOG_DIR" diff --cached --quiet -- "${paths[@]}" && die "$post has no changes to commit (already live?)"
-    git -C "$BLOG_DIR" commit -q -m "post: $(basename "$post")" -- "${paths[@]}"
+    if git -C "$BLOG_DIR" diff --cached --quiet -- "${paths[@]}"; then
+        say "nothing new to commit for $post; pushing in case an earlier push failed"
+    else
+        git -C "$BLOG_DIR" commit -q -m "post: $(basename "$post")" -- "${paths[@]}"
+    fi
     git -C "$BLOG_DIR" push -q
     say "pushed $post -- the blog's GitHub Action publishes it in a minute or two"
     say "the video is public only once you set it so in YouTube Studio"
@@ -193,7 +234,9 @@ cmd_status() {
     shopt -s nullglob
     for rec in "$REC_DIR"/*.mp4; do
         d=${rec%.*}.d
-        if [[ -s $d/post ]] && git -C "$BLOG_DIR" ls-files --error-unmatch "$(<"$d/post")" &>/dev/null; then state=live
+        if [[ -s $d/post ]] && git -C "$BLOG_DIR" cat-file -e "@{upstream}:$(<"$d/post")" 2>/dev/null; then state=live
+        elif [[ -s $d/post ]] && git -C "$BLOG_DIR" ls-files --error-unmatch "$(<"$d/post")" &>/dev/null; then
+            state="committed, not pushed (stream-post live)"
         elif [[ -s $d/post ]]; then state="staged (review, then: stream-post live)"
         elif [[ -d $d ]] && drafted "$d" 2>/dev/null; then state="drafted (review, then: stream-post publish)"
         elif [[ -s $d/transcript.txt ]]; then state="transcribed"

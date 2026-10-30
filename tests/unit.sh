@@ -161,21 +161,33 @@ eq "lean path override" "$(env -i HOME="$T/home" LEAN_SANDBOX=/x "$LS" path)" "/
 
 # --- stream-post (status, publish --video, embed once; offline) --------------
 SP="$REPO/omarchy/stow/stream/.local/bin/stream-post"
+BLOG="$T/home/Documents/Repos/zstreeter.github.io"
 spx() { sbx env ZFILES_OBSIDIAN_VAULT="$V" STREAM_REC_DIR="$T/rec" "$SP" "$@"; }
-mkdir -p "$T/rec/s1.d" "$T/home/Documents/Repos/zstreeter.github.io/posts"
-touch "$T/rec/s1.mp4"
+mkdir -p "$T/rec/s1.d" "$BLOG/posts/2025-03-01-lie-pauli"  # a different post whose name ends in the slug
+git -C "$BLOG" init -q
+touch -d '-5 min' "$T/rec/s1.mp4"
 eq "stream-post status, new" "$(spx status | tr -s ' ')" "s1 new (stream-post prep)"
 echo hi > "$T/rec/s1.d/transcript.txt"
 eq "stream-post status, transcribed" "$(spx status | tr -s ' ')" "s1 transcribed"
 echo pauli > "$T/rec/s1.d/slug"
 echo '{"title":"t","description":"d","tags":[]}' > "$T/rec/s1.d/youtube.json"
 printf -- '---\ntitle: "P"\ndate: 2026-10-29\n---\n\nBody.\n' > "$V/drafts/pauli.qmd"
-spx publish --video "https://www.youtube.com/watch?v=abcdefghijk&t=3" >/dev/null 2>&1 || bad "stream-post publish --video failed"
-eq "stream-post video id from URL" "$(cat "$T/rec/s1.d/youtube-id")" abcdefghijk
-spx publish --video abcdefghijk >/dev/null 2>&1 || bad "stream-post publish re-run failed"
-eq "stream-post embeds once" "$(grep -c 'video https://www.youtube.com/watch?v=abcdefghijk' "$V/drafts/pauli.qmd")" 1
-eq "stream-post staged post" "$(cat "$T/rec/s1.d/post")" "posts/2026-10-29-pauli"
+# An id may start with "-"; it must not be read as a grep option.
+spx publish --video "https://www.youtube.com/watch?v=-bcdefghijk&t=3" >/dev/null 2>&1 || bad "stream-post publish --video failed"
+eq "stream-post video id from URL" "$(cat "$T/rec/s1.d/youtube-id")" -bcdefghijk
+spx publish >/dev/null 2>&1 || bad "stream-post publish re-run failed"
+eq "stream-post embeds once" "$(grep -c 'video https://www.youtube.com/watch?v=-bcdefghijk' "$V/drafts/pauli.qmd")" 1
+eq "stream-post staged its own post, not lie-pauli" "$(cat "$T/rec/s1.d/post")" "posts/2026-10-29-pauli"
+git -C "$BLOG" add -A && git -C "$BLOG" -c user.name=t -c user.email=t@t commit -qm x
+eq "stream-post status, committed but no upstream" "$(spx status | tr -s ' ')" "s1 committed, not pushed (stream-post live)"
 spx publish --video "not a video" >/dev/null 2>&1 && bad "stream-post accepted a URL with no video id"
+# speech_only drops cues whisper invents over silence, keeps real ones (short too).
+source <(sed -n '/^speech_only() {/,/^}/p' "$SP")
+printf 'Speech segment 0: start = 100.00, end = 1100.00\nSpeech segment 1: start = 6000.00, end = 6060.00\n' > "$T/seg.txt"
+printf '1\n00:00:01,000 --> 00:00:11,000\n real\n\n2\n00:00:30,000 --> 00:00:59,900\n Thank you.\n\n3\n00:01:00,000 --> 00:01:00,700\n Yes.\n\n4\n00:02:31,020 --> 00:02:31,020\n Thank you.\n\n' > "$T/in.srt"
+eq "speech_only keeps speech, drops invented cues" "$(speech_only "$T/seg.txt" "$T/in.srt" | grep -v -- '-->' | grep '^ ' | tr -d ' ' | tr '\n' ,)" "real,Yes.,"
+touch "$T/rec/s2.mp4"
+spx status >/dev/null; spx prep >/dev/null 2>&1 && bad "stream-post prep took a recording still being written"
 
 # --- target contract (bootstrap --plan: resolve, print, touch nothing) --------
 plan() { env -i HOME="$T/planhome" PATH=/usr/bin:/bin "$@" "$REPO/bootstrap.sh" --plan 2>&1; }
