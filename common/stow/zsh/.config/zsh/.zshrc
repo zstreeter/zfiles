@@ -64,3 +64,11 @@ if [[ -n ${HERDR_PANE_ID:-} ]] && (( $+commands[herdr] )); then
     }
     add-zsh-hook precmd _herdr_report_directory
 fi
+
+# zfiles logo + system info, once per new terminal window -- not in subshells,
+# nvim :terminal or herdr panes. Omarchy's fastfetch config draws the logo from
+# branding/about.txt, which only the Omarchy target stows.
+if (( SHLVL == 1 )) && [[ -z ${NVIM:-}${HERDR_PANE_ID:-} ]] \
+   && [[ -r $HOME/.config/omarchy/branding/about.txt ]] && (( $+commands[fastfetch] )); then
+    fastfetch
+fi

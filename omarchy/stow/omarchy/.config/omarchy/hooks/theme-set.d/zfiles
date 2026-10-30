@@ -69,3 +69,23 @@ if [[ -f "$THEME_DIR/pi.json" && -d "$PI_AGENT_DIR" ]]; then
     fi
     echo "theme-set hook: Synced pi theme omarchy-system"
 fi
+
+# zfiles wallpaper, in this theme's colors. The SVG comes from
+# themed/zfiles-wallpaper.svg.tpl; omarchy-theme-set has already picked the
+# background by the time hooks run, so set it here when the PNG is new or
+# changed. "0-" sorts it ahead of the theme's own, so theme switches land on it
+# and `omarchy theme bg next` still cycles the rest.
+WALL_SVG="$THEME_DIR/zfiles-wallpaper.svg"
+WALL_DIR="$HOME/.config/omarchy/backgrounds/$THEME_NAME"
+WALL_PNG="$WALL_DIR/0-zfiles.png"
+if [[ -f "$WALL_SVG" ]] && command -v rsvg-convert >/dev/null; then
+    mkdir -p "$WALL_DIR"
+    rsvg-convert "$WALL_SVG" -o "$WALL_PNG.tmp.png"
+    if ! cmp -s "$WALL_PNG.tmp.png" "$WALL_PNG"; then
+        mv "$WALL_PNG.tmp.png" "$WALL_PNG"
+        omarchy-theme-bg-set "$WALL_PNG" >/dev/null 2>&1 || true
+        echo "theme-set hook: Rendered $WALL_PNG"
+    else
+        rm -f "$WALL_PNG.tmp.png"
+    fi
+fi
