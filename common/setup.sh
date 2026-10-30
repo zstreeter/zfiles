@@ -480,3 +480,25 @@ if [[ -d "$HOME/.agents/skills/measure" ]] && ! command -v measure &>/dev/null; 
     warn "measure skill is installed but 'measure' is not on PATH.
       Check that ~/.local/bin is in PATH and that the 'measure' package stowed."
 fi
+
+# OBS: seed the zfiles streaming profile + scenes once, on any machine with OBS.
+# Copied, not stowed -- OBS saves by write-and-rename, which would replace a
+# stow symlink with a plain file. Edit in OBS, then copy back to common/obs/.
+OBS_BASIC="$HOME/.config/obs-studio/basic"
+if command -v obs &>/dev/null && [[ ! -d "$OBS_BASIC/profiles/Twitch" ]]; then
+    info "Seeding OBS profile 'Twitch' and scene collection 'zfiles'..."
+    mkdir -p "$OBS_BASIC/profiles" "$OBS_BASIC/scenes" "$HOME/Videos/stream"
+    cp -r "$REPO_DIR/common/obs/profiles/Twitch" "$OBS_BASIC/profiles/"
+    [[ -e "$OBS_BASIC/scenes/zfiles.json" ]] || cp "$REPO_DIR/common/obs/scenes/zfiles.json" "$OBS_BASIC/scenes/"
+    sed -i "s|@HOME@|$HOME|g" "$OBS_BASIC/profiles/Twitch/basic.ini" "$OBS_BASIC/scenes/zfiles.json"
+    if ! command -v nvidia-smi &>/dev/null; then  # no NVENC: x264 on the CPU, same stream bitrate
+        sed -i 's/^Encoder=.*/Encoder=obs_x264/; s/^RecEncoder=.*/RecEncoder=obs_x264/' \
+            "$OBS_BASIC/profiles/Twitch/basic.ini"
+        echo '{"rate_control":"CBR","bitrate":6000,"keyint_sec":2,"preset":"veryfast"}' \
+            > "$OBS_BASIC/profiles/Twitch/streamEncoder.json"
+        echo '{"rate_control":"CRF","crf":20,"keyint_sec":2,"preset":"veryfast"}' \
+            > "$OBS_BASIC/profiles/Twitch/recordEncoder.json"
+    fi
+    info "OBS: choose Profile → Twitch and Scene Collection → zfiles once, pick the screen and camera
+      in the Screen/Camera sources, and paste your stream key in Settings → Stream."
+fi
