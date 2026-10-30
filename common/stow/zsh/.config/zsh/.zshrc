@@ -66,9 +66,9 @@ if [[ -n ${HERDR_PANE_ID:-} ]] && (( $+commands[herdr] )); then
 fi
 
 # zfiles logo + system info, once per new terminal window -- not in subshells,
-# nvim :terminal or herdr panes. Omarchy's fastfetch config draws the logo from
-# branding/about.txt, which only the Omarchy target stows.
-if (( SHLVL == 1 )) && [[ -z ${NVIM:-}${HERDR_PANE_ID:-} ]] \
-   && [[ -r $HOME/.config/omarchy/branding/about.txt ]] && (( $+commands[fastfetch] )); then
+# nvim :terminal or herdr panes. Only where zfiles gives fastfetch the logo:
+# Omarchy's config reads branding/about.txt, WSL's links to the same file.
+if (( SHLVL == 1 )) && [[ -z ${NVIM:-}${HERDR_PANE_ID:-} ]] && (( $+commands[fastfetch] )) \
+   && [[ -r $HOME/.config/omarchy/branding/about.txt || -r $HOME/.config/fastfetch/zfiles-logo.txt ]]; then
     fastfetch
 fi

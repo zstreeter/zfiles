@@ -1,0 +1,1 @@
+../../../../../omarchy/stow/omarchy/.config/omarchy/branding/about.txt

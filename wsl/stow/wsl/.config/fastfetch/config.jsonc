@@ -1,0 +1,11 @@
+// zfiles logo on WSL. Omarchy has its own fastfetch config (/etc/fastfetch)
+// drawing the same logo from branding/about.txt; zfiles-logo.txt links there.
+{
+  "$schema": "https://github.com/fastfetch-cli/fastfetch/raw/dev/doc/json_schema.json",
+  "logo": {
+    "type": "file",
+    "source": "~/.config/fastfetch/zfiles-logo.txt",
+    "color": { "1": "blue" },
+    "padding": { "top": 1, "right": 4, "left": 2 }
+  }
+}

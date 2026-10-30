@@ -11,7 +11,8 @@ target_packages() {
     command -v batcat &>/dev/null && ln -sf "$(command -v batcat)" "$HOME/.local/bin/bat"
 
     install_mise_stack go@latest rust@latest bun@latest node@lts \
-                       neovim@latest yazi@latest opencode@latest
+                       neovim@latest yazi@latest opencode@latest \
+                       fastfetch@latest
 
     install_herdr
 
