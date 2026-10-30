@@ -1,3 +1,5 @@
+<p align="center"><img src=".github/logo.svg" alt="zfiles logo" width="160"></p>
+
 # ZFiles
 
 Personal dotfiles. Primarily an overlay for
