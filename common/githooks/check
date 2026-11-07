@@ -31,6 +31,15 @@ while IFS= read -r f; do
     fi
 done < <(git ls-files)
 
+# shellcheck, on the scripts already held clean (add a path once it passes). A missing
+# shellcheck -- not installed, uvx offline with nothing cached -- skips, never blocks.
+if command -v shellcheck >/dev/null; then sc=(shellcheck)
+else sc=(uvx -q --offline --from shellcheck-py shellcheck); fi
+if "${sc[@]}" --version >/dev/null 2>&1; then
+    "${sc[@]}" -s bash common/stow/sandbox/.local/bin/* >&2 || bad "shellcheck: common/stow/sandbox/.local/bin"
+    "${sc[@]}" -s sh common/stow/sandbox/.local/share/agent-sandbox/agent-job >&2 || bad "shellcheck: agent-job"
+fi
+
 tests/unit.sh >/dev/null || bad "unit tests failed (run tests/unit.sh)"
 
 ((fail)) && exit 1

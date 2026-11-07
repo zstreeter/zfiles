@@ -1,0 +1,133 @@
+#!/bin/sh
+# agent-job -- durable jobs inside an agent sandbox. Each job is a tmux session on a
+# private socket, so it outlives the ssh connection that started it; its output and
+# exit code are kept under $AGENT_JOB_DIR/<id>/ because tmux keeps neither.
+# Staged read-only into the sandbox by agent-sandbox up; on PATH there.
+set -eu
+
+DIR=${AGENT_JOB_DIR:-$HOME/jobs}
+SELF=$(command -v "$0" 2>/dev/null || echo "$0")
+# The staged tmux sits beside us. Last on PATH, as the gate puts it, so every caller --
+# the gate, a docker exec from the host -- resolves the same tmux and finds the jobs.
+PATH="$PATH:$(dirname "$SELF")"
+tm() { tmux -L agent-jobs "$@"; }
+
+die() { echo "agent-job: $*" >&2; exit 1; }
+
+usage() {
+    cat <<EOF
+usage: agent-job <command>
+  start [--name ID] COMMAND...   run COMMAND (one shell string, like ssh) in a detached
+                                 job from the current directory; prints its ID
+  status ID                      running | exited N | killed | lost
+  wait ID                        block until ID ends; exit with its exit code
+  logs ID [-f]                   its output; -f follows until it ends
+  ls                             every job and its status
+  running                        IDs of running jobs only
+  kill ID                        stop it
+  attach ID                      attach your terminal (ssh -t); detach with C-b d
+A dropped connection never stops a job: reconnect and use its ID. Jobs end when the
+sandbox is recreated (ssh-sandbox up), and then read 'lost'.
+EOF
+}
+
+id_ok() { case $1 in "" | -* | *[!A-Za-z0-9_.-]*) die "bad job id: $1" ;; esac; }
+job_dir() { id_ok "$1"; [ -d "$DIR/$1" ] || die "no job $1 (agent-job ls)"; echo "$DIR/$1"; }
+alive() { tm has-session -t "=$1" 2>/dev/null; }
+
+status_of() {
+    if alive "$1"; then echo running
+    elif [ -f "$DIR/$1/exit" ]; then
+        rc=$(cat "$DIR/$1/exit")
+        case $rc in killed) echo killed ;; *) echo "exited $rc" ;; esac
+    else echo lost
+    fi
+}
+
+cmd_start() {
+    id=""
+    if [ "${1-}" = --name ]; then [ $# -ge 2 ] || die "--name needs a value"; id=$2; shift 2; fi
+    [ "${1-}" = -- ] && shift
+    [ $# -gt 0 ] || die "nothing to run"
+    [ -n "$id" ] || id=j$(date +%Y%m%d-%H%M%S)-$$
+    id_ok "$id"
+    alive "$id" && die "job $id is already running"
+    d=$DIR/$id
+    rm -rf "$d"; mkdir -p "$d"
+    printf '%s\n' "$*" >"$d/cmd"
+    pwd >"$d/cwd"
+    date -u +%Y-%m-%dT%H:%M:%SZ >"$d/started"
+    tm new-session -d -s "$id" -x 200 -y 50 "exec '$SELF' _run '$d'"
+    echo "$id"
+}
+
+# The job itself, inside tmux: output to the pane and to the log; the exit code to a file.
+cmd_run() {
+    d=$1
+    cd "$(cat "$d/cwd")"
+    sh_="sh"; command -v bash >/dev/null 2>&1 && sh_=bash
+    # rc by hand: under set -e a failing job would end this group before its code is saved.
+    { rc=0; "$sh_" -lc "$(cat "$d/cmd")" </dev/null || rc=$?; echo "$rc" >"$d/exit.tmp"; } 2>&1 | tee -a "$d/log"
+    [ -f "$d/exit.tmp" ] && mv -f "$d/exit.tmp" "$d/exit"
+}
+
+cmd_logs() {
+    d=$(job_dir "$1")
+    touch "$d/log"
+    if [ "${2-}" = -f ]; then
+        tail -n +1 -f "$d/log" &
+        t=$!
+        while alive "$1"; do sleep 2; done
+        sleep 1; kill "$t" 2>/dev/null || true
+    else
+        cat "$d/log"
+    fi
+}
+
+cmd_wait() {
+    job_dir "$1" >/dev/null
+    while alive "$1"; do sleep 5; done
+    s=$(status_of "$1"); echo "$1: $s" >&2
+    case $s in "exited "*) exit "${s#exited }" ;; *) exit 1 ;; esac
+}
+
+cmd_kill() {
+    d=$(job_dir "$1")
+    alive "$1" || { echo "agent-job: $1 is not running ($(status_of "$1"))" >&2; return 0; }
+    tm kill-session -t "=$1"
+    [ -f "$d/exit" ] || echo killed >"$d/exit"
+    echo "agent-job: killed $1"
+}
+
+cmd_ls() {
+    [ -d "$DIR" ] || return 0
+    for d in "$DIR"/*/; do
+        [ -f "$d/cmd" ] || continue
+        id=$(basename "$d")
+        printf '%-28s %-12s %s  %s\n' "$id" "$(status_of "$id")" "$(cat "$d/started" 2>/dev/null)" "$(head -c 60 "$d/cmd")"
+    done
+}
+
+cmd_running() {
+    [ -d "$DIR" ] || return 0
+    for d in "$DIR"/*/; do
+        [ -f "$d/cmd" ] || continue
+        id=$(basename "$d"); alive "$id" && echo "$id"
+    done
+    return 0
+}
+
+sub=${1-}; [ $# -gt 0 ] && shift
+case $sub in
+    start) cmd_start "$@" ;;
+    _run) cmd_run "$1" ;;
+    status) [ $# -eq 1 ] || die "usage: agent-job status ID"; job_dir "$1" >/dev/null; status_of "$1" ;;
+    wait) [ $# -eq 1 ] || die "usage: agent-job wait ID"; cmd_wait "$1" ;;
+    logs) [ $# -ge 1 ] || die "usage: agent-job logs ID [-f]"; cmd_logs "$@" ;;
+    kill) [ $# -eq 1 ] || die "usage: agent-job kill ID"; cmd_kill "$1" ;;
+    attach) [ $# -eq 1 ] || die "usage: agent-job attach ID"; job_dir "$1" >/dev/null; exec tmux -L agent-jobs attach -t "=$1" ;;
+    ls) cmd_ls ;;
+    running) cmd_running ;;
+    -h | --help | help) usage ;;
+    *) usage >&2; exit 2 ;;
+esac

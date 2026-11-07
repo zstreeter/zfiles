@@ -1,0 +1,114 @@
+#!/usr/bin/env bash
+# agent-jail -- run an agent (or any command) with your credentials out of reach:
+#   agent-jail pi [args...]
+# The agent sees your filesystem, but ~/.ssh shows only the sandbox key and ssh
+# config, token stores and browser profiles are empty, and your session's sockets
+# (ssh/gpg agents, D-Bus, systemd --user, Wayland, tmux in /tmp) are gone: any of
+# them would run a command outside the jail. Home is read-only except the current
+# directory and paths listed in ~/.config/agent-jail/rw (the agent's own state):
+# a write to ~/.zshrc or ~/.config/systemd would run unjailed later. In a git repo,
+# .git/config and .git/hooks stay read-only for the same reason. The command runs
+# only after a check inside the jail proves all of this.
+# Not covered: the network (still open, abstract sockets included), and secrets
+# stored anywhere unlisted -- add them, one path per line, to ~/.config/agent-jail/hide.
+set -euo pipefail
+
+die() { echo "agent-jail: $*" >&2; exit 1; }
+(($#)) || die "usage: agent-jail COMMAND [ARGS...]"
+command -v bwrap >/dev/null || die "needs bubblewrap (bwrap)"
+[[ -z ${AGENT_JAIL-} ]] || die "already inside a jail"
+
+# What the agent may see in ~/.ssh: the sandbox key and the config that names it.
+KEEP=(agent_sandbox agent_sandbox.pub config config.d known_hosts)
+# Credential stores to empty (globs allowed). Directories become empty tmpfs, files
+# read as /dev/null.
+HIDE=(
+    .gnupg .aws .azure .kube .docker .netrc .git-credentials .pki
+    '.config/gh*' .config/gcloud .config/hub
+    .config/shell/secrets.env .local/share/keyrings .password-store
+    .mozilla .config/chromium '.config/google-chrome*' .config/BraveSoftware '.config/microsoft-edge*' .config/vivaldi
+)
+# Paths under home the agent may write, besides the current directory.
+RW=()
+conf=${XDG_CONFIG_HOME:-$HOME/.config}/agent-jail
+for list in hide rw; do
+    [[ -f $conf/$list ]] || continue
+    while IFS= read -r p; do
+        [[ $p =~ ^[[:space:]]*(#|$) ]] && continue
+        if [[ $list == hide ]]; then HIDE+=("${p#"$HOME"/}"); else RW+=("$p"); fi
+    done <"$conf/$list"
+done
+
+home=$(realpath -e -- "$HOME")
+runtime=${XDG_RUNTIME_DIR:-/run/user/$(id -u)}
+# Order matters: later mounts cover earlier ones, so hidden paths win over writable ones.
+args=(--dev-bind / / --new-session --die-with-parent
+    --unsetenv SSH_AUTH_SOCK --unsetenv GPG_AGENT_INFO --unsetenv DBUS_SESSION_BUS_ADDRESS
+    --unsetenv WAYLAND_DISPLAY --unsetenv DISPLAY --unsetenv TMUX
+    --unsetenv GH_TOKEN --unsetenv GITHUB_TOKEN --unsetenv GH_CONFIG_DIR
+    --setenv AGENT_JAIL 1
+    --tmpfs /tmp --ro-bind "$HOME" "$HOME")
+for p in "$PWD" "${RW[@]}"; do
+    [[ $p == /* ]] || p=$HOME/$p
+    r=$(realpath -e -- "$p" 2>/dev/null) || { echo "agent-jail: skipping missing writable path $p" >&2; continue; }
+    [[ $home == "$r" || $home == "$r"/* ]] && die "refusing to make $r writable: it holds your whole home (cd into a project)"
+    args+=(--bind "$r" "$r")
+done
+# git runs .git/hooks and commands named in .git/config (core.fsmonitor, aliases).
+if gd=$(git rev-parse --absolute-git-dir 2>/dev/null) && cd_=$(git rev-parse --path-format=absolute --git-common-dir 2>/dev/null); then
+    for p in "$gd"/config "$gd"/hooks "$cd_"/config "$cd_"/hooks; do
+        [[ -e $p ]] && args+=(--ro-bind "$p" "$p")
+    done
+fi
+# Root is unmapped in the jail's user namespace, so root-owned files read as owned by
+# nobody, and ssh refuses such drop-ins ("Bad owner or permissions"): give it copies
+# the jail's user owns.
+if [[ -d /etc/ssh/ssh_config.d ]]; then
+    args+=(--tmpfs /etc/ssh/ssh_config.d)
+    for f in /etc/ssh/ssh_config.d/*.conf; do
+        [[ -r $f ]] || continue
+        exec {fd}<"$f"
+        args+=(--perms 0644 --file "$fd" "$f")
+    done
+fi
+if [[ -d $HOME/.ssh ]]; then # home is read-only now: no mountpoint can be made for a missing one
+    args+=(--tmpfs "$HOME/.ssh")
+    for f in "${KEEP[@]}"; do
+        [[ -e $HOME/.ssh/$f ]] && args+=(--ro-bind "$HOME/.ssh/$f" "$HOME/.ssh/$f")
+    done
+fi
+hidden=()
+shopt -s nullglob
+for pat in "${HIDE[@]}"; do
+  for p in "$HOME"/$pat; do # unquoted: built-in entries may be globs
+    [[ -e $p ]] || continue
+    if [[ -d $p ]]; then args+=(--tmpfs "$p"); else args+=(--ro-bind /dev/null "$p"); fi
+    hidden+=("$p")
+  done
+done
+shopt -u nullglob
+# The session's sockets: hidden even if the agent finds the paths some other way than the env.
+[[ -d $runtime ]] && { args+=(--tmpfs "$runtime"); hidden+=("$runtime"); }
+s=${SSH_AUTH_SOCK-}
+if [[ -n $s && -e $s && $s != "$HOME/.ssh/"* && $s != /tmp/* && $s != "$runtime"/* ]]; then
+    if [[ -d $s ]]; then args+=(--tmpfs "$s"); else args+=(--ro-bind /dev/null "$s"); fi
+fi
+
+# The check runs inside the jail, before the command: a private key in ~/.ssh or any
+# hidden file with content means the jail did not take, and nothing runs.
+# shellcheck disable=SC2016 # runs in the jail's sh, with its own $HOME and "$@"
+check='
+for k in "$HOME"/.ssh/*; do
+    case ${k##*/} in agent_sandbox|agent_sandbox.pub|config|config.d|known_hosts|"*") ;;
+        *) echo "agent-jail: $k is visible" >&2; exit 97 ;; esac
+done
+for p in "$@"; do
+    [ "$p" = -- ] && break
+    if [ -d "$p" ]; then [ -z "$(ls -A "$p" 2>/dev/null)" ] || { echo "agent-jail: $p is not empty" >&2; exit 97; }
+    elif [ -s "$p" ]; then echo "agent-jail: $p is readable" >&2; exit 97; fi
+done
+[ -z "${SSH_AUTH_SOCK-}${DBUS_SESSION_BUS_ADDRESS-}" ] || { echo "agent-jail: an agent or bus address is set" >&2; exit 97; }
+if (: >"$HOME/.agent-jail-probe") 2>/dev/null; then rm -f "$HOME/.agent-jail-probe"; echo "agent-jail: home is writable" >&2; exit 97; fi
+while [ "$1" != -- ]; do shift; done; shift
+exec "$@"'
+exec bwrap "${args[@]}" sh -c "$check" agent-jail "${hidden[@]}" -- "$@"
