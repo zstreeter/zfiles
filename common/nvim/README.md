@@ -6,10 +6,9 @@ diverged substantially since.
 
 ## Install
 
-```sh
-git clone <this-repo> ~/.config/nvim
-nvim   # lazy.nvim bootstraps and installs plugins on first run
-```
+Part of zfiles: `bootstrap.sh` links `~/.config/nvim` to this directory on every
+target. By hand: `ln -sn ~/path/to/zfiles/common/nvim ~/.config/nvim`, then `nvim`
+(lazy.nvim bootstraps and installs plugins on first run).
 
 On Omarchy Quattro, the zfiles bootstrap links `lua/plugins/theme.lua` to the
 active generated theme. Elsewhere this config uses Catppuccin as its fallback.

@@ -28,7 +28,8 @@ and its setup steps; `common/` is shared by all of them.
 zfiles/
 ├── bootstrap.sh          # thin dispatcher: facts → packages → stow → setup
 ├── common/               # every machine
-│   ├── setup.sh          # gpg, zsh/zap, bash hook, ble.sh, nvim, pi…
+│   ├── setup.sh          # gpg, zsh/zap, bash hook, ble.sh, nvim link, pi…
+│   ├── nvim/             # the neovim config (~/.config/nvim links here)
 │   └── stow/             # shell zsh bash yazi herdr opencode pi lean paperctl … sioyek xdg
 ├── omarchy/              # Arch + Omarchy desktop (Hyprland)
 │   ├── setup.sh          # pacman/AUR, keyd, email tools, Quattro reconciliation
@@ -149,7 +150,7 @@ What it does:
    - appends a guarded hook to `~/.bashrc` (never replaces it),
    - installs `neovim yazi fd ripgrep fzf zoxide bat eza` via **mise** into
      `~/.local` — no root, nothing touched outside `$HOME`,
-   - stows `shell bash yazi`, clones the neovim config, installs yazi plugins
+   - stows `shell bash yazi`, links the neovim config, installs yazi plugins
      and the Catppuccin Mocha flavor.
 
 Nothing herdr-related ships to the server; herdr stays local and the server is
@@ -566,7 +567,12 @@ the Himalaya accounts and sends new-mail events to it through `notify-send`.
 
 ### Neovim
 
-The bootstrap script clones [my neovim config](https://github.com/zstreeter/nvim) and symlinks Omarchy's theme, so colorschemes stay in sync.
+The config lives in `common/nvim/` (formerly its own repo, merged with its
+history; its `CLAUDE.md` and `CONTEXT.md` describe the layout). Bootstrap links
+`~/.config/nvim` to that directory -- one link, not per-file stow, so a plugin spec
+you add under `~/.config/nvim` lands in the repo. On Omarchy it also links the
+current theme to `lua/plugins/theme.lua` (git-ignored), so colorschemes stay in
+sync. `common/nvim/tests/smoke.sh` boots it headless and checks its structure.
 
 ## Research pipeline
 

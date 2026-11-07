@@ -21,7 +21,7 @@ target_setup() {
        ~/.config/shell   shared env, aliases, commands, git-prompt
        ~/.config/bash    rc.sh + prompt.sh (hooked from ~/.bashrc)
        ~/.config/yazi    file manager config + plugins
-       ~/.config/nvim    github.com/zstreeter/nvim
+       ~/.config/nvim    -> zfiles common/nvim
        ~/.local/share/mise  neovim, yazi, fd, rg, fzf, zoxide, bat, eza
                             (on PATH via \`mise activate\`, run from commands.sh)
 

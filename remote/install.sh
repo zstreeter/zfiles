@@ -25,7 +25,7 @@ git_supports_sparse() {
 sparse_sync() {
     pkgs=$(grep -v '^#' "$REPO_DIR/remote/stow.txt" | grep -v '^$') || true
     [ -n "$pkgs" ] || die "could not read the package list from remote/stow.txt"
-    dirs=remote
+    dirs="remote common/nvim"
     for p in $pkgs; do dirs="$dirs common/stow/$p"; done
     # shellcheck disable=SC2086  # word splitting is the point here
     git -C "$REPO_DIR" sparse-checkout set $dirs

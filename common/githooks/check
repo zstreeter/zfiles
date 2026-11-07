@@ -14,7 +14,7 @@ bad() { echo "check: $*" >&2; fail=1; }
 
 while IFS= read -r f; do
     [[ -f $f ]] || continue
-    case $f:$(head -c 40 "$f" | head -1) in
+    case $f:$(head -c 40 "$f" | head -1 | tr -d '\0') in
         */zsh/*.sh:*)                  parser="zsh -n" ;;
         *:'#!/bin/sh'|*:'#!/usr/bin/env sh') parser="sh -n" ;;
         *.sh:*|*:'#!'*bash*)           parser="bash -n" ;;

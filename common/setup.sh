@@ -185,40 +185,19 @@ else
     warn "make/gawk not found — skipping ble.sh (bash highlighting)."
 fi
 
-info "Setting up neovim config..."
+info "Linking neovim config..."
+# One directory link, not per-file stow: a plugin spec created under ~/.config/nvim
+# lands in the repo instead of becoming an untracked file beside it.
 NVIM_DIR="$HOME/.config/nvim"
-NVIM_REPO_URL="https://github.com/zstreeter/nvim.git"
-
-install_my_nvim() {
-    git clone "$NVIM_REPO_URL" "$NVIM_DIR"
-}
-
-displace_nvim() {
-    local stamp; stamp=$(date +%Y%m%d%H%M%S)
-    warn "Backing up existing neovim config → ~/.config/nvim.bak.$stamp"
-    mv "$NVIM_DIR" "$HOME/.config/nvim.bak.$stamp"
-    if [[ -d "$HOME/.local/share/nvim" ]]; then
-        mv "$HOME/.local/share/nvim" "$HOME/.local/share/nvim.bak.$stamp"
+if [[ "$(readlink "$NVIM_DIR")" != "$REPO_DIR/common/nvim" ]]; then
+    if [[ -e "$NVIM_DIR" || -L "$NVIM_DIR" ]]; then
+        backup="${XDG_STATE_HOME:-$HOME/.local/state}/zfiles/backup/nvim.$(date +%Y%m%d%H%M%S)"
+        mkdir -p "$(dirname "$backup")"
+        mv "$NVIM_DIR" "$backup"
+        warn "Moved the previous neovim config to $backup"
     fi
-    install_my_nvim
-}
-
-if [[ -d "$NVIM_DIR" ]]; then
-    if [[ -d "$NVIM_DIR/.git" ]]; then
-        NVIM_ORIGIN=$(git -C "$NVIM_DIR" remote get-url origin 2>/dev/null || true)
-        if [[ "$NVIM_ORIGIN" == *zstreeter/nvim* ]]; then
-            info "Correct Neovim config found, pulling latest..."
-            git -C "$NVIM_DIR" pull --ff-only || warn "nvim pull failed (local changes?) — left as-is."
-        else
-            warn "Unknown Neovim git repo found ($NVIM_ORIGIN)."
-            displace_nvim
-        fi
-    else
-        warn "Non-git Neovim config found."
-        displace_nvim
-    fi
-else
-    install_my_nvim
+    mkdir -p "$(dirname "$NVIM_DIR")"
+    ln -sn "$REPO_DIR/common/nvim" "$NVIM_DIR"
 fi
 
 if $OWNS_HOME; then
