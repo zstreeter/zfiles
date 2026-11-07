@@ -97,6 +97,10 @@ target_setup() {
     else
         warn "Hyprland is not running; deployed overlay will load next session."
     fi
+    # Glassy windows; looknfeel.lua opts the browser in. Skip when set: it restarts terminals.
+    if [[ "$(omarchy hyprland window transparency)" != glassy ]]; then
+        omarchy hyprland window transparency glassy || warn "Could not set Glassy windows."
+    fi
 
     info "Linking theme consumers to rendered theme dir..."
     local theme_dir="$HOME/.local/state/omarchy/current/theme"
