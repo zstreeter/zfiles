@@ -2,6 +2,9 @@
 local servers = require("config.servers")
 local icons = require("config.icons")
 vim.lsp.enable(servers.lsp_servers)
+-- nvim-colorizer paints colour codes in every file; 0.12's LSP document colours
+-- (on by default) would paint cssls/tailwind buffers a second time.
+vim.lsp.document_color.enable(false)
 
 -- Configure diagnostic display with custom signs
 vim.diagnostic.config({
