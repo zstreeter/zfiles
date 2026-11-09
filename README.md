@@ -163,7 +163,7 @@ To re-run later, `zfiles-update` (defined in the `shell` package's
 
 Agents never get your key or a forwarded agent. They get one dedicated key,
 `~/.ssh/agent_sandbox`, which a server accepts only for the length of a
-*session*, and only into a hardened container (the `sandbox` package:
+*session*, and only into a jail (the `sandbox` package:
 `agent-jail` and `ssh-sandbox` on the laptop, `agent-sandbox` shipped to the
 server per session, `agent-job` for durable work, the `remote-sandbox` skill for
 agents). Why each mechanism, with sources: `docs/agent-sandbox-research.md`.
@@ -178,14 +178,23 @@ ssh -t node1-agent 'agent-job attach train'        # watch it live (a herdr pane
 ssh-sandbox down node1 --fetch ~/results/node1     # or --discard; refuses while jobs run
 ```
 
-Per-host defaults (image, name, `--shm-size`, `--network bridge` when the work
-needs downloads) go one-or-more flags per line in `~/.config/agent-sandbox/<host>`
+**A repo needs no sandbox code.** The agent's shell is a bubblewrap jail on the
+server itself, so a repo runs as it would for you there -- GPUs and their tools, tmux,
+its own runner -- with home set to the workspace. Its `docker run` goes through a
+per-session proxy (`agent-docker-proxy`) that refuses, never rewrites, anything
+that reaches past the session: privileged, added capabilities, host
+pid/net/user namespaces, devices other than GPUs, binds from outside the
+workspace, images the session did not name, pull, build, exec, and other
+people's containers. The containers run as the image says (usually root), so
+`down` hands what they wrote back to you.
+
+Per-host defaults (images, name, `--network host` when the work needs downloads) go one-or-more flags per line in `~/.config/agent-sandbox/<host>`
 on the laptop; `agent-sandbox --help` lists them.
 
 **A session leaves nothing.** `up` ships `agent-sandbox` into `~/.agent-sandbox/`,
 creates the workspace and adds one `authorized_keys` line; `down` copies
-`/workspace` back (`--fetch`) or drops it (`--discard`), then removes the
-container (and its anonymous volumes), the key line, the workspace and
+the workspace back (`--fetch`) or drops it (`--discard`), then removes the
+agent's containers, the jail, the docker proxy, the key line, the workspace and
 `~/.agent-sandbox/`, and fails if any of it is still there. What remains is
 what any ssh login leaves: the server's own auth logs, and the modification
 times of `~/.ssh/authorized_keys` and its directories. If `down` never runs, the
@@ -218,18 +227,22 @@ What holds, and why:
 
 - **The key cannot reach the host.** Its `authorized_keys` line is
   `restrict,expiry-time=...,command="agent-sandbox gate NAME"`; whatever the
-  client asks for is handed to the container's shell as one string. No agent,
+  client asks for is handed to the jail's shell as one string. No agent,
   port or X11 forwarding, no `~/.ssh/rc`. Lifecycle needs your normal key.
 - **The alias cannot fall back to your real key.** `IdentityFile` accumulates
   across `Host` blocks, and a shared `ControlPath` would ride an open login, so
   `ssh-sandbox up` refuses an alias that offers any other key, forwards
   anything, or multiplexes.
-- **The container:** your uid, no capabilities, `no-new-privileges`, read-only
-  root, no network unless asked, memory capped at half the host's RAM,
-  size-capped `/tmp`, pid limit, default seccomp, private IPC, only
-  `/workspace` writable. GPUs by device, never `--privileged`, never the docker
-  socket. Mount sources are refused if they are home, a dot-directory, a system
-  path, a socket, or contain the script.
+- **The jail shows only what it lists:** `/usr`, `/etc`, `/opt` read-only, GPU
+  devices, and the workspace. Your home, `/var` and `/run` -- with every
+  root-equivalent socket in them (docker, containerd, lxd) -- do not exist in
+  it. Its own pid, ipc and network namespaces (no network unless `--network
+  host`), so it cannot see or reach your processes or the host's services.
+- **The agent's containers** get what Docker gives any container, minus every
+  way out: the proxy allows an endpoint or a `HostConfig` key only if it is on
+  its list, forces network `none` with the session's, and turns each bind into
+  a volume Subpath of the workspace, so the daemon refuses a symlink planted
+  there ("path concatenation escapes the base directory").
 
 **Every request is audited**: the gate, on the host where the agent cannot
 reach it, logs each command before running it (and refuses if it cannot);
@@ -242,10 +255,10 @@ What does not: `agent-jail` leaves the laptop's network open (abstract unix
 sockets included, so an X server listening on one stays reachable) and hides only
 the credential paths it knows; a project you jail it in can be poisoned for when
 you next build or run it there. An agent started outside it is not contained at all.
-You are in the `docker` group, so a Docker or kernel escape is an escape to
-root; the sandbox stops an agent, not an exploit. There is no disk quota on the
-workspace. `--network bridge`/`host`, `--ipc host`, `--seccomp-unconfined` and
-`--rw-root` each warn when used.
+The agent's containers run as root with Docker's default capabilities, and may
+ask for `--ipc host` and `seccomp=unconfined` (GPU training runners often do): a container
+or kernel escape from there is root. The sandbox stops an agent, not an exploit.
+There is no disk, memory or CPU quota on the jail.
 
 ### The bash hook
 

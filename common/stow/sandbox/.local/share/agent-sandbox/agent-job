@@ -2,15 +2,14 @@
 # agent-job -- durable jobs inside an agent sandbox. Each job is a tmux session on a
 # private socket, so it outlives the ssh connection that started it; its output and
 # exit code are kept under $AGENT_JOB_DIR/<id>/ because tmux keeps neither.
-# Staged read-only into the sandbox by agent-sandbox up; on PATH there.
+# agent-sandbox up puts it on the jail's PATH.
 set -eu
 
 DIR=${AGENT_JOB_DIR:-$HOME/jobs}
 SELF=$(command -v "$0" 2>/dev/null || echo "$0")
-# The staged tmux sits beside us. Last on PATH, as the gate puts it, so every caller --
-# the gate, a docker exec from the host -- resolves the same tmux and finds the jobs.
-PATH="$PATH:$(dirname "$SELF")"
-tm() { tmux -L agent-jobs "$@"; }
+# In an agent sandbox, the jobs' tmux server runs in a jail of its own that outlives
+# every login; AGENT_JOB_SOCK is its socket.
+tm() { if [ -n "${AGENT_JOB_SOCK-}" ]; then tmux -S "$AGENT_JOB_SOCK" "$@"; else tmux -L agent-jobs "$@"; fi; }
 
 die() { echo "agent-job: $*" >&2; exit 1; }
 
@@ -125,7 +124,7 @@ case $sub in
     wait) [ $# -eq 1 ] || die "usage: agent-job wait ID"; cmd_wait "$1" ;;
     logs) [ $# -ge 1 ] || die "usage: agent-job logs ID [-f]"; cmd_logs "$@" ;;
     kill) [ $# -eq 1 ] || die "usage: agent-job kill ID"; cmd_kill "$1" ;;
-    attach) [ $# -eq 1 ] || die "usage: agent-job attach ID"; job_dir "$1" >/dev/null; exec tmux -L agent-jobs attach -t "=$1" ;;
+    attach) [ $# -eq 1 ] || die "usage: agent-job attach ID"; job_dir "$1" >/dev/null; tm attach -t "=$1" ;;
     ls) cmd_ls ;;
     running) cmd_running ;;
     -h | --help | help) usage ;;

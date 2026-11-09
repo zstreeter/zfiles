@@ -211,3 +211,17 @@ Environment setup to go with them:
 [seccomp]: https://docs.docker.com/engine/security/seccomp/
 [rootless]: https://docs.docker.com/engine/security/rootless/
 [userns]: https://docs.docker.com/engine/security/userns-remap/
+
+## Revision: a jail on the host, and the agent's docker through a proxy
+
+A repo's standard runner calls `docker run`, which a container shell cannot do
+without nesting. Re-creating the outer container's limits on the inner one
+(path remapping, uid, groups, HOME, staged tools) was most of the code. So the
+agent's shell is now a bubblewrap jail on the host -- an allowlisted filesystem
+(no home, `/var` or `/run`, so no docker/containerd/lxd socket), its own pid,
+ipc and network namespaces -- and its `docker` reaches the daemon only through
+`agent-docker-proxy`, which refuses anything not on its list and rewrites only
+the label, network `none`, and binds into a workspace volume Subpath (moby's
+safepath then refuses symlink escapes). Containers run as the image says;
+`down` chowns the workspace back. Verified on an 8-GPU server: the escape
+list in the commit refused, and a GPU training repo ran unmodified.

@@ -1,16 +1,21 @@
 #!/usr/bin/env bash
 # agent-sandbox -- server half of the ssh agent sandbox. ssh-sandbox (the laptop half)
 # ships this file into ~/.agent-sandbox/ for one session and runs it over your normal
-# ssh; `down` removes the container, the key and every file the session made, this
-# one included. In between, the sandbox key's every login is forced into `gate`.
+# ssh; `down` removes the jail, the key and every file the session made, this one
+# included. In between, the sandbox key's every login is forced into `gate`.
+#
+# The agent runs on the host itself, in a bubblewrap jail that shows only what it
+# lists: the system (/usr, /etc, /opt read-only), GPU devices, and the session's
+# workspace -- your home, /var (docker, lxd and other root-equivalent sockets) and
+# /run are simply not there, and it has its own pid, ipc and (by default) network
+# namespace. Its `docker` reaches the daemon only through agent-docker-proxy, which
+# refuses anything that could reach the host. Nothing in a repo needs to know.
 set -euo pipefail
 
-ROOT=$HOME/.agent-sandbox # a dot-directory: check_source refuses to mount it
+ROOT=$HOME/.agent-sandbox
 SESSION=$ROOT/session
-LABEL=zfiles.agent-sandbox
+LABEL=zfiles.agent-sandbox # on the volume and every container the agent starts
 PROBE=agent-sandbox-probe
-# shellcheck disable=SC2016 # expanded by the container's shell, not this one
-TOOLS='PATH="$PATH:/opt/agent-sandbox/bin"; export PATH; ' # staged tools last: the image's own win
 
 die()  { echo "agent-sandbox: $*" >&2; exit 1; }
 warn() { echo "agent-sandbox: warning: $*" >&2; }
@@ -18,63 +23,41 @@ warn() { echo "agent-sandbox: warning: $*" >&2; }
 usage() {
     cat <<EOF
 usage: agent-sandbox <command> [options]      (run by ssh-sandbox; not by hand)
-  up [opts] < KEY.pub   fresh container + this key forced into 'gate NAME' until --ttl
-  down [--force]        remove container, key, workspace and $ROOT; verify nothing is left
-                        ($ROOT/audit.log, one line per sandbox-key request, goes with it:
-                        ssh-sandbox down copies it home first)
-  status                state and the security-relevant settings of the container
+  up [opts] < KEY.pub   start the session's jail and docker proxy, force this key into
+                        'gate NAME' until --ttl
+  down [--force]        remove containers, jail, key, workspace and $ROOT; verify nothing
+                        is left ($ROOT/audit.log goes too: ssh-sandbox down copies it first)
+  status                the session, its jobs' server and the agent's containers
   gate NAME             the forced command of the sandbox key (sshd runs it)
 
 up options:
-  --image IMAGE          image to run (required); pin by digest (IMAGE@sha256:...)
-  --name NAME            container name (default: \${USER}_agent)
-  --workspace DIR        host dir at /workspace (default ~/agent-sandbox/NAME)
+  --image IMAGE          an image the agent's docker may run (repeatable; the first is
+                         \$AGENT_SANDBOX_IMAGE); pin by digest (IMAGE@sha256:...)
+  --name NAME            session name (default: \${USER}_agent)
+  --workspace DIR        the agent's home and only writable dir (default ~/agent-sandbox/NAME)
   --ttl HOURS            the key stops working after this, down or not (default 12)
   --from ADDRS           accept the key only from these addresses (from="..."); ssh-sandbox
                          passes the laptop's tailnet addresses when it connects over Tailscale
-  --gpu auto|kfd|nvidia|nvidia:0,1|none     (default auto; kfd = /dev/kfd GPUs)
-  --network none|bridge|host|NETNAME        (default none: no network at all)
-  --ipc private|host                        (default private; RCCL may need host)
-  --memory SIZE          memory cap (default half the host's RAM)
-  --shm-size SIZE  --cpus N  --pids-limit N  --tmp-size SIZE
-  --mount SRC:DST[:ro|rw]   extra bind mount (default ro), validated
-  --env KEY=VALUE        container env; never put secrets here
-  --rw-root              writable root filesystem (default read-only)
-  --seccomp-unconfined   drop the seccomp filter (some profilers need it)
-  --force                (up, down) end running agent-job jobs
+  --network none|host    the jail's network, and so its containers' (default none)
+  --env KEY=VALUE        env in the jail; never put secrets here
+  --force                (up, down) end running jobs and the agent's containers
 EOF
 }
 
-NAME="${USER:-$(id -un)}_agent" IMAGE="" GPU=auto NETWORK=none IPC=private TTL=12
-SHM=8g MEMORY="" CPUS="" PIDS=8192 TMP_SIZE=8g WORKSPACE="" RW_ROOT=0 SECCOMP=0 FORCE=0
-MOUNTS=() ENVS=() CREATED="" FROM=""
-
-size_ok() { [[ $1 =~ ^[0-9]+(\.[0-9]+)?[bkmgBKMG]?$ ]] || die "bad $2: $1"; }
-name_ok() { [[ $1 =~ ^[A-Za-z0-9][A-Za-z0-9_.-]*$ ]] || die "bad name: $1"; }
+NAME="${USER:-$(id -un)}_agent" NETWORK=none TTL=12 WORKSPACE="" FORCE=0 CREATED="" FROM=""
+IMAGES=() ENVS=()
 
 parse_opts() {
     while (($#)); do
-        case $1 in
-            --rw-root) RW_ROOT=1; shift; continue ;;
-            --seccomp-unconfined) SECCOMP=1; shift; continue ;;
-            --force) FORCE=1; shift; continue ;;
-        esac
+        [[ $1 == --force ]] && { FORCE=1; shift; continue; }
         (($# >= 2)) || die "$1 needs a value"
         case $1 in
-            --name) name_ok "$2"; NAME=$2 ;;
-            --image) [[ $2 =~ ^[A-Za-z0-9][A-Za-z0-9_./:@-]*$ ]] || die "bad image: $2"; IMAGE=$2 ;;
+            --name) [[ $2 =~ ^[A-Za-z0-9][A-Za-z0-9_.-]*$ ]] || die "bad name: $2"; NAME=$2 ;;
+            --image) [[ $2 =~ ^[A-Za-z0-9][A-Za-z0-9_./:@-]*$ ]] || die "bad image: $2"; IMAGES+=("$2") ;;
             --ttl) [[ $2 =~ ^[1-9][0-9]*$ && $2 -le 168 ]] || die "bad --ttl (hours, 1-168): $2"; TTL=$2 ;;
             --from) [[ $2 =~ ^[0-9A-Fa-f.:/]+(,[0-9A-Fa-f.:/]+)*$ ]] || die "bad --from (comma-separated addresses): $2"; FROM=$2 ;;
-            --gpu) [[ $2 =~ ^(auto|kfd|nvidia|nvidia:[0-9,]+|none)$ ]] || die "bad --gpu: $2"; GPU=$2 ;;
-            --network) [[ $2 =~ ^[A-Za-z0-9][A-Za-z0-9_.-]*$ ]] || die "bad --network: $2"; NETWORK=$2 ;;
-            --ipc) [[ $2 =~ ^(private|host)$ ]] || die "bad --ipc: $2"; IPC=$2 ;;
-            --shm-size) size_ok "$2" "$1"; SHM=$2 ;;
-            --memory) size_ok "$2" "$1"; MEMORY=$2 ;;
-            --tmp-size) size_ok "$2" "$1"; TMP_SIZE=$2 ;;
-            --cpus) [[ $2 =~ ^[0-9]+(\.[0-9]+)?$ ]] || die "bad --cpus: $2"; CPUS=$2 ;;
-            --pids-limit) [[ $2 =~ ^[1-9][0-9]*$ ]] || die "bad --pids-limit: $2"; PIDS=$2 ;;
+            --network) [[ $2 =~ ^(none|host)$ ]] || die "bad --network (none|host): $2"; NETWORK=$2 ;;
             --workspace) WORKSPACE=$2 ;;
-            --mount) MOUNTS+=("$2") ;;
             --env) [[ $2 =~ ^[A-Za-z_][A-Za-z0-9_]*= ]] || die "bad --env: $2"; ENVS+=("$2") ;;
             *) usage >&2; die "unknown option: $1" ;;
         esac
@@ -82,105 +65,56 @@ parse_opts() {
     done
 }
 
-# What `down` must undo, written by `up`: the session's name, workspace and key.
+# What `down` and `gate` need, written by `up`.
 load_session() {
     [[ -f $SESSION ]] || return 1
     local k v
+    IMAGES=() ENVS=()
     while IFS='=' read -r k v; do
-        case $k in name) NAME=$v ;; workspace) WORKSPACE=$v ;; blob) KBLOB=$v ;; created) CREATED=$v ;; esac
+        case $k in
+            name) NAME=$v ;; workspace) WORKSPACE=$v ;; blob) KBLOB=$v ;; created) CREATED=$v ;;
+            network) NETWORK=$v ;; image) IMAGES+=("$v") ;; env) ENVS+=("$v") ;;
+        esac
     done <"$SESSION"
 }
 
-# A bind mount is a hole in the sandbox. Refuse every source that would let the
-# agent rewrite what runs on the host: home itself, dotfiles (ssh keys, shell rc,
-# this script's session dir), system dirs, sockets -- or this script.
-check_source() {
-    local src home me
-    src=$(realpath -e -- "$1") || die "mount source does not exist: $1"
-    home=$(realpath -e -- "$HOME"); me=$(realpath -e -- "$0")
-    case $src in
-        / | /etc | /etc/* | /proc | /proc/* | /sys | /sys/* | /dev | /dev/* | /boot | /boot/* | \
-        /run | /run/* | /var/run | /var/run/* | /usr | /usr/* | /bin | /bin/* | /sbin | /sbin/* | \
-        /lib | /lib/* | /lib64 | /lib64/* | /root | /root/* | /var/lib/docker | /var/lib/docker/*)
-            die "refusing to mount system path $src" ;;
-    esac
-    [[ $home == "$src" || $home == "$src"/* ]] && die "refusing to mount $src: it exposes your home directory"
-    [[ $src == "$home"/.* ]] && die "refusing to mount $src: dot-directories hold keys, shell rc and this script"
-    [[ $me == "$src"/* ]] && die "refusing to mount $src: it contains agent-sandbox itself"
-    [[ -S $src ]] && die "refusing to mount socket $src"
-    printf '%s' "$src"
+alive() { # pidfile: is it still the process we started?
+    local pid
+    pid=$(cat "$1" 2>/dev/null) && [[ $pid =~ ^[0-9]+$ ]] && grep -qa "$2" "/proc/$pid/cmdline" 2>/dev/null
 }
+stop() { alive "$1" "$2" && kill "$(cat "$1")"; rm -f "$1"; }
+volume() { printf 'agent-sandbox-%s' "$NAME"; }
+containers() { docker ps -q "$@" --filter "label=$LABEL=$NAME"; }
 
-docker_() { docker "$@"; }
-exists() { docker_ inspect "$NAME" >/dev/null 2>&1; }
-ours() { [[ $(docker_ inspect -f "{{index .Config.Labels \"$LABEL\"}}" "$NAME" 2>/dev/null) == 1 ]]; }
-running() { [[ $(docker_ inspect -f '{{.State.Running}}' "$NAME" 2>/dev/null) == true ]]; }
-
-gpu_args() {
-    local g gid
-    if [[ $GPU == auto ]]; then
-        if [[ -e /dev/kfd ]]; then GPU=kfd
-        elif command -v nvidia-smi >/dev/null; then GPU=nvidia
-        else GPU=none; fi
-    fi
-    case $GPU in
-        kfd)
-            [[ -e /dev/kfd ]] || die "--gpu kfd but /dev/kfd does not exist"
-            ARGS+=(--device /dev/kfd --device /dev/dri)
-            # Host group ids by number: the image's /etc/group numbers them differently.
-            for g in video render; do
-                gid=$(getent group "$g" | cut -d: -f3) && [[ -n $gid ]] && ARGS+=(--group-add "$gid")
-            done ;;
-        nvidia) ARGS+=(--gpus all) ;;
-        nvidia:*) ARGS+=(--gpus "\"device=${GPU#nvidia:}\"") ;;
-    esac
-}
-
-# Images often lack rsync, sftp-server and tmux, and running them on the host instead
-# would follow symlinks the agent plants in /workspace. So ship the host's copies, with
-# their non-libc libraries, read-only into the container: they resolve paths there.
-# Each runs through the loader with --library-path, which binds that one process: an
-# LD_LIBRARY_PATH would be inherited by every job tmux starts and shadow the image's libs.
-stage_tools() {
-    local dir=$ROOT/tools t bin ld f u g
-    rm -rf "$dir"; mkdir -p "$dir/bin" "$dir/libexec" "$dir/lib"
-    for t in rsync scp tmux /usr/lib/openssh/sftp-server /usr/libexec/openssh/sftp-server; do
-        bin=$(command -v "$t") || continue
-        ld=$(ldd "$bin" | awk '$1 ~ /^\/.*ld-linux/ {print $1; exit}')
-        [[ -n $ld ]] || { warn "not staging $bin: no dynamic loader found"; continue; }
-        cp -L "$bin" "$dir/libexec/"
-        ldd "$bin" | awk '$3 ~ /^\// {print $3}' | { grep -vE '/(libc|libm|libpthread|libdl|librt|ld-linux)[.-][^/]*$' || true; } |
-            xargs -r cp -L -t "$dir/lib/"
-        printf '#!/bin/sh\nexec %s --library-path /opt/agent-sandbox/lib /opt/agent-sandbox/libexec/%s "$@"\n' "$ld" "${bin##*/}" >"$dir/bin/${bin##*/}"
-        chmod 755 "$dir/bin/${bin##*/}"
+# The jail: only what is listed exists. Later binds cover earlier ones.
+jail_args() {
+    local d p
+    JAIL=(bwrap --unshare-all --new-session --die-with-parent --clearenv
+        --ro-bind /usr /usr --ro-bind /etc /etc --proc /proc --ro-bind /sys /sys
+        --dev /dev --tmpfs /tmp --tmpfs /run --dir /var/tmp)
+    [[ $NETWORK == host ]] && JAIL+=(--share-net)
+    for d in /bin /sbin /lib /lib32 /lib64 /libx32 /opt; do
+        if [[ -L $d ]]; then JAIL+=(--symlink "$(readlink "$d")" "$d")
+        elif [[ -d $d ]]; then JAIL+=(--ro-bind "$d" "$d"); fi
     done
-    install -m 755 "$(dirname "$(realpath -e -- "$0")")/agent-job" "$dir/bin/agent-job"
-    ARGS+=(-v "$dir:/opt/agent-sandbox:ro")
-    # The image's passwd/group plus our uid: sftp-server, whoami and getpass need a name.
-    u=$(id -un) g=$(id -gn)
-    for f in passwd group; do
-        docker_ run --rm --network none --entrypoint cat "$IMAGE" "/etc/$f" >"$dir/$f" 2>/dev/null || : >"$dir/$f"
-    done
-    printf '%s:x:%s:%s::/workspace:/bin/sh\n' "$u" "$(id -u)" "$(id -g)" >>"$dir/passwd"
-    printf '%s:x:%s:\n' "$g" "$(id -g)" >>"$dir/group"
-    ARGS+=(-v "$dir/passwd:/etc/passwd:ro" -v "$dir/group:/etc/group:ro")
+    for p in /dev/kfd /dev/dri /dev/nvidia*; do [[ -e $p ]] && JAIL+=(--dev-bind "$p" "$p"); done
+    JAIL+=(--bind "$WORKSPACE" "$WORKSPACE" --ro-bind "$ROOT/run" /run/agent-sandbox --chdir "$WORKSPACE"
+        --setenv HOME "$WORKSPACE" --setenv USER "$(id -un)" --setenv LOGNAME "$(id -un)"
+        --setenv PATH "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/run/agent-sandbox/bin"
+        --setenv TERM "${TERM:-dumb}" --setenv LANG "${LANG:-C.UTF-8}"
+        --setenv AGENT_SANDBOX 1 --setenv AGENT_SANDBOX_IMAGE "${IMAGES[0]-}"
+        --setenv DOCKER_HOST unix:///run/agent-sandbox/docker.sock
+        --setenv AGENT_JOB_SOCK "$WORKSPACE/.agent-jobs.sock")
+    for p in "${ENVS[@]}"; do JAIL+=(--setenv "${p%%=*}" "${p#*=}"); done
 }
 
-# What the container says reaches your terminal: no escape sequences.
-printable() { tr -c '[:print:]' ' ' <<<"$1"; }
-
-# Removing the container ends every job in it.
-guard_jobs() {
-    local jobs
-    running || return 0
-    # Not knowing is not "none": a sandbox we cannot ask may hold a week of training.
-    if ! jobs=$(docker_ exec "$NAME" /opt/agent-sandbox/bin/agent-job running 2>&1); then
-        ((FORCE)) && return 0
-        die "cannot list jobs in $NAME ($(printable "$jobs")); pass --force to end it anyway"
-    fi
-    [[ -z $jobs ]] && return 0
-    ((FORCE)) && { warn "ending running jobs: $(printable "$jobs")"; return 0; }
-    die "jobs still running in $NAME: $(printable "$jobs")-- wait for them, agent-job kill them, or pass --force"
+guard() {
+    local j c
+    j=$(gate_run agent-job running 2>&1) || { ((FORCE)) || die "cannot list jobs ($j); pass --force to end the session anyway"; }
+    c=$(containers 2>&1) || die "cannot list the agent's containers: $c"
+    [[ -z $j$c ]] && return 0
+    ((FORCE)) && { warn "ending jobs and containers: $(tr -c '[:print:]' ' ' <<<"$j $c")"; return 0; }
+    die "still running -- jobs: $(tr -c '[:print:]' ' ' <<<"$j") containers: $(tr '\n' ' ' <<<"$c")-- wait for them or pass --force"
 }
 
 read_pubkey() {
@@ -207,78 +141,81 @@ rewrite_keys() {
 }
 
 cmd_up() {
-    local ws m src dst mode me expiry
-    [[ -n $IMAGE ]] || die "no image: pass --image"
-    [[ $IMAGE == *@sha256:* ]] || warn "$IMAGE is not pinned by digest; a retag changes what runs"
-    local want=$NAME want_ws=$WORKSPACE
+    local me expiry ws want=$NAME want_ws=$WORKSPACE i img e
+    command -v bwrap >/dev/null || die "needs bubblewrap (bwrap) on this server"
+    me=$(realpath -e -- "$0")
+    [[ $me == "$ROOT/agent-sandbox" ]] || die "run from $ROOT (ssh-sandbox ships it there), not $me"
+    [[ $me =~ ^/[A-Za-z0-9_./-]+$ ]] || die "path unsafe to quote in authorized_keys: $me"
+    read_pubkey
+    local images=("${IMAGES[@]}") envs=("${ENVS[@]}") network=$NETWORK
     if load_session; then
         [[ $NAME == "$want" ]] || die "a session named $NAME is already here: ssh-sandbox down it first"
         # down removes the session's workspace by what up recorded: never switch it mid-session.
         [[ -z $want_ws || $(realpath -m -- "$want_ws") == "$WORKSPACE" ]] ||
             die "this session's workspace is $WORKSPACE: ssh-sandbox down it first to use $want_ws"
+        guard # a re-up restarts the jail, which ends its jobs
     fi
-    NAME=$want
-    read_pubkey
-    me=$(realpath -e -- "$0")
-    [[ $me == "$ROOT/agent-sandbox" ]] || die "run from $ROOT (ssh-sandbox ships it there), not $me"
-    [[ $me =~ ^/[A-Za-z0-9_./-]+$ ]] || die "path unsafe to quote in authorized_keys: $me"
-    if exists; then
-        ours || die "container '$NAME' exists but agent-sandbox did not create it; refusing to touch it"
-        guard_jobs
-    fi
-    WORKSPACE=${WORKSPACE:-$HOME/agent-sandbox/$NAME}
+    IMAGES=("${images[@]}") ENVS=("${envs[@]}") NETWORK=$network NAME=$want
+    WORKSPACE=${WORKSPACE:-${want_ws:-$HOME/agent-sandbox/$NAME}}
     # down deletes the workspace only if this session made it: never a directory you had.
     if [[ -e $WORKSPACE ]]; then CREATED=${CREATED:-0}; else CREATED=1; fi
     (umask 077 && mkdir -p "$WORKSPACE")
-    ws=$(check_source "$WORKSPACE")
-    [[ -n $MEMORY ]] || MEMORY=$(awk '/^MemTotal:/ {print int($2 / 2) "k"}' /proc/meminfo)
+    ws=$(realpath -e -- "$WORKSPACE"); WORKSPACE=$ws
+    [[ $ws == "$(realpath -e -- "$HOME")" || $ws == / ]] && die "the workspace cannot be your home or /"
+    [[ $ws =~ ^/[A-Za-z0-9_./-]+$ ]] || die "workspace path has characters unsafe here: $ws"
+    for img in "${IMAGES[@]}"; do docker image inspect "$img" >/dev/null 2>&1 || die "no image $img on this host"; done
 
-    ARGS=(run -d --name "$NAME" --label "$LABEL=1" --hostname "$NAME" --init --restart no
-        --user "$(id -u):$(id -g)" -e HOME=/workspace -e "USER=$(id -un)" -e "LOGNAME=$(id -un)"
-        -e AGENT_SANDBOX=1 -e "AGENT_SANDBOX_IMAGE=$IMAGE"
-        --cap-drop ALL --security-opt no-new-privileges:true
-        --pids-limit "$PIDS" --ipc "$IPC" --shm-size "$SHM" --network "$NETWORK" --memory "$MEMORY"
-        -v "$ws:/workspace:rw" -w /workspace)
-    if ((!RW_ROOT)); then
-        ARGS+=(--read-only --tmpfs "/tmp:rw,exec,nosuid,nodev,size=$TMP_SIZE" --tmpfs "/var/tmp:rw,exec,nosuid,nodev,size=1g")
-    else warn "root filesystem is writable (--rw-root)"; fi
-    ((SECCOMP)) && { ARGS+=(--security-opt seccomp=unconfined); warn "seccomp filter disabled"; }
-    [[ $NETWORK != none ]] && warn "--network $NETWORK: the agent can reach the network (internet, host services on 0.0.0.0, cloud metadata)"
-    [[ $NETWORK == host ]] && warn "--network host: the agent reaches every service on the host's localhost"
-    [[ $IPC == host ]] && warn "--ipc host: the agent shares the host's IPC namespace"
-    [[ -n $CPUS ]] && ARGS+=(--cpus "$CPUS")
-    for m in "${MOUNTS[@]}"; do
-        IFS=: read -r src dst mode <<<"$m"
-        mode=${mode:-ro}
-        [[ $dst == /?* && $dst != *:* && $dst != /workspace ]] || die "bad mount target in: $m"
-        [[ $mode =~ ^(ro|rw)$ ]] || die "bad mount mode in: $m"
-        ARGS+=(-v "$(check_source "$src"):$dst:$mode")
-    done
-    for m in "${ENVS[@]}"; do ARGS+=(-e "$m"); done
-    gpu_args
-    # Everything above validated; only now replace the running sandbox.
-    exists && docker_ rm -f -v "$NAME" >/dev/null
-    stage_tools
-    ARGS+=(--entrypoint sleep "$IMAGE" infinity)
-    docker_ "${ARGS[@]}" >/dev/null
-    printf 'name=%s\nworkspace=%s\nblob=%s\ncreated=%s\n' "$NAME" "$ws" "$KBLOB" "$CREATED" >"$SESSION"
+    {
+        printf 'name=%s\nworkspace=%s\nblob=%s\ncreated=%s\nnetwork=%s\n' "$NAME" "$ws" "$KBLOB" "$CREATED" "$NETWORK"
+        for img in "${IMAGES[@]}"; do printf 'image=%s\n' "$img"; done
+        for e in "${ENVS[@]}"; do printf 'env=%s\n' "$e"; done
+    } >"$SESSION"
     : >>"$ROOT/audit.log" # exists from the start, so down can always copy it
+
+    # The jail sees $ROOT/run read-only at /run/agent-sandbox: the proxy's socket, agent-job.
+    stop "$ROOT/jobs.pid" bwrap; stop "$ROOT/docker.pid" agent-docker-proxy
+    mkdir -p "$ROOT/run/bin"
+    install -m 755 "$ROOT/agent-job" "$ROOT/run/bin/agent-job"
+    docker volume create --driver local --opt type=none --opt o=bind --opt "device=$ws" \
+        --label "$LABEL=$NAME" "$(volume)" >/dev/null || die "cannot create the workspace volume"
+    local up=/var/run/docker.sock
+    [[ ${DOCKER_HOST:-} == unix://* ]] && up=${DOCKER_HOST#unix://}
+    python3 -c 'import json, sys; a = sys.argv; json.dump(dict(name=a[2], label=a[3], volume=a[4], workspace=a[5],
+        network=a[6], upstream=a[7], socket=a[8], pidfile=a[9], audit=a[10], images=a[11:]), open(a[1], "w"))' \
+        "$ROOT/docker.json" "$NAME" "$LABEL" "$(volume)" "$ws" "$NETWORK" "$up" \
+        "$ROOT/run/docker.sock" "$ROOT/docker.pid" "$ROOT/audit.log" ${IMAGES[@]+"${IMAGES[@]}"}
+    setsid -f python3 "$ROOT/agent-docker-proxy" "$ROOT/docker.json" >>"$ROOT/docker-proxy.log" 2>&1 </dev/null
+    # Jobs outlive every login: their tmux server runs in a jail of its own, started here.
+    jail_args
+    rm -f "$ws/.agent-jobs.sock"
+    setsid -f "${JAIL[@]}" -- tmux -S "$ws/.agent-jobs.sock" -D >>"$ROOT/jobs.log" 2>&1 </dev/null
+    for ((i = 0; i < 50; i++)); do [[ -S $ROOT/run/docker.sock && -S $ws/.agent-jobs.sock ]] && break; sleep 0.1; done
+    [[ -S $ROOT/run/docker.sock ]] || die "the docker proxy did not start: $(tail -3 "$ROOT/docker-proxy.log")"
+    [[ -S $ws/.agent-jobs.sock ]] || die "the jobs jail did not start: $(tail -3 "$ROOT/jobs.log")"
+    pgrep -of -- "^bwrap .*-S $ws/.agent-jobs.sock -D" >"$ROOT/jobs.pid" || die "cannot find the jobs jail"
+
     # restrict: no agent/port/X11 forwarding, no ~/.ssh/rc; pty back on for shells.
     # expiry-time: the key dies on its own if `down` never runs (laptop lost, session abandoned).
     expiry=$(date -d "+$TTL hours" +%Y%m%d%H%M) # server-local: sshd before 9.x rejects a Z suffix
     rewrite_keys "restrict,pty,${FROM:+from=\"$FROM\",}expiry-time=\"$expiry\",command=\"$me gate $NAME\" $KTYPE $KBLOB agent-sandbox"
-    echo "agent-sandbox: $NAME up (gpu=$GPU network=$NETWORK memory=$MEMORY workspace=$ws, key expires $expiry${FROM:+, only from $FROM})"
+    echo "agent-sandbox: $NAME up (network=$NETWORK images=${IMAGES[*]:-none} workspace=$ws, key expires $expiry${FROM:+, only from $FROM})"
 }
 
-# Undo all of `up`, then prove it: no container, no key line, no workspace, no $ROOT.
+# Undo all of `up`, then prove it.
 cmd_down() {
-    local left=()
+    local left=() c
     load_session || die "no session here ($SESSION missing): nothing of agent-sandbox's to remove"
-    if exists; then
-        ours || die "container '$NAME' was not created by agent-sandbox; refusing to remove it"
-        guard_jobs
-        docker_ rm -f -v "$NAME" >/dev/null
+    guard
+    c=$(containers -a) || die "cannot list the agent's containers; nothing removed"
+    # shellcheck disable=SC2086 # one id per line
+    [[ -z $c ]] || docker rm -f -v $c >/dev/null
+    stop "$ROOT/jobs.pid" bwrap; stop "$ROOT/docker.pid" agent-docker-proxy
+    # The agent's containers ran as root: hand back what they wrote (and clear any setuid bit).
+    if [[ -n ${IMAGES[0]-} ]]; then
+        docker run --rm --network none -v "$(volume):/w" --entrypoint chown "${IMAGES[0]}" -R "$(id -u):$(id -g)" /w >/dev/null 2>&1 ||
+            warn "could not chown the workspace back; root-owned files may stay"
     fi
+    docker volume rm -f "$(volume)" >/dev/null 2>&1 || true
     rewrite_keys
     if ((CREATED)); then
         rm -rf -- "$WORKSPACE"
@@ -287,41 +224,47 @@ cmd_down() {
         echo "agent-sandbox: kept $WORKSPACE: it existed before the session" >&2
     fi
     rm -rf -- "$ROOT"
-    exists && left+=("container $NAME")
+    [[ -n $(containers -a) ]] && left+=("the agent's containers")
+    docker volume inspect "$(volume)" >/dev/null 2>&1 && left+=("volume $(volume)")
+    pgrep -f -- "-S $WORKSPACE/.agent-jobs.sock" >/dev/null && left+=("the jobs jail")
     grep -qF -- "$KBLOB" "$HOME/.ssh/authorized_keys" && left+=("key line")
     ((CREATED)) && [[ -e $WORKSPACE ]] && left+=("$WORKSPACE")
     [[ -e $ROOT ]] && left+=("$ROOT")
     ((${#left[@]} == 0)) || die "left behind: ${left[*]}"
-    echo "agent-sandbox: $NAME removed; nothing left (container, key, workspace, $ROOT)"
+    echo "agent-sandbox: $NAME removed; nothing left (containers, jail, key, workspace, $ROOT)"
 }
 
 cmd_status() {
     load_session || { echo "agent-sandbox: no session"; return 0; }
-    exists || { echo "agent-sandbox: session $NAME, but its container does not exist"; return 0; }
-    docker_ inspect -f "name={{.Name}} state={{.State.Status}} image={{.Config.Image}} user={{.Config.User}}
-privileged={{.HostConfig.Privileged}} readonly_root={{.HostConfig.ReadonlyRootfs}} capdrop={{.HostConfig.CapDrop}} capadd={{.HostConfig.CapAdd}}
-network={{.HostConfig.NetworkMode}} ipc={{.HostConfig.IpcMode}} memory={{.HostConfig.Memory}} pids={{.HostConfig.PidsLimit}} security={{.HostConfig.SecurityOpt}}
-mounts={{range .Mounts}}{{.Source}}:{{.Destination}}:{{if .RW}}rw{{else}}ro{{end}} {{end}}" "$NAME"
+    echo "session $NAME workspace=$WORKSPACE network=$NETWORK images=${IMAGES[*]:-none}"
+    alive "$ROOT/jobs.pid" bwrap && echo "jobs jail: running" || echo "jobs jail: NOT running"
+    alive "$ROOT/docker.pid" agent-docker-proxy && echo "docker proxy: running" || echo "docker proxy: NOT running"
+    echo "agent's containers: $(containers | tr '\n' ' ')"
     grep -o 'expiry-time="[^"]*"' "$HOME/.ssh/authorized_keys" | head -1 | sed 's/^/key /'
 }
 
-# Everything the sandbox key asks for runs inside the container, never on the host:
-# SSH_ORIGINAL_COMMAND is handed to the container's shell as one argument.
+# Run a command in a fresh jail (its own pid namespace: it ends with the command).
+gate_run() { jail_args; "${JAIL[@]}" -- "$@"; }
+
+# Everything the sandbox key asks for runs in the jail, never on the host:
+# SSH_ORIGINAL_COMMAND is handed to the jail's shell as one argument.
 cmd_gate() {
-    local cmd=${SSH_ORIGINAL_COMMAND-} tty=()
+    local cmd=${SSH_ORIGINAL_COMMAND-}
     [[ $cmd == "$PROBE" ]] && { echo "agent-sandbox: gated $NAME"; return 0; }
     # On the host, where the agent cannot reach it; no record, no command.
     printf '%s %q\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "${cmd:-(interactive shell)}" >>"$ROOT/audit.log" ||
         die "cannot write the audit log; refusing to run"
-    if ! { exists && ours && running; }; then
-        die "sandbox '$NAME' is not running. A human must start it: ssh-sandbox up <host>"
-    fi
-    [[ -t 0 && -t 1 ]] && tty=(-t)
+    load_session && [[ $NAME == "$1" ]] ||
+        die "sandbox '$1' is not running. A human must start it: ssh-sandbox up <host>"
+    jail_args
     case $cmd in
-        "") exec docker exec -i "${tty[@]}" "$NAME" sh -c "$TOOLS"'command -v bash >/dev/null && exec bash -l; exec sh -l' ;;
+        "") exec "${JAIL[@]}" -- bash -l ;;
         *sftp-server* | internal-sftp)
-            exec docker exec -i "$NAME" sh -c 'for s in /usr/lib/openssh/sftp-server /usr/libexec/openssh/sftp-server /usr/lib/ssh/sftp-server /opt/agent-sandbox/bin/sftp-server; do [ -x "$s" ] && exec "$s"; done; echo "agent-sandbox: no sftp-server in the image; use rsync or ssh cat" >&2; exit 1' ;;
-        *) exec docker exec -i "${tty[@]}" "$NAME" sh -c "$TOOLS"'command -v bash >/dev/null && exec bash -lc "$1"; exec sh -lc "$1"' sh "$cmd" ;;
+            for s in /usr/lib/openssh/sftp-server /usr/libexec/openssh/sftp-server /usr/lib/ssh/sftp-server; do
+                [[ -x $s ]] && exec "${JAIL[@]}" -- "$s"
+            done
+            die "no sftp-server here; use rsync or ssh cat" ;;
+        *) exec "${JAIL[@]}" -- bash -lc "$cmd" ;;
     esac
 }
 
@@ -330,7 +273,7 @@ case $sub in
     up) parse_opts "$@"; cmd_up ;;
     down) parse_opts "$@"; cmd_down ;;
     status) cmd_status ;;
-    gate) (($# == 1)) || die "gate takes exactly the sandbox name"; name_ok "$1"; NAME=$1; cmd_gate ;;
+    gate) (($# == 1)) && [[ $1 =~ ^[A-Za-z0-9][A-Za-z0-9_.-]*$ ]] || die "gate takes exactly the sandbox name"; cmd_gate "$1" ;;
     -h | --help | help) usage ;;
     *) usage >&2; exit 2 ;;
 esac

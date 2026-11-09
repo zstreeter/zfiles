@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # ssh-sandbox -- laptop half of the ssh agent sandbox. Holds the one sandbox key and
 # runs each server's sandbox as a session: `up` ships agent-sandbox to the server,
-# starts the container and authorizes the key (with an expiry); `down` takes the
+# starts the jail and authorizes the key (with an expiry); `down` takes the
 # results, then removes everything the session put there and verifies it. Lifecycle
 # runs over your normal ssh; agents only ever get the HOST-agent alias.
 set -euo pipefail
@@ -27,11 +27,11 @@ tailnet_self() { local ips; command -v tailscale >/dev/null && ips=$(tailscale i
 usage() {
     cat <<EOF
 usage: ssh-sandbox <command> ...
-  up HOST [opts]            start a session: ship agent-sandbox, fresh container, authorize
+  up HOST [opts]            start a session: ship agent-sandbox, start its jail, authorize
                             the key until --ttl. opts: agent-sandbox --help; defaults, one
                             or more per line, from $HOSTS/HOST (HOST without user@).
                             Over Tailscale the key is accepted only from this laptop.
-  down HOST --fetch DIR     copy /workspace to DIR, then remove everything the session put
+  down HOST --fetch DIR     copy the workspace to DIR, then remove everything the session put
   down HOST --discard       on HOST and verify it. --force also ends running jobs. The
                             session's audit log is always saved to $AUDIT/.
   status HOST               the session's container and key
@@ -153,6 +153,7 @@ cmd_up() {
     # Ship this session's copy; down deletes it.
     on "$host" 'umask 077 && mkdir -p ~/.agent-sandbox && cat > ~/.agent-sandbox/agent-sandbox && chmod 700 ~/.agent-sandbox/agent-sandbox' <"$HERE/agent-sandbox"
     on "$host" 'umask 077 && cat > ~/.agent-sandbox/agent-job && chmod 755 ~/.agent-sandbox/agent-job' <"$HERE/../share/agent-sandbox/agent-job"
+    on "$host" 'umask 077 && cat > ~/.agent-sandbox/agent-docker-proxy && chmod 700 ~/.agent-sandbox/agent-docker-proxy' <"$HERE/../share/agent-sandbox/agent-docker-proxy"
     if ! remote "$host" up "${DEFAULTS[@]}" "${FROM[@]}" "$@" <"$KEY.pub"; then
         # A failed first up leaves no session to tear down: remove what we shipped.
         on "$host" 'test -f ~/.agent-sandbox/session || rm -rf ~/.agent-sandbox'
@@ -186,7 +187,7 @@ cmd_down() {
         rsync_ok || die "rsync $(rsync --version | awk 'NR==1{print $3}') predates 3.4.0 (CVE-2024-12088): update it before fetching"
         mkdir -p "$fetch"
         # The agent wrote these files: --safe-links drops symlinks that point outside DIR.
-        rsync -a --safe-links "${host##*@}-agent:/workspace/" "$fetch/" || die "fetch failed; nothing removed"
+        rsync -a --safe-links "${host##*@}-agent:./" "$fetch/" || die "fetch failed; nothing removed"
         echo "ssh-sandbox: workspace copied to $fetch"
     fi
     # The session's audit log lives in what down deletes: bring it home first.
