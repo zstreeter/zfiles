@@ -491,7 +491,10 @@ Configs are **copied** to the Windows side, not symlinked across
 `\\wsl.localhost`: the logon tasks run when the distro may not be up, and a UNC
 path there would either fail or force the distro to boot just to read a config.
 So editing `wsl/windows/*` takes a bootstrap re-run to reach Windows. An unmanaged
-file already at the destination is backed up once to `<name>.zfiles-bak`.
+file already at the destination is backed up once to `<name>.zfiles-bak`. Each
+installed file gets a `<name>.zfiles-sha256` record; a live copy edited in place
+is left alone with a warning rather than overwritten -- move the edit into the
+repo, or delete the live file to take the repo version.
 
 Both the Caps Lock remap (`zfiles-caps`) and GlazeWM (`zfiles-glazewm`) run as
 logon tasks at highest privileges, so they also apply over elevated windows and
@@ -561,7 +564,9 @@ unbounded. So the window is claimed instead. `caps.ahk` calls `GET /launch`
 *before* sending the launcher chord, while the intended workspace is still
 focused; the daemon records it and a watcher thread on GlazeWM's
 `window_managed` event stream moves the next newly managed window there and
-follows it. An already-running app emits no `window_managed` event, so
+follows it -- and every later window of that same process until the claim
+expires, because apps like Slack show a splash window first and their real
+window second. An already-running app emits no `window_managed` event, so
 activating an existing window is untouched, and a claim expires after 15s so an
 abandoned launcher can't capture something unrelated a minute later. Daemon
 down, and `Caps+Space` is exactly the plain launcher chord it always was.

@@ -103,9 +103,16 @@ function Register-ZfilesLogonTask {
 }
 
 # Copies only when the content differs, so a re-run is quiet and doesn't churn
-# file mtimes. An unmanaged file already at the destination is backed up once,
-# the same courtesy bootstrap.sh's backup_stow_conflicts() extends on the Linux
-# side -- once, so repeated runs can't bury the original under .bak files.
+# file mtimes. Returns $true only when it wrote the destination.
+#
+# <dest>.zfiles-sha256 records the hash of what was last installed. It makes
+# the copy safe in both directions:
+#   * dest no longer matches the record -> it was edited in place. Warn and
+#     leave it; overwriting would silently discard that edit, and the repo is
+#     where it belongs. Delete the live file to take the repo version instead.
+#   * no record at all -> the file is not ours (or predates the record). Back it
+#     up once to <dest>.zfiles-bak, the same courtesy bootstrap.sh's
+#     backup_stow_conflicts() extends on the Linux side.
 function Copy-IfChanged {
     param([Parameter(Mandatory)][string]$Source,
           [Parameter(Mandatory)][string]$Destination)
@@ -115,20 +122,41 @@ function Copy-IfChanged {
         New-Item -ItemType Directory -Path $dir -Force | Out-Null
     }
 
+    $record = "$Destination.zfiles-sha256"
+    $sourceHash = (Get-FileHash -LiteralPath $Source).Hash
+
     if (Test-Path -LiteralPath $Destination) {
-        if ((Get-FileHash -LiteralPath $Source).Hash -eq
-            (Get-FileHash -LiteralPath $Destination).Hash) {
+        $destHash = (Get-FileHash -LiteralPath $Destination).Hash
+        $recorded = if (Test-Path -LiteralPath $record) {
+            (Get-Content -LiteralPath $record -Raw).Trim()
+        } else { $null }
+
+        if ($destHash -eq $sourceHash) {
+            if ($recorded -ne $sourceHash) {
+                Set-Content -LiteralPath $record -Value $sourceHash -Encoding ASCII
+            }
             Info "unchanged  $Destination"
             return $false
         }
-        $backup = "$Destination.zfiles-bak"
-        if (-not (Test-Path -LiteralPath $backup)) {
-            Copy-Item -LiteralPath $Destination -Destination $backup -Force
-            Info "backed up  $backup"
+        if ($recorded -and $destHash -ne $recorded) {
+            Write-Warning @"
+[zfiles] $Destination was edited in place since it was installed.
+  Leaving it alone. Move the edit into $Source, or delete the live file to
+  take the repo version, then re-run.
+"@
+            return $false
+        }
+        if (-not $recorded) {
+            $backup = "$Destination.zfiles-bak"
+            if (-not (Test-Path -LiteralPath $backup)) {
+                Copy-Item -LiteralPath $Destination -Destination $backup -Force
+                Info "backed up  $backup"
+            }
         }
     }
 
     Copy-Item -LiteralPath $Source -Destination $Destination -Force
+    Set-Content -LiteralPath $record -Value $sourceHash -Encoding ASCII
     Info "installed  $Destination"
     return $true
 }
@@ -578,18 +606,14 @@ if (-not $ptExe) {
 } else {
     Info "powertoys  $ptExe"
 
-    # Exactly one launcher. Command Palette on, PowerToys Run off -- and the
-    # "off" half is the point, not tidiness. Both modules hold a global chord
-    # and both index the same programs, so leaving PT Run enabled keeps a second
-    # low-level keyboard hook in the chain (see the Keyboard Manager block below
-    # for what a stray hook costs here) and keeps Alt+Space bound to the module
-    # that was observed exiting on its own.
-    #
-    # Nothing replaces the old "disable PT Run's Desktop program source" patch
-    # that used to live here: that worked around PT Run's Program plugin caching
-    # .lnk paths from a desktop zfiles deliberately empties, and CmdPal has no
-    # Desktop source to disable -- its app list comes from the AllApps provider,
-    # and its settings expose no equivalent toggle.
+    # Command Palette is the only module this setup wants, so it is the only one
+    # left on. The rest compete with something here: FancyZones and Workspaces
+    # move windows under GlazeWM; Keyboard Manager installs a second low-level
+    # keyboard hook next to caps.ahk, and hook order flips with process start
+    # order (observed 2026-08-13: a restart put KBM first, it swallowed Caps
+    # Lock, and Caps+2 stopped switching workspaces with nothing logged); PT Run
+    # is the launcher observed exiting on its own. One rule instead of a patch
+    # per module.
     #
     # PowerToys rewrites this JSON wholesale on exit, so patching it underneath
     # a running process loses the change. Stop it first and let the start block
@@ -597,58 +621,28 @@ if (-not $ptExe) {
     $ptSettings = Join-Path $env:LOCALAPPDATA 'Microsoft\PowerToys\settings.json'
 
     if (-not (Test-Path -LiteralPath $ptSettings)) {
-        # Written on PowerToys' first run; nothing to patch before that. The
-        # defaults ship both modules enabled, so a re-run after that first
-        # launch is what settles this.
-        Info 'powertoys  not configured yet - launcher modules left alone'
-    } elseif ((Get-Content -LiteralPath $ptSettings -Raw) -match '"PowerToys Run"\s*:\s*true|"CmdPal"\s*:\s*false') {
-        Get-Process -Name 'PowerToys*' -ErrorAction SilentlyContinue | Stop-Process -Force
-        Start-Sleep -Seconds 3
-
-        $raw = (Get-Content -LiteralPath $ptSettings -Raw) `
-            -replace '"PowerToys Run"\s*:\s*true', '"PowerToys Run":false' `
-            -replace '"CmdPal"\s*:\s*false', '"CmdPal":true'
-
-        # WriteAllText with an explicit BOM-less encoding, not Set-Content
-        # -Encoding UTF8, which emits a BOM on PowerShell 5.1. Same trap as
-        # Zebar's settings.json above.
-        [System.IO.File]::WriteAllText(
-            $ptSettings, $raw, (New-Object System.Text.UTF8Encoding $false))
-        Info 'powertoys  Command Palette on, PowerToys Run off'
+        # Written on PowerToys' first run; a re-run after that settles this.
+        Info 'powertoys  not configured yet - modules left alone'
     } else {
-        Info 'powertoys  launcher modules already set'
-    }
-
-    # Keyboard Manager must not remap Caps Lock. caps.ahk owns that key: it holds
-    # it as the F14 modifier and emits Escape only on a short tap. A KBM
-    # Caps->Escape entry does the tap half a second time, and the two fight over
-    # the low-level hook chain -- which Windows calls most-recently-installed
-    # first. Whoever started last wins, so the chord works or doesn't depending on
-    # process start order, and PowerToys restarting (an update, a settings change,
-    # this script's own patch above) silently flips it. Observed 2026-08-13:
-    # restarting PowerToys put KBM ahead of AutoHotkey, KBM swallowed Caps Lock
-    # and injected Escape, and Caps+2 stopped switching workspaces with every
-    # process still running and nothing logged anywhere.
-    $kbmSettings = Join-Path $env:LOCALAPPDATA 'Microsoft\PowerToys\Keyboard Manager\default.json'
-    # 20 = VK_CAPITAL, 27 = VK_ESCAPE. Match any target, not just Escape: any
-    # remap of Caps Lock breaks the modifier, whatever it maps to.
-    $capsRemap = '\{"originalKeys":"20","newRemapKeys":"[^"]*"\}'
-
-    if (-not (Test-Path -LiteralPath $kbmSettings)) {
-        Info 'powertoys  Keyboard Manager not configured - nothing to clear'
-    } elseif ((Get-Content -LiteralPath $kbmSettings -Raw) -match $capsRemap) {
-        Get-Process -Name 'PowerToys*' -ErrorAction SilentlyContinue | Stop-Process -Force
-        Start-Sleep -Seconds 3
-
-        # Drop just the Caps entry and tidy any comma it leaves behind, so other
-        # remaps the user set up deliberately survive.
-        $raw = (Get-Content -LiteralPath $kbmSettings -Raw) -replace $capsRemap, ''
-        $raw = $raw -replace ',\s*,', ',' -replace '\[\s*,', '[' -replace ',\s*\]', ']'
-        [System.IO.File]::WriteAllText(
-            $kbmSettings, $raw, (New-Object System.Text.UTF8Encoding $false))
-        Info 'powertoys  Keyboard Manager Caps Lock remap removed'
-    } else {
-        Info 'powertoys  Keyboard Manager leaves Caps Lock alone'
+        $settings = Get-Content -LiteralPath $ptSettings -Raw | ConvertFrom-Json
+        $wrong = @($settings.enabled.PSObject.Properties |
+                   Where-Object { $_.Value -ne ($_.Name -eq 'CmdPal') })
+        if ($wrong.Count -eq 0) {
+            Info 'powertoys  only Command Palette enabled'
+        } else {
+            Get-Process -Name 'PowerToys*' -ErrorAction SilentlyContinue | Stop-Process -Force
+            Start-Sleep -Seconds 3
+            foreach ($module in $settings.enabled.PSObject.Properties) {
+                $module.Value = ($module.Name -eq 'CmdPal')
+            }
+            # WriteAllText with an explicit BOM-less encoding, not Set-Content
+            # -Encoding UTF8, which emits a BOM on PowerShell 5.1. Same trap as
+            # Zebar's settings.json above.
+            [System.IO.File]::WriteAllText($ptSettings,
+                ($settings | ConvertTo-Json -Depth 20),
+                (New-Object System.Text.UTF8Encoding $false))
+            Info "powertoys  set: $(($wrong | ForEach-Object Name) -join ', ')"
+        }
     }
 
     # PowerToys runs its modules from a single tray process; PowerToys.exe being

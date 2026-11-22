@@ -277,13 +277,8 @@ def nvim_moved(direction):
         info.get("result", {}).get("process_info", {}).get("foreground_processes")
         or []
     )
-    pid = next((p.get("pid") for p in procs if p.get("name") == "nvim"), None)
-    if pid is None:
-        return False
-
-    runtime = os.environ.get("XDG_RUNTIME_DIR") or f"/run/user/{os.getuid()}"
-    sock = os.path.join(runtime, f"nvim.{pid}.0")
-    if not os.path.exists(sock):
+    sock = nvim_socket(p.get("pid") for p in procs if p.get("name") == "nvim")
+    if sock is None:
         return False
 
     try:
@@ -303,6 +298,26 @@ def nvim_moved(direction):
         return False
 
     return out.strip() == "1"
+
+
+def nvim_socket(pids):
+    """Server socket of the first of these nvim processes that has one.
+
+    herdr reports the TUI process, but since nvim 0.10 the server -- and so
+    the socket -- belongs to its `nvim --embed` child. Same walk as herdr-nav.
+    """
+    runtime = os.environ.get("XDG_RUNTIME_DIR") or f"/run/user/{os.getuid()}"
+    for pid in pids:
+        try:
+            with open(f"/proc/{pid}/task/{pid}/children") as f:
+                children = f.read().split()
+        except OSError:
+            children = []
+        for candidate in (pid, *children):
+            sock = os.path.join(runtime, f"nvim.{candidate}.0")
+            if os.path.exists(sock):
+                return sock
+    return None
 
 
 def herdr_moved(direction):
@@ -331,7 +346,7 @@ def navigate(direction):
 
 
 _claim_lock = threading.Lock()
-_claim = {"workspace": None, "expires": 0.0}
+_claim = {"workspace": None, "process": None, "expires": 0.0}
 
 
 def claim_next_window():
@@ -348,16 +363,26 @@ def claim_next_window():
 
     with _claim_lock:
         _claim["workspace"] = name
+        _claim["process"] = None
         _claim["expires"] = time.monotonic() + LAUNCH_CLAIM_SECONDS
     return name
 
 
-def take_claim():
-    """Consume the claim if one is live. One window per claim, never two."""
+def take_claim(process):
+    """Workspace a new window belongs to, or None if no live claim covers it.
+
+    The first window after a launch binds the claim to its process; later
+    windows of that process stay claimed until expiry, because apps like Slack
+    show a splash window first and their real window second.
+    """
     with _claim_lock:
         name = _claim["workspace"]
-        _claim["workspace"] = None
         if name is None or time.monotonic() > _claim["expires"]:
+            _claim["workspace"] = None
+            return None
+        if _claim["process"] is None:
+            _claim["process"] = process
+        elif _claim["process"] != process:
             return None
         return name
 
@@ -398,11 +423,12 @@ def watch_for_claimed_windows():
         if data.get("eventType") != "window_managed":
             continue
 
-        window_id = (data.get("managedWindow") or {}).get("id")
+        window = data.get("managedWindow") or {}
+        window_id = window.get("id")
         if not window_id:
             continue
 
-        workspace = take_claim()
+        workspace = take_claim(window.get("processName"))
         if workspace is None:
             continue
         if workspace_of(mover, window_id) == workspace:

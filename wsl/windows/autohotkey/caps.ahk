@@ -180,7 +180,9 @@ HotIf
 ; valid Send syntax).
 SendToWm(key) {
     wrapped := StrLen(key) = 1 ? key : "{" key "}"
-    Send "{F14 Down}{Blind}" wrapped "{F14 Up}"
+    ; {Blind} only works as the first item; mid-string it is ignored and
+    ; Shift gets released, turning Caps+Shift+3 into Caps+3.
+    Send "{Blind}{F14 Down}" wrapped "{F14 Up}"
 }
 
 ProxyToWm(hotkeyName) {
